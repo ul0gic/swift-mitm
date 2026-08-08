@@ -1,0 +1,8 @@
+# SwiftFormat 0.61.x baseline for SwiftMITM.
+--swiftversion 6.0
+--exclude .build
+
+# Preserve the extracted codebase's established style. Remaining SwiftFormat
+# rules are enforced automatically for files Codex changes and across the full
+# package by the verification hook.
+--disable andOperator,blankLinesBetweenImports,blankLinesBetweenScopes,conditionalAssignment,elseOnSameLine,hoistPatternLet,hoistTry,indent,numberFormatting,opaqueGenericParameters,redundantReturn,redundantSelf,redundantSendable,redundantVariable,sortImports,spaceAroundOperators,trailingCommas,unusedArguments,wrapFunctionBodies,wrapLoopBodies,wrapMultilineStatementBraces,wrapPropertyBodies
