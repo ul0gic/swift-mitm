@@ -9,6 +9,11 @@ import NIOTLS
 @testable import SwiftMITM
 
 final class ProxyTestClient {
+    private struct TLSInstallation {
+        let handshake: EventLoopFuture<String?>
+        let multiplexer: EventLoopFuture<NIOHTTP2Handler.StreamMultiplexer?>?
+    }
+
     let group: EventLoopGroup
     init(group: EventLoopGroup) {
         self.group = group
@@ -21,7 +26,12 @@ final class ProxyTestClient {
         alpn: String
     ) throws -> Channel {
         let channel = try openTunnel(proxyPort: proxyPort, originHost: originHost, originPort: originPort)
-        try startTLS(on: channel, serverHostname: originHost, mitmCACertificatePEM: mitmCACertificatePEM, alpn: alpn)
+        _ = try startTLS(
+            on: channel,
+            serverHostname: originHost,
+            mitmCACertificatePEM: mitmCACertificatePEM,
+            alpn: alpn
+        )
         return channel
     }
 
@@ -61,7 +71,7 @@ final class ProxyTestClient {
             let channel = try openTunnel(proxyPort: proxyPort, originHost: originHost, originPort: originPort)
             defer { try? channel.close().wait() }
             completion.advance(to: .tlsHandshake)
-            try startTLS(
+            let multiplexer = try startTLS(
                 on: channel,
                 serverHostname: originHost,
                 mitmCACertificatePEM: mitmCACertificatePEM,
@@ -72,7 +82,12 @@ final class ProxyTestClient {
             completion.advance(to: .request)
             let authority = "\(originHost):\(originPort)"
             if expectedALPN == "h2" {
-                try sendHTTP2Request(on: channel, authority: authority, completion: completion)
+                guard let multiplexer else { throw ProxyTestError.unexpectedALPN }
+                try sendHTTP2Request(
+                    multiplexer: multiplexer,
+                    authority: authority,
+                    completion: completion
+                )
             } else {
                 let installFuture = channel.eventLoop.submit {
                     try channel.pipeline.syncOperations.addHandlers([
@@ -135,7 +150,7 @@ final class ProxyTestClient {
         serverHostname: String,
         mitmCACertificatePEM: String,
         alpn: String
-    ) throws {
+    ) throws -> NIOHTTP2Handler.StreamMultiplexer? {
         try startTLS(
             on: channel,
             serverHostname: serverHostname,
@@ -151,22 +166,27 @@ final class ProxyTestClient {
         mitmCACertificatePEM: String,
         applicationProtocols: [String],
         expectedALPN: String?
-    ) throws {
-        let handshake = try installTLS(
+    ) throws -> NIOHTTP2Handler.StreamMultiplexer? {
+        let installation = try installTLS(
             on: channel,
             serverHostname: serverHostname,
             mitmCACertificatePEM: mitmCACertificatePEM,
-            applicationProtocols: applicationProtocols
+            applicationProtocols: applicationProtocols,
+            configuresHTTP2: applicationProtocols.contains("h2")
         )
-        guard try handshake.wait() == expectedALPN else { throw ProxyTestError.unexpectedALPN }
+        guard try installation.handshake.wait() == expectedALPN else {
+            throw ProxyTestError.unexpectedALPN
+        }
+        return try installation.multiplexer?.wait()
     }
 
     private func installTLS(
         on channel: Channel,
         serverHostname: String,
         mitmCACertificatePEM: String,
-        applicationProtocols: [String]
-    ) throws -> EventLoopFuture<String?> {
+        applicationProtocols: [String],
+        configuresHTTP2: Bool = false
+    ) throws -> TLSInstallation {
         var tls = TLSConfiguration.makeClientConfiguration()
         tls.applicationProtocols = applicationProtocols
         tls.certificateVerification = .fullVerification
@@ -174,6 +194,9 @@ final class ProxyTestClient {
         tls.trustRoots = .certificates([trustRoot])
         let sslContext = try NIOSSLContext(configuration: tls)
         let handshake = channel.eventLoop.makePromise(of: String?.self)
+        let multiplexer = configuresHTTP2
+            ? channel.eventLoop.makePromise(of: NIOHTTP2Handler.StreamMultiplexer?.self)
+            : nil
         let installFuture = channel.eventLoop.submit {
             try channel.pipeline.syncOperations.addHandler(
                 NIOSSLClientHandler(context: sslContext, serverHostname: serverHostname),
@@ -181,22 +204,36 @@ final class ProxyTestClient {
             )
             try channel.pipeline.syncOperations.addHandler(TLSHandshakeProbe(promise: handshake))
         }
+        .flatMap {
+            guard let multiplexer else {
+                return channel.eventLoop.makeSucceededVoidFuture()
+            }
+            return channel.configureHTTP2SecureUpgrade { channel in
+                let configured = channel.configureHTTP2Pipeline(
+                    mode: .client,
+                    connectionConfiguration: .init(),
+                    streamConfiguration: .init()
+                ) { $0.close() }
+                configured.map(Optional.some).cascade(to: multiplexer)
+                return configured.map { _ in () }
+            } http1ChannelConfigurator: { channel in
+                multiplexer.succeed(nil)
+                return channel.eventLoop.makeSucceededVoidFuture()
+            }
+        }
         try installFuture.wait()
-        return handshake.futureResult
+        return TLSInstallation(
+            handshake: handshake.futureResult,
+            multiplexer: multiplexer?.futureResult
+        )
     }
 
     private func sendHTTP2Request(
-        on channel: Channel,
+        multiplexer: NIOHTTP2Handler.StreamMultiplexer,
         authority: String,
         completion: ProxyFetchCompletion
     ) throws {
-        let muxFuture = channel.configureHTTP2Pipeline(
-            mode: .client,
-            connectionConfiguration: .init(),
-            streamConfiguration: .init()
-        ) { $0.close() }
-        let mux = try muxFuture.wait()
-        let streamFuture = mux.createStreamChannel { stream in
+        let streamFuture = multiplexer.createStreamChannel { stream in
             stream.eventLoop.makeCompletedFuture {
                 try stream.pipeline.syncOperations.addHandler(
                     H2ConsumingClient(authority: authority, completion: completion)
@@ -204,68 +241,6 @@ final class ProxyTestClient {
             }
         }
         _ = try streamFuture.wait()
-    }
-}
-
-private final class TLSHandshakeProbe: ChannelInboundHandler {
-    typealias InboundIn = NIOAny
-
-    private let promise: EventLoopPromise<String?>
-    private var completed = false
-
-    init(promise: EventLoopPromise<String?>) {
-        self.promise = promise
-    }
-
-    func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
-        if case TLSUserEvent.handshakeCompleted(let negotiatedProtocol) = event {
-            complete(.success(negotiatedProtocol))
-        }
-        context.fireUserInboundEventTriggered(event)
-    }
-
-    func channelInactive(context: ChannelHandlerContext) {
-        complete(.failure(ProxyTestError.tlsClosedBeforeHandshake))
-        context.fireChannelInactive()
-    }
-
-    func errorCaught(context: ChannelHandlerContext, error: Error) {
-        complete(.failure(error))
-        context.close(promise: nil)
-    }
-
-    private func complete(_ result: Result<String?, Error>) {
-        guard !completed else { return }
-        completed = true
-        promise.completeWith(result)
-    }
-}
-
-private final class ConnectResponseHandler: ChannelInboundHandler, RemovableChannelHandler {
-    typealias InboundIn = ByteBuffer
-
-    private let promise: EventLoopPromise<Void>
-    private var accumulated = ByteBuffer()
-
-    init(promise: EventLoopPromise<Void>) {
-        self.promise = promise
-    }
-
-    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-        var buffer = unwrapInboundIn(data)
-        accumulated.writeBuffer(&buffer)
-        guard accumulated.readableBytesView.firstRange(of: [13, 10, 13, 10]) != nil else { return }
-        let head = accumulated.getString(at: accumulated.readerIndex, length: accumulated.readableBytes) ?? ""
-        if head.contains(" 200 ") {
-            promise.succeed(())
-        } else {
-            promise.fail(ProxyTestError.connectFailed(head))
-        }
-    }
-
-    func errorCaught(context: ChannelHandlerContext, error: Error) {
-        promise.fail(error)
-        context.close(promise: nil)
     }
 }
 

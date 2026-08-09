@@ -97,7 +97,7 @@ extension ProxyTestClient {
         }
         completion.futureResult.whenComplete { _ in timeoutTask.cancel() }
         let channel = try openTunnel(proxyPort: proxyPort, originHost: originHost, originPort: originPort)
-        try startTLS(
+        let multiplexer = try startTLS(
             on: channel,
             serverHostname: originHost,
             mitmCACertificatePEM: mitmCACertificatePEM,
@@ -109,7 +109,8 @@ extension ProxyTestClient {
             alpn: alpn,
             authority: authority,
             state: state,
-            completion: completion
+            completion: completion,
+            multiplexer: multiplexer
         )
         return ProxyStalledFetch(
             connection: channel,
@@ -124,11 +125,14 @@ extension ProxyTestClient {
         alpn: String,
         authority: String,
         state: ProxyStalledConsumerState,
-        completion: ProxyStalledCompletion
+        completion: ProxyStalledCompletion,
+        multiplexer: NIOHTTP2Handler.StreamMultiplexer?
     ) throws -> Channel {
         if alpn == "h2" {
+            guard let multiplexer else { throw ProxyTestError.unexpectedALPN }
             return try sendStalledHTTP2Request(
                 on: channel,
+                multiplexer: multiplexer,
                 authority: authority,
                 state: state,
                 completion: completion
@@ -148,18 +152,13 @@ extension ProxyTestClient {
 
     private func sendStalledHTTP2Request(
         on channel: Channel,
+        multiplexer: NIOHTTP2Handler.StreamMultiplexer,
         authority: String,
         state: ProxyStalledConsumerState,
         completion: ProxyStalledCompletion
     ) throws -> Channel {
         try channel.setOption(ChannelOptions.autoRead, value: false).wait()
-        let muxFuture = channel.configureHTTP2Pipeline(
-            mode: .client,
-            connectionConfiguration: .init(),
-            streamConfiguration: .init()
-        ) { $0.close() }
-        let mux = try muxFuture.wait()
-        return try mux.createStreamChannel { stream in
+        return try multiplexer.createStreamChannel { stream in
             stream.setOption(ChannelOptions.autoRead, value: false).flatMapThrowing {
                 try stream.pipeline.syncOperations.addHandler(
                     H2StalledClient(authority: authority, state: state, completion: completion)
