@@ -251,8 +251,7 @@ final class ProxyServerTests: XCTestCase {
                 originPort: originPort,
                 mitmCACertificatePEM: mitmPEM,
                 applicationProtocols: clientProtocols,
-                expectedALPN: expectedALPN,
-                timeout: .seconds(120)
+                expectedALPN: expectedALPN
             )
         }
 
