@@ -1,6 +1,6 @@
 # Releasing SwiftMITM
 
-SwiftMITM releases use stable Semantic Versioning tags without a `v` prefix. Pushing a valid tag runs the same macOS release gate as pull requests and creates a GitHub release from `RELEASE_NOTES.md` only after verification succeeds.
+SwiftMITM releases use stable Semantic Versioning tags without a `v` prefix. Pushing a valid tag creates a GitHub release from `RELEASE_NOTES.md` only when the tag targets a commit on `main` whose required CI run succeeded.
 
 ## Repository setup
 
@@ -30,6 +30,12 @@ git tag -a 0.1.0 -m "SwiftMITM 0.1.0"
 git push origin 0.1.0
 ```
 
-The release workflow rejects malformed tags or mismatched release notes, reruns the complete gate on macOS, and then creates the GitHub release. Verify the release assets and resolve SwiftMITM from the tag in a fresh external package before announcing it.
+The release workflow rejects malformed or lightweight tags, mismatched release notes, commits outside `main`, and commits without a successful `main` CI run. It does not repeat the complete build on a clean tag runner because the immutable commit has already passed the protected gate. If publication fails after verification for an infrastructure reason, rerun it without moving the tag:
+
+```sh
+gh workflow run release.yml -f tag=0.1.0
+```
+
+Verify the release assets and resolve SwiftMITM from the tag in a fresh external package before announcing it.
 
 Do not retag a published version. Correct a release defect with a new patch version.
