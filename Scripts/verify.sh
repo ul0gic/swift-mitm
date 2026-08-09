@@ -12,9 +12,10 @@ verify_quality() {
 }
 
 verify_tests() {
-    swift test
-    swift test --skip-build --parallel \
+    swift test --parallel \
         --skip 'SwiftMITMTests\.(ProductionProxyBackpressureTests|ProxyDiagnosticTests|StreamingBackpressureTests)'
+    swift test --skip-build \
+        --filter 'SwiftMITMTests\.(ProductionProxyBackpressureTests|ProxyDiagnosticTests|StreamingBackpressureTests)'
 }
 
 verify_distribution() {

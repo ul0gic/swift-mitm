@@ -10,7 +10,7 @@ Install Swift 6, SwiftFormat, and SwiftLint, then run:
 Scripts/verify.sh
 ```
 
-The gate checks formatting, strict lint, all tests serially, non-load tests again in parallel, a release build, and DocC warnings. Resource-intensive streaming, memory, and production-backpressure tests remain in the complete serial run and are intentionally excluded from the parallel replay. New behavior requires focused consumer-facing tests, bounded hostile-input behavior where applicable, and documentation for public lifecycle or security contracts.
+The gate checks formatting, strict lint, non-load tests in parallel, resource-intensive tests serially in an isolated process, a release build, and DocC warnings. The partitions are exhaustive and run every test exactly once without allowing streaming, memory, or production-backpressure measurements to starve unrelated integration tests. New behavior requires focused consumer-facing tests, bounded hostile-input behavior where applicable, and documentation for public lifecycle or security contracts.
 
 Do not add production dependencies without prior approval. Do not include private keys, credentials, captured payloads, or product-specific identifiers in code, fixtures, logs, issues, or pull requests.
 
