@@ -20,18 +20,61 @@ jobs:
     name: Verify
     runs-on: macos-26
     timeout-minutes: 45
+    env:
+      SWIFTPM_CACHE_VERSION: v1
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Verify workflow supply-chain policy
+        run: Scripts/verify-action-pinning.sh
       - name: Install current lint tooling
         run: brew install swiftlint
       - name: Record toolchain
+        id: toolchain
         run: |
           xcodebuild -version
           swift --version
           swiftformat --version
           swiftlint version
-      - name: Run release gate
-        run: Scripts/verify.sh
+          fingerprint="$({ xcodebuild -version; swift --version; } | shasum -a 256 | awk '{print $1}')"
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+      - name: Restore SwiftPM cache
+        id: swiftpm-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .build/*-apple-macosx
+            .build/artifacts
+            .build/checkouts
+            .build/repositories
+            .build/build.db
+            .build/debug.yaml
+            .build/release.yaml
+            .build/workspace-state.json
+            ~/Library/Caches/org.swift.swiftpm
+          key: swiftpm-${{ env.SWIFTPM_CACHE_VERSION }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('Package.swift') }}-${{ github.sha }}
+          restore-keys: |
+            swiftpm-${{ env.SWIFTPM_CACHE_VERSION }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('Package.swift') }}-
+      - name: Run quality gate
+        run: Scripts/verify.sh quality
+      - name: Run correctness and concurrency gate
+        run: Scripts/verify.sh tests
+      - name: Run release-build and documentation gate
+        run: Scripts/verify.sh distribution
+      - name: Save SwiftPM cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.swiftpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .build/*-apple-macosx
+            .build/artifacts
+            .build/checkouts
+            .build/repositories
+            .build/build.db
+            .build/debug.yaml
+            .build/release.yaml
+            .build/workspace-state.json
+            ~/Library/Caches/org.swift.swiftpm
+          key: swiftpm-${{ env.SWIFTPM_CACHE_VERSION }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('Package.swift') }}-${{ github.sha }}

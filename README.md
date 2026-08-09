@@ -145,7 +145,7 @@ Captured headers and bodies can contain credentials, cookies, tokens, and person
 Scripts/verify.sh
 ```
 
-The release gate runs format and strict lint checks, debug and release builds, serial and parallel tests, and DocC validation. See [CHANGELOG.md](CHANGELOG.md) for release history, [CONTRIBUTING.md](CONTRIBUTING.md) for contribution requirements, and [RELEASING.md](RELEASING.md) for the tag contract.
+The release gate runs format and strict lint checks, non-load tests in parallel, resource-intensive tests serially in an isolated process, a release build, and DocC validation. Hosted CI caches SwiftPM dependencies and intermediate build output using runner-, toolchain-, manifest-, and commit-specific keys. See [CHANGELOG.md](CHANGELOG.md) for release history, [CONTRIBUTING.md](CONTRIBUTING.md) for contribution requirements, and [RELEASING.md](RELEASING.md) for the tag contract.
 
 ## Support and security
 
