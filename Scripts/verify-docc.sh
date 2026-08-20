@@ -19,6 +19,7 @@ cleanup() {
 trap cleanup EXIT
 
 cd "$repository_root"
+swift build --build-tests
 swift package dump-symbol-graph --minimum-access-level public
 symbol_graph_directory="$(find .build -type d -name symbolgraph -print -quit)"
 test -n "$symbol_graph_directory"
