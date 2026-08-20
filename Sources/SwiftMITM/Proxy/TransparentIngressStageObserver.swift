@@ -1,6 +1,7 @@
 enum TransparentIngressStage: Sendable {
     case proxyHeaderPending
     case classificationPending
+    case opaqueBridgeReady
 }
 
 protocol TransparentIngressStageObserver: Sendable {

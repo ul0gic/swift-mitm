@@ -270,6 +270,7 @@ extension ProxyServer {
         upstream: ResolvedRawUpstreamConnection,
         failureHandler: NIOLoopBound<TransparentConnectionFailureHandler>
     ) -> EventLoopFuture<Void> {
+        let stageObserver = sink as? any TransparentIngressStageObserver
         let flow = CapturedOpaqueFlow(id: UUID(), timestamp: Date(), target: upstream.target.capturedTarget)
         let pair = NIOLoopBound(
             OpaqueFlowBridgeHandler.matchedPair(
@@ -285,7 +286,10 @@ extension ProxyServer {
             try inbound.pipeline.syncOperations.addHandler(pair.value.0)
         }
         .flatMap { [self] in removeTransparentFailureHandler(failureHandler, from: inbound) }
-        .map { upstream.channel.read() }
+        .map {
+            stageObserver?.didEnterTransparentIngressStage(.opaqueBridgeReady)
+            upstream.channel.read()
+        }
     }
 
     private func connectUpstreamRaw(
