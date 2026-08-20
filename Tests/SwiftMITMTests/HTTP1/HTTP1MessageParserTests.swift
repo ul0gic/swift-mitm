@@ -3,33 +3,6 @@ import XCTest
 @testable import SwiftMITM
 
 final class HTTP1MessageParserTests: XCTestCase {
-    private func parse(
-        mode: HTTP1ParserMode,
-        feeds: [String],
-        methods: [String] = [],
-        finish: Bool = false
-    ) -> [HTTP1ParserOutput] {
-        let parser = HTTP1MessageParser(mode: mode)
-        var outputs: [HTTP1ParserOutput] = []
-        var methodQueue = methods
-        for feed in feeds {
-            parser.feed(
-                Array(feed.utf8),
-                methodProvider: { methodQueue.first },
-                consumeMethod: {
-                    if !methodQueue.isEmpty {
-                        methodQueue.removeFirst()
-                    }
-                },
-                emit: { outputs.append($0) }
-            )
-        }
-        if finish {
-            parser.finish { outputs.append($0) }
-        }
-        return outputs
-    }
-
     func testRequestWithContentLength() {
         let outputs = parse(mode: .request, feeds: ["POST /x HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello"])
         XCTAssertEqual(
@@ -152,7 +125,8 @@ final class HTTP1MessageParserTests: XCTestCase {
                 "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n",
                 "not another response"
             ],
-            methods: ["GET"]
+            methods: ["GET"],
+            upgradeRequests: [true]
         )
         XCTAssertEqual(
             outputs,
@@ -317,5 +291,46 @@ final class HTTP1MessageParserTests: XCTestCase {
                 .messageComplete
             ]
         )
+    }
+}
+
+private extension HTTP1MessageParserTests {
+    func parse(
+        mode: HTTP1ParserMode,
+        feeds: [String],
+        methods: [String] = [],
+        upgradeRequests: [Bool] = [],
+        finish: Bool = false
+    ) -> [HTTP1ParserOutput] {
+        let parser = HTTP1MessageParser(mode: mode)
+        var outputs: [HTTP1ParserOutput] = []
+        var methodQueue = methods
+        var upgradeRequestQueue = upgradeRequests
+        for feed in feeds {
+            parser.feed(
+                Array(feed.utf8),
+                requestProvider: {
+                    methodQueue.first.map {
+                        HTTP1RequestMetadata(
+                            method: $0,
+                            webSocketUpgradeRequested: upgradeRequestQueue.first ?? false
+                        )
+                    }
+                },
+                consumeMethod: {
+                    if !methodQueue.isEmpty {
+                        methodQueue.removeFirst()
+                    }
+                    if !upgradeRequestQueue.isEmpty {
+                        upgradeRequestQueue.removeFirst()
+                    }
+                },
+                emit: { outputs.append($0) }
+            )
+        }
+        if finish {
+            parser.finish { outputs.append($0) }
+        }
+        return outputs
     }
 }

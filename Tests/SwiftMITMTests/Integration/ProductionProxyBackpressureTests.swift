@@ -42,13 +42,13 @@ private struct ProductionStallMeasurement: Sendable {
     let stalledObservedBytes: Int
     let elapsed: TimeInterval
 
-    var rssGrowth: Int64 { Int64(peakRSS) - Int64(baselineRSS) }
+    var rssGrowth: UInt64 { MachMemory.growth(from: baselineRSS, to: peakRSS) }
 
     var context: String {
         let mibibyte = 1024 * 1024
         return "PRODUCTION-BACKPRESSURE protocol=\(alpn) body=\(bodySize / mibibyte)MiB "
             + "captureLimit=\(captureLimit / 1024)KiB baselineRSS=\(baselineRSS / UInt64(mibibyte))MiB "
-            + "peakRSS=\(peakRSS / UInt64(mibibyte))MiB stalledRSSDelta=\(rssGrowth / Int64(mibibyte))MiB "
+            + "peakRSS=\(peakRSS / UInt64(mibibyte))MiB stalledRSSDelta=\(rssGrowth / UInt64(mibibyte))MiB "
             + "stalledClientBytes=\(stalledClientBytes) stalledObservedBytes=\(stalledObservedBytes) "
             + "stallSeconds=\(String(format: "%.3f", elapsed)) cores=\(System.coreCount)"
     }
@@ -99,7 +99,7 @@ private final class ProductionLoadSink: CaptureEventSink, @unchecked Sendable {
 private struct ProductionLoadEnvironment {
     let bodySize = 128 * 1024 * 1024
     let captureLimit = 64 * 1024
-    let maximumRSSGrowth = Int64(64 * 1024 * 1024)
+    let maximumRSSGrowth = UInt64(64 * 1024 * 1024)
     let traffic: MultiThreadedEventLoopGroup
     let origin: TLSOriginServer
     let mitmCA: CertificateAuthority
@@ -163,7 +163,7 @@ final class ProductionProxyBackpressureTests: XCTestCase {
         environment: ProductionLoadEnvironment
     ) async throws -> ProxyStalledFetch {
         let proxyPort = try await environment.proxy.start(port: 0)
-        let baselineRSS = MachMemory.residentBytes()
+        let baselineRSS = try MachMemory.residentBytes()
         let startedAt = Date()
         let originHost = environment.origin.hostname
         let originPort = environment.origin.localPort
@@ -180,10 +180,10 @@ final class ProductionProxyBackpressureTests: XCTestCase {
             )
         }
         do {
-            var peakRSS = max(baselineRSS, MachMemory.residentBytes())
+            var peakRSS = max(baselineRSS, try MachMemory.residentBytes())
             let stallDeadline = Date().addingTimeInterval(1.5)
             while Date() < stallDeadline {
-                peakRSS = max(peakRSS, MachMemory.residentBytes())
+                peakRSS = max(peakRSS, try MachMemory.residentBytes())
                 try await Task.sleep(for: .milliseconds(20))
             }
 
@@ -214,7 +214,7 @@ final class ProductionProxyBackpressureTests: XCTestCase {
     private func assertStall(
         _ measurement: ProductionStallMeasurement,
         capture: ProductionCaptureSnapshot,
-        maximumRSSGrowth: Int64
+        maximumRSSGrowth: UInt64
     ) {
         XCTAssertEqual(
             measurement.stalledClientBytes,

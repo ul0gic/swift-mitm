@@ -2,7 +2,7 @@ import Foundation
 
 extension HTTP1MessageParser {
     func parseHead(
-        methodProvider: () -> String?,
+        requestProvider: () -> HTTP1RequestMetadata?,
         consumeMethod: () -> Void,
         emit: (HTTP1ParserOutput) -> Void
     ) {
@@ -23,7 +23,7 @@ extension HTTP1MessageParser {
             parseResponseHead(
                 startLine: startLine,
                 headers: headerFields,
-                methodProvider: methodProvider,
+                requestProvider: requestProvider,
                 consumeMethod: consumeMethod,
                 emit: emit
             )
@@ -46,8 +46,8 @@ extension HTTP1MessageParser {
         }
         emit(.requestHead(method: String(parts[0]), path: String(parts[1]), headers: headers))
         if Self.isWebSocketUpgrade(headers) {
-            emit(.upgraded)
-            phase = .tunnel
+            emit(.upgradeRequested)
+            resetForNextMessage()
             return
         }
         enterBody(framing: framing, emit: emit)
@@ -56,7 +56,7 @@ extension HTTP1MessageParser {
     private func parseResponseHead(
         startLine: String,
         headers: [HTTPHeaderField],
-        methodProvider: () -> String?,
+        requestProvider: () -> HTTP1RequestMetadata?,
         consumeMethod: () -> Void,
         emit: (HTTP1ParserOutput) -> Void
     ) {
@@ -65,20 +65,20 @@ extension HTTP1MessageParser {
             fail(emit: emit)
             return
         }
-        let requestMethod = methodProvider()
+        let request = requestProvider()
         if (100..<200).contains(status), status != 101 {
             emit(.responseHead(status: status, headers: headers))
             resetForNextMessage()
             return
         }
-        if status == 101, Self.isWebSocketUpgrade(headers) {
+        if status == 101, request?.webSocketUpgradeRequested == true, Self.isWebSocketUpgrade(headers) {
             consumeMethod()
             emit(.responseHead(status: status, headers: headers))
             emit(.upgraded)
             phase = .tunnel
             return
         }
-        guard let framing = responseFraming(status: status, method: requestMethod, headers: headers) else {
+        guard let framing = responseFraming(status: status, method: request?.method, headers: headers) else {
             fail(emit: emit)
             return
         }

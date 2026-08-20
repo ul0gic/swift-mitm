@@ -19,7 +19,7 @@ final class WebSocketCloseDeduplicationTests: XCTestCase {
 
     func testBothCloseFramesAndInactivityEmitOneConnectionClose() throws {
         let correlator = HTTP1ExchangeCorrelator()
-        let closeEmissionState = WebSocketCloseEmissionState()
+        let webSocketSession = WebSocketCaptureSession()
         let sink = RecordingSink()
         let requestChannel = EmbeddedChannel(handler: HTTP1CaptureTapHandler(
             direction: .request,
@@ -27,7 +27,7 @@ final class WebSocketCloseDeduplicationTests: XCTestCase {
             correlator: correlator,
             sink: sink,
             captureBodyLimit: 8,
-            closeEmissionState: closeEmissionState
+            webSocketSession: webSocketSession
         ))
         let responseChannel = EmbeddedChannel(handler: HTTP1CaptureTapHandler(
             direction: .response,
@@ -35,7 +35,7 @@ final class WebSocketCloseDeduplicationTests: XCTestCase {
             correlator: correlator,
             sink: sink,
             captureBodyLimit: 8,
-            closeEmissionState: closeEmissionState
+            webSocketSession: webSocketSession
         ))
 
         try requestChannel.writeInbound(buffer(

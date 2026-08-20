@@ -15,6 +15,43 @@ public struct HTTPHeaderField: Sendable, Hashable {
     }
 }
 
+public struct CapturedNetworkEndpoint: Sendable {
+    public let address: String
+    public let port: Int
+
+    public init(address: String, port: Int) {
+        self.address = address
+        self.port = port
+    }
+}
+
+public enum CapturedIngressProvenance: String, Sendable {
+    case explicitConnect
+    case trustedProxyV2
+}
+
+public struct CapturedTarget: Sendable {
+    public let destination: CapturedNetworkEndpoint
+    public let logicalAuthority: String
+    public let tlsServerName: String?
+    public let ingressProvenance: CapturedIngressProvenance
+    public let originalClient: CapturedNetworkEndpoint?
+
+    public init(
+        destination: CapturedNetworkEndpoint,
+        logicalAuthority: String,
+        tlsServerName: String? = nil,
+        ingressProvenance: CapturedIngressProvenance,
+        originalClient: CapturedNetworkEndpoint? = nil
+    ) {
+        self.destination = destination
+        self.logicalAuthority = logicalAuthority
+        self.tlsServerName = tlsServerName
+        self.ingressProvenance = ingressProvenance
+        self.originalClient = originalClient
+    }
+}
+
 public struct CapturedRequestHead: Sendable {
     public let id: UUID
     public let timestamp: Date
@@ -24,6 +61,7 @@ public struct CapturedRequestHead: Sendable {
     public let path: String
     public let version: HTTPProtocolVersion
     public let headers: [HTTPHeaderField]
+    public let target: CapturedTarget?
 
     public init(
         id: UUID,
@@ -33,7 +71,8 @@ public struct CapturedRequestHead: Sendable {
         method: String,
         path: String,
         version: HTTPProtocolVersion,
-        headers: [HTTPHeaderField]
+        headers: [HTTPHeaderField],
+        target: CapturedTarget? = nil
     ) {
         self.id = id
         self.timestamp = timestamp
@@ -43,6 +82,7 @@ public struct CapturedRequestHead: Sendable {
         self.path = path
         self.version = version
         self.headers = headers
+        self.target = target
     }
 }
 
@@ -134,6 +174,60 @@ public struct CapturedWebSocketFrame: Sendable {
     }
 }
 
+public struct CapturedOpaqueFlow: Sendable {
+    public let id: UUID
+    public let timestamp: Date
+    public let target: CapturedTarget
+
+    public init(id: UUID, timestamp: Date, target: CapturedTarget) {
+        self.id = id
+        self.timestamp = timestamp
+        self.target = target
+    }
+}
+
+public enum OpaqueFlowDirection: String, Sendable {
+    case clientToServer
+    case serverToClient
+}
+
+public enum OpaqueFlowCloseReason: String, Sendable {
+    case completed
+    case cancelled
+}
+
+public enum CapturedConnectionFailureReason: String, Sendable {
+    case untrustedPeer
+    case malformedProxyMetadata
+    case unsupportedProxyTransport
+    case classificationFailed
+    case destinationUnavailable
+    case upstreamConnectionFailed
+    case tlsHandshakeFailed
+    case transportFailure
+    case timedOut
+    case cancelled
+}
+
+public struct CapturedConnectionFailure: Sendable {
+    public let id: UUID
+    public let timestamp: Date
+    public let reason: CapturedConnectionFailureReason
+    public let target: CapturedTarget?
+
+    public init(
+        id: UUID,
+        timestamp: Date,
+        reason: CapturedConnectionFailureReason,
+        target: CapturedTarget? = nil
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.reason = reason
+        self.target = target
+    }
+}
+
 public enum CaptureEvent: Sendable {
     case requestHead(CapturedRequestHead)
     case requestBodyChunk(requestID: UUID, bytes: [UInt8], byteCount: Int)
@@ -147,6 +241,26 @@ public enum CaptureEvent: Sendable {
     case webSocketOpen(connectionID: UUID, timestamp: Date, permessageDeflate: Bool)
     case webSocketFrame(CapturedWebSocketFrame)
     case webSocketClose(connectionID: UUID, timestamp: Date, code: Int?, reason: String?)
+    case opaqueOpen(CapturedOpaqueFlow)
+    // swiftlint:disable:next enum_case_associated_values_count
+    case opaqueData(
+        flowID: UUID,
+        timestamp: Date,
+        direction: OpaqueFlowDirection,
+        bytes: [UInt8],
+        byteCount: Int
+    ) // Frozen public event shape preserves direct chunk construction.
+    // swiftlint:disable:next enum_case_associated_values_count
+    case opaqueDirectionEnd(
+        flowID: UUID,
+        timestamp: Date,
+        direction: OpaqueFlowDirection,
+        byteCount: Int,
+        truncated: Bool
+    ) // Frozen public event shape preserves direct terminal construction.
+    case opaqueClose(flowID: UUID, timestamp: Date, reason: OpaqueFlowCloseReason)
+    case opaqueError(flowID: UUID, timestamp: Date, reason: CapturedConnectionFailureReason)
+    case connectionFailure(CapturedConnectionFailure)
 }
 
 public protocol CaptureEventSink: Sendable {

@@ -37,8 +37,10 @@ final class HTTP2CaptureTapHandler: ChannelInboundHandler {
     private let direction: Direction
     private let requestID: UUID
     private let authority: String
+    private let target: CapturedTarget?
     private let sink: CaptureEventSink
     private let errorState: HTTP2StreamErrorState
+    private let streamContext: NIOLoopBound<HTTP2WebSocketStreamContext>?
     private var bodyBuffer: CaptureBodyBuffer
     private var phase: Phase = .awaitingHead
 
@@ -46,106 +48,174 @@ final class HTTP2CaptureTapHandler: ChannelInboundHandler {
         direction: Direction,
         requestID: UUID,
         authority: String,
+        target: CapturedTarget? = nil,
         sink: CaptureEventSink,
         captureBodyLimit: Int = 0,
-        errorState: HTTP2StreamErrorState = HTTP2StreamErrorState()
+        errorState: HTTP2StreamErrorState = HTTP2StreamErrorState(),
+        streamContext: NIOLoopBound<HTTP2WebSocketStreamContext>? = nil
     ) {
         self.direction = direction
         self.requestID = requestID
         self.authority = authority
+        self.target = target
         self.sink = sink
         self.bodyBuffer = CaptureBodyBuffer(limit: captureBodyLimit)
         self.errorState = errorState
+        self.streamContext = streamContext
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let payload = unwrapInboundIn(data)
+        let shouldForward: Bool
         switch payload {
         case .headers(let frame):
-            processHeaders(frame.headers, endStream: frame.endStream)
+            shouldForward = processHeaders(frame.headers, endStream: frame.endStream)
         case .data(let frame):
-            processData(frame.data, endStream: frame.endStream)
+            shouldForward = processData(frame.data, endStream: frame.endStream)
         case .rstStream:
-            failCapture()
+            if streamContext?.value.isWebSocketCaptureClosed != true {
+                failCapture(terminateStream: streamContext?.value.requiresStreamTerminationForViolation == true)
+            }
+            shouldForward = true
         default:
-            break
+            shouldForward = true
         }
-        context.fireChannelRead(data)
+        if shouldForward {
+            context.fireChannelRead(data)
+        } else {
+            context.close(promise: nil)
+        }
     }
 
     func channelInactive(context: ChannelHandlerContext) {
-        if phase != .ended, phase != .failed {
-            failCapture()
+        if phase != .ended, phase != .failed,
+           streamContext?.value.isWebSocketCaptureClosed != true {
+            failCapture(terminateStream: streamContext?.value.requiresStreamTerminationForViolation == true)
         }
         context.fireChannelInactive()
     }
 
     func errorCaught(context: ChannelHandlerContext, error: Error) {
-        failCapture()
+        if isResponseEndWindowUpdateError(error) || isPostResponseEndCancellation(error) {
+            return
+        }
+        if streamContext?.value.isWebSocketCaptureClosed != true {
+            failCapture(terminateStream: streamContext?.value.requiresStreamTerminationForViolation == true)
+        }
         context.fireErrorCaught(error)
     }
 
-    private func processHeaders(_ headers: HPACKHeaders, endStream: Bool) {
+    private func processHeaders(_ headers: HPACKHeaders, endStream: Bool) -> Bool {
         switch (direction, phase) {
         case (.request, .awaitingHead):
-            processInitialRequestHeaders(headers, endStream: endStream)
+            return processInitialRequestHeaders(headers, endStream: endStream)
         case (.response, .awaitingHead):
-            processInitialResponseHeaders(headers, endStream: endStream)
+            return processInitialResponseHeaders(headers, endStream: endStream)
         case (_, .body):
-            processTrailerHeaders(headers, endStream: endStream)
+            return processTrailerHeaders(headers, endStream: endStream)
         case (_, .ended):
-            failCapture()
+            failCapture(terminateStream: streamContext?.value.requiresStreamTerminationForViolation == true)
+            return streamContext?.value.requiresStreamTerminationForViolation != true
         case (_, .failed):
-            break
+            return streamContext?.value.requiresStreamTerminationForViolation != true
         }
     }
 
-    private func processInitialRequestHeaders(_ headers: HPACKHeaders, endStream: Bool) {
-        guard isValidRequestHead(headers) else { return failCapture() }
+    private func processInitialRequestHeaders(_ headers: HPACKHeaders, endStream: Bool) -> Bool {
+        if let streamContext,
+           streamContext.value.receiveInitialRequest(headers: headers, endStream: endStream) == .streamError {
+            failCapture(terminateStream: true)
+            return false
+        }
+        guard isValidRequestHead(headers) else {
+            failCapture()
+            return true
+        }
         emitRequestHead(headers)
         if endStream {
             emitEnd()
         } else {
             enterBody()
         }
+        return true
     }
 
-    private func processInitialResponseHeaders(_ headers: HPACKHeaders, endStream: Bool) {
-        guard let status = validResponseStatus(headers) else { return failCapture() }
+    private func processInitialResponseHeaders(_ headers: HPACKHeaders, endStream: Bool) -> Bool {
+        guard let status = validResponseStatus(headers) else {
+            let terminateStream = streamContext?.value.requiresStreamTerminationForViolation == true
+            failCapture(terminateStream: terminateStream)
+            return !terminateStream
+        }
+        let disposition = streamContext?.value.receiveResponse(status: status, endStream: endStream)
+        if disposition == .streamError {
+            failCapture(terminateStream: true)
+            return false
+        }
         guard status >= 200 else {
-            guard !endStream else { return failCapture() }
+            guard !endStream else {
+                let terminateStream = streamContext?.value.requiresStreamTerminationForViolation == true
+                failCapture(terminateStream: terminateStream)
+                return !terminateStream
+            }
             emitResponseHead(headers, status: status)
-            return
+            return true
         }
         emitResponseHead(headers, status: status)
+        if disposition == .openWebSocket {
+            streamContext?.value.openWebSocket(responseHeaders: headers)
+        }
         if endStream {
             emitEnd()
         } else {
             enterBody()
         }
+        return true
     }
 
-    private func processTrailerHeaders(_ headers: HPACKHeaders, endStream: Bool) {
-        guard !containsPseudoHeaders(headers), endStream else { return failCapture() }
+    private func processTrailerHeaders(_ headers: HPACKHeaders, endStream: Bool) -> Bool {
+        let terminateStream = streamContext?.value.requiresStreamTerminationForViolation == true
+        guard !terminateStream else {
+            failCapture(terminateStream: true)
+            return false
+        }
+        guard !containsPseudoHeaders(headers), endStream else {
+            failCapture()
+            return true
+        }
         emitTrailers(headers)
+        streamContext?.value.end(streamDirection)
         emitEnd()
+        return true
     }
 
     private func enterBody() {
         phase = .body
     }
 
-    private func processData(_ data: IOData, endStream: Bool) {
+    private func processData(_ data: IOData, endStream: Bool) -> Bool {
         guard phase == .body else {
             if phase != .failed {
-                failCapture()
+                failCapture(terminateStream: streamContext?.value.requiresStreamTerminationForViolation == true)
             }
-            return
+            return streamContext?.value.requiresStreamTerminationForViolation != true
         }
-        captureBody(data)
+        if let streamContext {
+            switch streamContext.value.receiveData(data, direction: streamDirection, endStream: endStream) {
+            case .forwardHTTP:
+                captureBody(data)
+            case .forwardWebSocket:
+                break
+            case .streamError, .awaitFinalResponse, .openWebSocket:
+                failCapture(terminateStream: true)
+                return false
+            }
+        } else {
+            captureBody(data)
+        }
         if endStream {
             emitEnd()
         }
+        return true
     }
 
     private func isValidRequestHead(_ headers: HPACKHeaders) -> Bool {
@@ -191,7 +261,8 @@ final class HTTP2CaptureTapHandler: ChannelInboundHandler {
                     method: headers.first(name: ":method") ?? "",
                     path: headers.first(name: ":path") ?? "",
                     version: .http2,
-                    headers: fields(headers)
+                    headers: fields(headers),
+                    target: target
                 )
             )
         )
@@ -247,10 +318,37 @@ final class HTTP2CaptureTapHandler: ChannelInboundHandler {
         )
     }
 
-    private func failCapture() {
+    private func failCapture(terminateStream: Bool = false) {
         phase = .failed
+        if terminateStream {
+            streamContext?.value.terminate(failed: true)
+        }
         if errorState.claim() {
             sink.receive(.streamError(requestID: requestID, message: Self.errorMessage))
         }
+    }
+
+    private var streamDirection: HTTP2StreamDirection {
+        direction == .request ? .request : .response
+    }
+}
+
+private extension HTTP2CaptureTapHandler {
+    private func isResponseEndWindowUpdateError(_ error: Error) -> Bool {
+        guard direction == .response,
+              streamContext?.value.state == .acceptedWebSocket,
+              let transition = error as? NIOHTTP2Errors.BadStreamStateTransition else {
+            return false
+        }
+        return transition.fromState == .halfClosedRemoteLocalActive
+    }
+
+    private func isPostResponseEndCancellation(_ error: Error) -> Bool {
+        guard direction == .response, phase == .ended,
+              streamContext?.value.isWebSocketCaptureClosed == true,
+              let streamClosed = error as? NIOHTTP2Errors.StreamClosed else {
+            return false
+        }
+        return streamClosed.errorCode == .cancel
     }
 }

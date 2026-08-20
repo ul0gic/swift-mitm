@@ -1,0 +1,118 @@
+{
+  "format": "swiftmitm.proxy-v2-conformance",
+  "schemaVersion": 1,
+  "contractVersion": "1.0.0",
+  "maximumHeaderBytes": 4096,
+  "vectors": [
+    {
+      "id": "tcp4-minimal",
+      "roles": ["emitter", "receiver"],
+      "disposition": "accept",
+      "headerHex": "0d0a0d0a000d0a515549540a2111000cc000020ac6336414303901bb",
+      "source": {"family": "ipv4", "address": "192.0.2.10", "port": 12345},
+      "destination": {"family": "ipv4", "address": "198.51.100.20", "port": 443},
+      "tlvHex": "",
+      "tlvCount": 0,
+      "applicationHex": "160303000401020304"
+    },
+    {
+      "id": "tcp6-minimal",
+      "roles": ["emitter", "receiver"],
+      "disposition": "accept",
+      "headerHex": "0d0a0d0a000d0a515549540a2121002420010db800000000000000000000000120010db80000000000000000000000021f9020fb",
+      "source": {"family": "ipv6", "address": "2001:db8::1", "port": 8080},
+      "destination": {"family": "ipv6", "address": "2001:db8::2", "port": 8443},
+      "tlvHex": "",
+      "tlvCount": 0,
+      "applicationHex": "160303000401020304"
+    },
+    {
+      "id": "tcp4-well-formed-tlv",
+      "roles": ["receiver"],
+      "disposition": "accept",
+      "headerHex": "0d0a0d0a000d0a515549540a21110011c000020ac6336414303901bb0100026832",
+      "source": {"family": "ipv4", "address": "192.0.2.10", "port": 12345},
+      "destination": {"family": "ipv4", "address": "198.51.100.20", "port": 443},
+      "tlvHex": "0100026832",
+      "tlvCount": 1,
+      "applicationHex": "160303000401020304"
+    },
+    {
+      "id": "reject-v1-text",
+      "roles": ["receiver"],
+      "disposition": "reject",
+      "headerHex": "50524f58592054435034203139322e302e322e31203139382e35312e3130302e31203132333435203434330d0a",
+      "reason": "invalid-signature"
+    },
+    {
+      "id": "reject-bad-signature",
+      "roles": ["receiver"],
+      "disposition": "reject",
+      "headerHex": "0d0a0d0b",
+      "reason": "invalid-signature"
+    },
+    {
+      "id": "reject-version-one",
+      "roles": ["receiver"],
+      "disposition": "reject",
+      "headerHex": "0d0a0d0a000d0a515549540a1111000cc000020ac6336414303901bb",
+      "reason": "unsupported-version"
+    },
+    {
+      "id": "reject-local-command",
+      "roles": ["receiver"],
+      "disposition": "reject",
+      "headerHex": "0d0a0d0a000d0a515549540a2011000cc000020ac6336414303901bb",
+      "reason": "unsupported-command"
+    },
+    {
+      "id": "reject-unspecified-family",
+      "roles": ["receiver"],
+      "disposition": "reject",
+      "headerHex": "0d0a0d0a000d0a515549540a2101000cc000020ac6336414303901bb",
+      "reason": "unsupported-address-family"
+    },
+    {
+      "id": "reject-datagram-transport",
+      "roles": ["receiver"],
+      "disposition": "reject",
+      "headerHex": "0d0a0d0a000d0a515549540a2112000cc000020ac6336414303901bb",
+      "reason": "unsupported-transport"
+    },
+    {
+      "id": "reject-short-tcp4-address",
+      "roles": ["receiver"],
+      "disposition": "reject",
+      "headerHex": "0d0a0d0a000d0a515549540a2111000b",
+      "reason": "malformed-address-block"
+    },
+    {
+      "id": "reject-zero-source-port",
+      "roles": ["receiver"],
+      "disposition": "reject",
+      "headerHex": "0d0a0d0a000d0a515549540a2111000cc000020ac6336414000001bb",
+      "reason": "invalid-port"
+    },
+    {
+      "id": "reject-zero-destination-port",
+      "roles": ["receiver"],
+      "disposition": "reject",
+      "headerHex": "0d0a0d0a000d0a515549540a2111000cc000020ac633641430390000",
+      "reason": "invalid-port"
+    },
+    {
+      "id": "reject-malformed-tlv-length",
+      "roles": ["receiver"],
+      "disposition": "reject",
+      "headerHex": "0d0a0d0a000d0a515549540a21110011c000020ac6336414303901bb0100036832",
+      "reason": "malformed-tlv"
+    },
+    {
+      "id": "reject-header-over-4096",
+      "roles": ["receiver"],
+      "disposition": "reject",
+      "headerHex": "0d0a0d0a000d0a515549540a21110ff1",
+      "reason": "header-too-large"
+    }
+  ]
+}

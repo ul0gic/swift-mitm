@@ -108,7 +108,14 @@ final class HTTP1ParserSmugglingTests: XCTestCase {
         for feed in feeds {
             parser.feed(
                 Array(feed.utf8),
-                methodProvider: { methodQueue.isEmpty ? nil : methodQueue.removeFirst() },
+                requestProvider: {
+                    methodQueue.isEmpty
+                        ? nil
+                        : HTTP1RequestMetadata(
+                            method: methodQueue.removeFirst(),
+                            webSocketUpgradeRequested: false
+                        )
+                },
                 emit: { outputs.append($0) }
             )
         }

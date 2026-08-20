@@ -1,14 +1,39 @@
+import NIOConcurrencyHelpers
 import NIOCore
 import NIOTLS
+
+final class ProxyClientPromise<Value: Sendable>: @unchecked Sendable {
+    let futureResult: EventLoopFuture<Value>
+
+    private let lock = NIOLock()
+    private let promise: EventLoopPromise<Value>
+    private var completed = false
+
+    init(eventLoop: EventLoop) {
+        promise = eventLoop.makePromise()
+        futureResult = promise.futureResult
+    }
+
+    func complete(_ result: Result<Value, Error>) {
+        let shouldComplete = lock.withLock {
+            guard !completed else { return false }
+            completed = true
+            return true
+        }
+        if shouldComplete {
+            promise.completeWith(result)
+        }
+    }
+}
 
 final class TLSHandshakeProbe: ChannelInboundHandler {
     typealias InboundIn = NIOAny
 
-    private let promise: EventLoopPromise<String?>
+    private let completion: ProxyClientPromise<String?>
     private var completed = false
 
-    init(promise: EventLoopPromise<String?>) {
-        self.promise = promise
+    init(completion: ProxyClientPromise<String?>) {
+        self.completion = completion
     }
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
@@ -31,7 +56,7 @@ final class TLSHandshakeProbe: ChannelInboundHandler {
     private func complete(_ result: Result<String?, Error>) {
         guard !completed else { return }
         completed = true
-        promise.completeWith(result)
+        completion.complete(result)
     }
 }
 

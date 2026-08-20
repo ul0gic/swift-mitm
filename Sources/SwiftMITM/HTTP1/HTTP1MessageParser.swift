@@ -5,12 +5,18 @@ enum HTTP1ParserMode: Sendable {
     case response
 }
 
+struct HTTP1RequestMetadata {
+    let method: String
+    let webSocketUpgradeRequested: Bool
+}
+
 enum HTTP1ParserOutput: Equatable, Sendable {
     case requestHead(method: String, path: String, headers: [HTTPHeaderField])
     case responseHead(status: Int, headers: [HTTPHeaderField])
     case bodyChunk(byteCount: Int)
     case trailers([HTTPHeaderField])
     case messageComplete
+    case upgradeRequested
     case upgraded
     case failed
 }
@@ -45,7 +51,7 @@ final class HTTP1MessageParser {
 
     func feed<Bytes: RandomAccessCollection>(
         _ bytes: Bytes,
-        methodProvider: () -> String?,
+        requestProvider: () -> HTTP1RequestMetadata?,
         consumeMethod: () -> Void = {},
         emit: (HTTP1ParserOutput) -> Void,
         bodyBytes: (Bytes.SubSequence) -> Void = { _ in },
@@ -65,7 +71,7 @@ final class HTTP1MessageParser {
                     bytes,
                     from: index,
                     end: end,
-                    methodProvider: methodProvider,
+                    requestProvider: requestProvider,
                     consumeMethod: consumeMethod,
                     emit: emit
                 )
@@ -102,7 +108,7 @@ final class HTTP1MessageParser {
         _ bytes: Bytes,
         from start: Int,
         end: Int,
-        methodProvider: () -> String?,
+        requestProvider: () -> HTTP1RequestMetadata?,
         consumeMethod: () -> Void,
         emit: (HTTP1ParserOutput) -> Void
     ) -> Int where Bytes.Element == UInt8, Bytes.Index == Int {
@@ -115,7 +121,11 @@ final class HTTP1MessageParser {
                 return end
             }
             if Self.endsWithDoubleCRLF(headBytes) {
-                parseHead(methodProvider: methodProvider, consumeMethod: consumeMethod, emit: emit)
+                parseHead(
+                    requestProvider: requestProvider,
+                    consumeMethod: consumeMethod,
+                    emit: emit
+                )
                 return index
             }
         }
