@@ -4,6 +4,33 @@ All notable SwiftMITM changes are recorded here. The project follows [Keep a Cha
 
 ## Unreleased
 
+## 2.0.0 - 2026-08-20
+
+### Added
+
+- HTTP/2 WebSocket capture through origin-capability-gated RFC 8441 extended CONNECT, with existing event correlation, bounded frame retention, and isolated stream failures.
+- Trusted PROXY protocol v2 ingress with literal/CIDR peer admission, bounded metadata and classification, transparent TLS HTTP/1.1 and HTTP/2 capture, and cleartext HTTP/1.1/WebSocket capture.
+- Typed target metadata, transparent setup failures, and bounded opaque TCP flow events with per-direction counts, truncation, half-close, and terminal semantics.
+- A versioned language-neutral PROXY v2 conformance corpus and rootless guest-style forwarding integration for guest-agent and host-helper interoperability.
+
+### Changed
+
+- Proxy shutdown now cancels an active initial HTTP/2 SETTINGS wait promptly while retaining the bounded missing-SETTINGS deadline.
+- HTTP/1.1 and HTTP/2 WebSockets now share the same internal capture session without changing the public event cases.
+- Upstream connect, TLS negotiation, and HTTP/2 SETTINGS waits now use finite public timeout policy and cancellable setup ownership.
+- Unknown TCP, ECH ClientHello traffic, and TLS offers without a supported HTTP ALPN now pass through byte-exact opaque forwarding instead of being dropped.
+- Explicit and transparent ClientHello classification now performs bounded incremental work across arbitrary fragmentation without changing replay or routing semantics.
+
+### Fixed
+
+- Rejected HTTP/1.1 WebSocket upgrades no longer switch request capture into tunnel mode before a correlated valid `101`, so subsequent keep-alive HTTP remains structured and no spurious WebSocket events are emitted.
+- Memory-sensitive test gates now fail on RSS sampling errors, and injected TLS-handler installation failures resolve every test handshake promise exactly once.
+
+### Security
+
+- Transparent destination metadata is accepted only from the configured actual peer, and SNI can select TLS identity but never redirect the original destination.
+- Direct `/dev/pf` lookup remains host-helper-owned because the public macOS SDK does not expose a stable PF lookup ABI.
+
 ## 0.1.0 - 2026-08-08
 
 ### Added

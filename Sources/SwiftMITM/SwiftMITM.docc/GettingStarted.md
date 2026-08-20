@@ -1,30 +1,24 @@
 # Getting Started
 
-Create a certificate authority, supply a capture sink, start a loopback proxy, configure an authorized client, and stop the proxy explicitly.
+Create a certificate authority, choose one ingress for one listener, start the proxy, and stop it explicitly.
 
-## Overview
+## Add the package
 
-### Add the package
+SwiftMITM requires Swift 6.0 or newer and macOS 14 or newer.
 
-SwiftMITM requires Swift 6.0 or newer and macOS 14 or newer. Use a tagged release requirement:
+The current supported release is 2.0.0:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/ul0gic/swift-mitm.git", from: "0.1.0")
-],
-targets: [
-    .target(
-        name: "YourTarget",
-        dependencies: [
-            .product(name: "SwiftMITM", package: "swift-mitm")
-        ]
-    )
+    .package(url: "https://github.com/ul0gic/swift-mitm.git", from: "2.0.0")
 ]
 ```
 
-### Create the minimum integration
+Review <doc:CaptureEvents#Migrate-exhaustive-event-handling-for-2.0.0> before adopting transparent ingress or exhaustively switching on ``CaptureEvent``.
 
-The following sink deliberately discards events. It is useful for proving listener, trust, and client configuration before adding a bounded event-consumption path.
+## Start an explicit CONNECT listener
+
+Explicit `CONNECT` is the default and preserves existing proxy-client integrations.
 
 ```swift
 import SwiftMITM
@@ -42,48 +36,47 @@ let proxy = ProxyServer(
 
 let port = try await proxy.start(port: 0)
 print("Configure the authorized client to use 127.0.0.1:\(port)")
-
 try await proxy.stop()
 ```
 
-Persist both `generated.privateKeyPEM` and `generated.certificatePEM` before relying on the authority across launches. Install the root certificate through an explicit, user-controlled host-application workflow, then configure the authorized client to use `127.0.0.1:<port>` as its HTTP proxy. SwiftMITM neither changes system proxy settings nor installs trust.
+Persist `generated.privateKeyPEM` and `generated.certificatePEM` together before relying on the authority across launches. Install the root through an explicit user-controlled application workflow, then configure the authorized client to use the listener as an HTTP proxy. SwiftMITM does not install trust or change proxy settings.
 
-Retain ``ProxyServer`` for the entire interception session. A real application normally starts once, keeps serving while its own session is active, and awaits ``ProxyServer/stop()`` during shutdown.
+## Start a trusted PROXY v2 listener
 
-### Restore an existing authority
-
-Restore the same key and certificate that the application previously persisted:
+Use transparent ingress only when the component that connects to SwiftMITM is known and can be authenticated by its actual peer address. `TrustedPeerPolicy` evaluates the direct TCP peer, not the source address supplied in PROXY metadata. A listener bind address only controls where it listens; it grants no trust.
 
 ```swift
-let authority = try CertificateAuthority(
-    privateKeyPEM: storedPrivateKeyPEM,
-    certificatePEM: storedCertificatePEM
-)
+let trustedPeers = TrustedPeerPolicy.loopback
+if let ingress = TrustedProxyV2Ingress(trustedPeers: trustedPeers) {
+    let proxy = ProxyServer(
+        certificateAuthority: generated.authority,
+        sink: DiscardingSink(),
+        ingress: .trustedProxyV2(ingress),
+        opaqueCaptureByteLimit: 0
+    )
+
+    let port = try await proxy.start(port: 0)
+    try await proxy.stop()
+    _ = port
+}
 ```
 
-Restoration fails with ``CertificateAuthorityRestorationError`` when the material cannot safely issue a valid leaf chain. See <doc:CertificateAuthorityAndTrust> for the validation and ownership contract.
+`TrustedPeerPolicy(addressesAndCIDRs:)` accepts only IP literals and CIDRs. `.loopback` is `127.0.0.0/8` plus `::1/128`. `TrustedProxyV2Ingress` defaults to a 4 KiB PROXY header limit and 5-second deadline, then a 64 KiB classification limit and 1-second deadline. Its failable initializer rejects invalid limits or deadlines.
 
-### Choose configuration deliberately
+Run a second `ProxyServer` instance for a second ingress. Each instance has exactly one listener and selects either `.explicitConnect` or `.trustedProxyV2` for that listener.
 
-| Setting | Default | Guidance |
-| --- | --- | --- |
-| Listener host | `127.0.0.1` | Keep the loopback default unless the host application supplies authentication and network access controls. |
-| Listener port | Required; `0` is allowed | Use `0` when the operating system should select an available port. |
-| `captureBodyLimit` | `0` | `0` captures metadata only. A positive value is an independent per-direction byte limit and never truncates forwarded traffic. |
-| `upstreamPolicy` | Verified system trust | Keep verification enabled. Additional roots augment, rather than replace, system roots. |
-| `egressPolicy` | Internal destinations denied | Opt in only for authorized local-service inspection. |
-| Event-loop group | Package owned | Supply a group only when the application needs to own and reuse its networking runtime. |
-| `targetWindowSize` | `65,535` | Keep the default unless HTTP/2 flow-control tuning is measured and required. |
+## Choose timeouts and capture limits
 
-Origin ALPN is negotiated before client TLS completes. A client offering HTTP/2 and HTTP/1.1 can therefore use an HTTP/1.1-only origin without an HTTP translation layer.
+`ProxyTimeoutPolicy` defaults to 10 seconds for upstream connection setup, 10 seconds for TLS handshake completion, and 5 seconds for initial HTTP/2 SETTINGS. Supply a policy only to narrow or deliberately extend those finite deadlines; zero, negative, and unrepresentable durations are rejected.
 
-### Diagnose initial integration failures
+`captureBodyLimit` defaults to `0`, retaining HTTP metadata without request or response body bytes. `opaqueCaptureByteLimit` also defaults to `0`, retaining opaque metadata and full byte counts without opaque payload bytes. Positive limits are independent in each direction and do not truncate forwarded traffic.
 
-- A client trust error usually means the generated root is not trusted in that client's trust context, the restored authority differs from the installed root, or certificate pinning is active.
-- ``ProxyServerError/nonLoopbackBindRejected(_:)`` means the requested listener is outside loopback without the explicit opt-in.
-- An internal or local origin is denied by default; use `EgressPolicy(allowInternal: true)` only for an authorized environment.
-- Metadata without body bytes is expected when `captureBodyLimit` is `0`.
-- ``ProxyServerError/alreadyRunning`` means the same instance already owns a listener.
-- ``ProxyServerError/eventLoopGroupShutdown`` means a package-owned proxy was stopped and is terminal; construct a new instance.
+## Understand transparent routing
 
-Next, define event handling with <doc:CaptureEvents>, then review <doc:LifecycleAndConcurrency> and <doc:SecurityModel> before shipping.
+The trusted PROXY v2 destination is the physical upstream route. SwiftMITM does not let TLS SNI redirect that route. When SNI is present, it supplies the upstream TLS name and the intercepted leaf identity; when absent, the original destination is used. Clear HTTP/1.1, interceptable TLS HTTP/1.1, interceptable TLS HTTP/2, and supported WebSocket traffic enter structured capture. ECH, unsupported ALPN, and remaining unclassified traffic use opaque TCP forwarding.
+
+## Stop and restart
+
+Retain ``ProxyServer`` for the interception session. `stop()` is idempotent and closes the listener, accepted channels, upstream channels, and bounded setup work before it returns. A proxy with a package-owned event-loop group is terminal after stopping. A proxy using a consumer-supplied group can be started again after stopping; SwiftMITM never shuts down that supplied group.
+
+Next, define event consumption with <doc:CaptureEvents>, then review <doc:LifecycleAndConcurrency> and <doc:SecurityModel> before shipping.

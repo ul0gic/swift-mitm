@@ -2,6 +2,7 @@ import Foundation
 import NIOConcurrencyHelpers
 import NIOCore
 import NIOPosix
+import NIOSSL
 
 public final class ProxyServer: Sendable {
     private enum LifecycleState {
@@ -33,9 +34,12 @@ public final class ProxyServer: Sendable {
     let sink: CaptureEventSink
     let upstreamPolicy: UpstreamPolicy
     let egressPolicy: EgressPolicy
+    let ingress: ProxyIngress
+    let timeoutPolicy: ProxyTimeoutPolicy
     private let allowNonLoopbackBind: Bool
     let targetWindowSize: Int
     let captureBodyLimit: Int
+    let opaqueCaptureByteLimit: Int
     private let lifecycleState: NIOLockedValueBox<LifecycleState>
     let connectionRegistry = ProxyConnectionRegistry()
 
@@ -45,17 +49,23 @@ public final class ProxyServer: Sendable {
         group: EventLoopGroup? = nil,
         upstreamPolicy: UpstreamPolicy = .default,
         egressPolicy: EgressPolicy = .default,
+        ingress: ProxyIngress = .explicitConnect,
+        timeoutPolicy: ProxyTimeoutPolicy = .default,
         allowNonLoopbackBind: Bool = false,
         targetWindowSize: Int = 65535,
-        captureBodyLimit: Int = 0
+        captureBodyLimit: Int = 0,
+        opaqueCaptureByteLimit: Int = 0
     ) {
         self.authority = certificateAuthority
         self.sink = sink
         self.upstreamPolicy = upstreamPolicy
         self.egressPolicy = egressPolicy
+        self.ingress = ingress
+        self.timeoutPolicy = timeoutPolicy
         self.allowNonLoopbackBind = allowNonLoopbackBind
         self.targetWindowSize = targetWindowSize
         self.captureBodyLimit = captureBodyLimit
+        self.opaqueCaptureByteLimit = max(0, opaqueCaptureByteLimit)
         if let group {
             self.group = group
             self.ownsGroup = false
@@ -88,12 +98,16 @@ public final class ProxyServer: Sendable {
         do {
             let runtime = try await ProxyTLSRuntime.make(authority: authority, upstreamPolicy: upstreamPolicy)
             tlsRuntime = runtime
-            let channel = try await ServerBootstrap(group: group)
+            let bootstrap = ServerBootstrap(group: group)
                 .serverChannelOption(ChannelOptions.backlog, value: 256)
                 .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
                 .childChannelInitializer { [self] clientChannel in
                     configureInbound(clientChannel, tlsRuntime: runtime)
                 }
+            if case .trustedProxyV2 = ingress {
+                _ = bootstrap.childChannelOption(ChannelOptions.allowRemoteHalfClosure, value: true)
+            }
+            let channel = try await bootstrap
                 .bind(host: host, port: port)
                 .get()
             lifecycleState.withLockedValue { $0 = .running(channel, runtime) }
@@ -115,7 +129,7 @@ public final class ProxyServer: Sendable {
         guard resources.channel != nil || ownsGroup else { return }
         let connections = connectionRegistry.beginShutdown()
         let listenerError = await closeListener(resources.channel)
-        connections.forEach { $0.close(promise: nil) }
+        forceClose(connections)
         await connectionRegistry.waitForQuiescence()
         connectionRegistry.finishShutdown()
         let tlsRuntimeError = await resources.tlsRuntime?.shutdownGracefully()
@@ -130,20 +144,37 @@ public final class ProxyServer: Sendable {
 
     private func shutDownConnections() async {
         let connections = connectionRegistry.beginShutdown()
-        connections.forEach { $0.close(promise: nil) }
+        forceClose(connections)
         await connectionRegistry.waitForQuiescence()
         connectionRegistry.finishShutdown()
     }
 
-    static func splitAuthority(_ authority: String) -> (host: String, port: Int)? {
-        guard let separator = authority.lastIndex(of: ":") else { return nil }
-        var host = String(authority[authority.startIndex..<separator])
-        let portText = authority[authority.index(after: separator)...]
-        guard let port = Int(portText), (1...65535).contains(port), !host.isEmpty else { return nil }
-        if host.hasPrefix("["), host.hasSuffix("]") {
-            host = String(host.dropFirst().dropLast())
+    private func forceClose(_ channels: [Channel]) {
+        for channel in channels {
+            channel.eventLoop.execute {
+                if let handler = try? channel.pipeline.syncOperations.handler(
+                    type: TransparentConnectionFailureHandler.self
+                ) {
+                    handler.cancel()
+                }
+                if let handler = try? channel.pipeline.syncOperations.handler(type: OpaqueFlowBridgeHandler.self) {
+                    handler.cancel()
+                }
+            }
         }
-        return (host, port)
+        for channel in channels {
+            channel.eventLoop.execute {
+                if let context = try? channel.pipeline.syncOperations.context(handlerType: NIOSSLClientHandler.self) {
+                    context.close(promise: nil)
+                } else if let context = try? channel.pipeline.syncOperations.context(
+                    handlerType: NIOSSLServerHandler.self
+                ) {
+                    context.close(promise: nil)
+                } else {
+                    channel.close(promise: nil)
+                }
+            }
+        }
     }
 
     private static func isLoopbackHost(_ host: String) -> Bool {
@@ -200,7 +231,7 @@ public enum ProxyServerError: Error, Equatable, Sendable {
 }
 
 enum ProxyConnectionError: Error, Equatable, Sendable {
-    case invalidAuthority(String)
     case egressBlocked(String)
     case serverStopping
+    case setupTimedOut
 }

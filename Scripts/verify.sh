@@ -12,15 +12,19 @@ verify_quality() {
 }
 
 verify_tests() {
+    local isolated_test_filter='SwiftMITMTests\.(Phase6OpaqueResourceTests|Phase6TransparentResourceTests|ProductionProxyBackpressureTests|ProxyDiagnosticTests|PublicProxyHTTP2WebSocketBackpressureTests|StreamingBackpressureTests)'
+
     swift test --parallel \
-        --skip 'SwiftMITMTests\.(ProductionProxyBackpressureTests|ProxyDiagnosticTests|StreamingBackpressureTests)'
+        --skip "$isolated_test_filter"
     swift test --skip-build \
-        --filter 'SwiftMITMTests\.(ProductionProxyBackpressureTests|ProxyDiagnosticTests|StreamingBackpressureTests)'
+        --filter "$isolated_test_filter"
 }
 
 verify_distribution() {
+    local release_version="${RELEASE_VERSION:-0.0.0-dev}"
+
     swift build -c release
-    "$repository_root/Scripts/verify-docc.sh"
+    RELEASE_VERSION="$release_version" "$repository_root/Scripts/verify-docc.sh"
 }
 
 case "${1:-all}" in

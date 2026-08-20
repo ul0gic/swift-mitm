@@ -1,5 +1,110 @@
+import Foundation
 import NIOConcurrencyHelpers
 import NIOCore
+
+final class ProxyConnectionSetupToken: Sendable {
+    fileprivate struct ScheduledCancellation: Sendable {
+        let eventLoop: EventLoop
+        let callback: @Sendable () -> Void
+
+        func schedule() {
+            eventLoop.execute(callback)
+        }
+    }
+
+    private enum Phase {
+        case pending
+        case cancelled
+        case completed
+    }
+
+    private struct State {
+        var phase = Phase.pending
+        var cancellations: [ScheduledCancellation] = []
+        var terminalHandler: (@Sendable (UUID) -> Void)?
+    }
+
+    private struct CancellationTransition {
+        let cancelled: Bool
+        let cancellations: [ScheduledCancellation]
+        let terminalHandler: (@Sendable (UUID) -> Void)?
+    }
+
+    private let identifier: UUID
+    private let state: NIOLockedValueBox<State>
+
+    fileprivate init(identifier: UUID, terminalHandler: @escaping @Sendable (UUID) -> Void) {
+        self.identifier = identifier
+        state = NIOLockedValueBox(State(terminalHandler: terminalHandler))
+    }
+
+    var isCancelled: Bool {
+        state.withLockedValue { $0.phase == .cancelled }
+    }
+
+    func onCancellation(on eventLoop: EventLoop, _ callback: @escaping @Sendable () -> Void) {
+        let cancellation = ScheduledCancellation(eventLoop: eventLoop, callback: callback)
+        let scheduleImmediately = state.withLockedValue { state in
+            switch state.phase {
+            case .pending:
+                state.cancellations.append(cancellation)
+                return false
+            case .cancelled:
+                return true
+            case .completed:
+                return false
+            }
+        }
+        if scheduleImmediately {
+            cancellation.schedule()
+        }
+    }
+
+    @discardableResult
+    func complete() -> Bool {
+        let terminalHandler = state.withLockedValue { state -> (@Sendable (UUID) -> Void)? in
+            guard state.phase == .pending else { return nil }
+            state.phase = .completed
+            state.cancellations.removeAll()
+            defer { state.terminalHandler = nil }
+            return state.terminalHandler
+        }
+        guard let terminalHandler else { return false }
+        terminalHandler(identifier)
+        return true
+    }
+
+    @discardableResult
+    func cancel() -> Bool {
+        let transition = cancelTransition()
+        guard transition.cancelled else { return false }
+        transition.terminalHandler?(identifier)
+        transition.cancellations.forEach { $0.schedule() }
+        return true
+    }
+
+    fileprivate func cancelFromRegistry() -> [ScheduledCancellation] {
+        let transition = cancelTransition()
+        return transition.cancelled ? transition.cancellations : []
+    }
+
+    private func cancelTransition() -> CancellationTransition {
+        state.withLockedValue { state in
+            guard state.phase == .pending else {
+                return CancellationTransition(cancelled: false, cancellations: [], terminalHandler: nil)
+            }
+            state.phase = .cancelled
+            let cancellations = state.cancellations
+            state.cancellations.removeAll()
+            defer { state.terminalHandler = nil }
+            return CancellationTransition(
+                cancelled: true,
+                cancellations: cancellations,
+                terminalHandler: state.terminalHandler
+            )
+        }
+    }
+}
 
 final class ProxyConnectionRegistry: Sendable {
     private enum Phase {
@@ -11,12 +116,18 @@ final class ProxyConnectionRegistry: Sendable {
     private struct State {
         var phase = Phase.idle
         var channels: [ObjectIdentifier: Channel] = [:]
-        var inFlightConnections = 0
+        var setupTokens: [UUID: ProxyConnectionSetupToken] = [:]
         var waiters: [CheckedContinuation<Void, Never>] = []
 
         var isQuiescent: Bool {
-            channels.isEmpty && inFlightConnections == 0
+            channels.isEmpty && setupTokens.isEmpty
         }
+    }
+
+    private struct ShutdownResources {
+        let channels: [Channel]
+        let cancellations: [ProxyConnectionSetupToken.ScheduledCancellation]
+        let waiters: [CheckedContinuation<Void, Never>]
     }
 
     private let state = NIOLockedValueBox(State())
@@ -37,7 +148,7 @@ final class ProxyConnectionRegistry: Sendable {
             return state.phase == .accepting
         }
         channel.closeFuture.whenComplete { [self] _ in
-            remove(identifier)
+            removeChannel(identifier)
         }
         if !accepted {
             channel.close(promise: nil)
@@ -45,28 +156,32 @@ final class ProxyConnectionRegistry: Sendable {
         return accepted
     }
 
-    func beginConnection() -> Bool {
+    func beginSetup() -> ProxyConnectionSetupToken? {
         state.withLockedValue { state in
-            guard state.phase == .accepting else { return false }
-            state.inFlightConnections += 1
-            return true
+            guard state.phase == .accepting else { return nil }
+            let identifier = UUID()
+            let token = ProxyConnectionSetupToken(identifier: identifier) { [weak self] identifier in
+                self?.removeSetup(identifier)
+            }
+            state.setupTokens[identifier] = token
+            return token
         }
-    }
-
-    func completeConnection() {
-        let waiters = state.withLockedValue { state -> [CheckedContinuation<Void, Never>] in
-            precondition(state.inFlightConnections > 0)
-            state.inFlightConnections -= 1
-            return drainWaitersIfQuiescent(&state)
-        }
-        waiters.forEach { $0.resume() }
     }
 
     func beginShutdown() -> [Channel] {
-        state.withLockedValue { state in
+        let resources = state.withLockedValue { state -> ShutdownResources in
             state.phase = .shuttingDown
-            return Array(state.channels.values)
+            let cancellations = state.setupTokens.values.flatMap { $0.cancelFromRegistry() }
+            state.setupTokens.removeAll()
+            return ShutdownResources(
+                channels: Array(state.channels.values),
+                cancellations: cancellations,
+                waiters: drainWaitersIfQuiescent(&state)
+            )
         }
+        resources.cancellations.forEach { $0.schedule() }
+        resources.waiters.forEach { $0.resume() }
+        return resources.channels
     }
 
     func waitForQuiescence() async {
@@ -90,9 +205,17 @@ final class ProxyConnectionRegistry: Sendable {
         }
     }
 
-    private func remove(_ identifier: ObjectIdentifier) {
+    private func removeChannel(_ identifier: ObjectIdentifier) {
         let waiters = state.withLockedValue { state -> [CheckedContinuation<Void, Never>] in
             state.channels.removeValue(forKey: identifier)
+            return drainWaitersIfQuiescent(&state)
+        }
+        waiters.forEach { $0.resume() }
+    }
+
+    private func removeSetup(_ identifier: UUID) {
+        let waiters = state.withLockedValue { state -> [CheckedContinuation<Void, Never>] in
+            state.setupTokens.removeValue(forKey: identifier)
             return drainWaitersIfQuiescent(&state)
         }
         waiters.forEach { $0.resume() }

@@ -35,7 +35,12 @@ final class WebSocketFrameDecoder {
         self.captureLimit = max(0, captureLimit)
     }
 
-    func decode<Bytes: Sequence>(_ bytes: Bytes, emit: (Frame) -> Void) where Bytes.Element == UInt8 {
+    var isAtFrameBoundary: Bool {
+        phase == .header && header.isEmpty
+    }
+
+    @discardableResult
+    func decode<Bytes: Sequence>(_ bytes: Bytes, emit: (Frame) -> Void) -> Bool where Bytes.Element == UInt8 {
         for byte in bytes {
             switch phase {
             case .header:
@@ -43,9 +48,10 @@ final class WebSocketFrameDecoder {
             case .payload:
                 consumePayloadByte(byte, emit: emit)
             case .failed:
-                return
+                return false
             }
         }
+        return phase != .failed
     }
 
     private func consumeHeaderByte(_ byte: UInt8, emit: (Frame) -> Void) {

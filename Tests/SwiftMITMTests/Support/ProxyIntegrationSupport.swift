@@ -9,7 +9,8 @@ import NIOTLS
 @testable import SwiftMITM
 
 final class ProxyTestClient {
-    private struct TLSInstallation {
+    struct TLSInstallation {
+        let installed: EventLoopFuture<Void>
         let handshake: EventLoopFuture<String?>
         let multiplexer: EventLoopFuture<NIOHTTP2Handler.StreamMultiplexer?>?
     }
@@ -28,7 +29,7 @@ final class ProxyTestClient {
         let channel = try openTunnel(proxyPort: proxyPort, originHost: originHost, originPort: originPort)
         _ = try startTLS(
             on: channel,
-            serverHostname: originHost,
+            serverHostname: Self.tlsServerHostname(for: originHost),
             mitmCACertificatePEM: mitmCACertificatePEM,
             alpn: alpn
         )
@@ -73,7 +74,7 @@ final class ProxyTestClient {
             completion.advance(to: .tlsHandshake)
             let multiplexer = try startTLS(
                 on: channel,
-                serverHostname: originHost,
+                serverHostname: Self.tlsServerHostname(for: originHost),
                 mitmCACertificatePEM: mitmCACertificatePEM,
                 applicationProtocols: applicationProtocols,
                 expectedALPN: expectedALPN
@@ -114,12 +115,13 @@ final class ProxyTestClient {
         applicationProtocols: [String]
     ) throws -> Channel {
         let channel = try openTunnel(proxyPort: proxyPort, originHost: originHost, originPort: originPort)
-        _ = try installTLS(
+        let installation = try installTLS(
             on: channel,
-            serverHostname: originHost,
+            serverHostname: Self.tlsServerHostname(for: originHost),
             mitmCACertificatePEM: mitmCACertificatePEM,
             applicationProtocols: applicationProtocols
         )
+        try installation.installed.wait()
         return channel
     }
 
@@ -147,7 +149,7 @@ final class ProxyTestClient {
 
     func startTLS(
         on channel: Channel,
-        serverHostname: String,
+        serverHostname: String?,
         mitmCACertificatePEM: String,
         alpn: String
     ) throws -> NIOHTTP2Handler.StreamMultiplexer? {
@@ -162,7 +164,7 @@ final class ProxyTestClient {
 
     private func startTLS(
         on channel: Channel,
-        serverHostname: String,
+        serverHostname: String?,
         mitmCACertificatePEM: String,
         applicationProtocols: [String],
         expectedALPN: String?
@@ -174,15 +176,16 @@ final class ProxyTestClient {
             applicationProtocols: applicationProtocols,
             configuresHTTP2: applicationProtocols.contains("h2")
         )
+        try installation.installed.wait()
         guard try installation.handshake.wait() == expectedALPN else {
             throw ProxyTestError.unexpectedALPN
         }
         return try installation.multiplexer?.wait()
     }
 
-    private func installTLS(
+    func installTLS(
         on channel: Channel,
-        serverHostname: String,
+        serverHostname: String?,
         mitmCACertificatePEM: String,
         applicationProtocols: [String],
         configuresHTTP2: Bool = false
@@ -193,16 +196,16 @@ final class ProxyTestClient {
         let trustRoot = try NIOSSLCertificate(bytes: Array(mitmCACertificatePEM.utf8), format: .pem)
         tls.trustRoots = .certificates([trustRoot])
         let sslContext = try NIOSSLContext(configuration: tls)
-        let handshake = channel.eventLoop.makePromise(of: String?.self)
+        let handshake = ProxyClientPromise<String?>(eventLoop: channel.eventLoop)
         let multiplexer = configuresHTTP2
-            ? channel.eventLoop.makePromise(of: NIOHTTP2Handler.StreamMultiplexer?.self)
+            ? ProxyClientPromise<NIOHTTP2Handler.StreamMultiplexer?>(eventLoop: channel.eventLoop)
             : nil
         let installFuture = channel.eventLoop.submit {
             try channel.pipeline.syncOperations.addHandler(
                 NIOSSLClientHandler(context: sslContext, serverHostname: serverHostname),
                 position: .first
             )
-            try channel.pipeline.syncOperations.addHandler(TLSHandshakeProbe(promise: handshake))
+            try channel.pipeline.syncOperations.addHandler(TLSHandshakeProbe(completion: handshake))
         }
         .flatMap {
             guard let multiplexer else {
@@ -214,18 +217,29 @@ final class ProxyTestClient {
                     connectionConfiguration: .init(),
                     streamConfiguration: .init()
                 ) { $0.close() }
-                configured.map(Optional.some).cascade(to: multiplexer)
+                configured.map(Optional.some).whenComplete { multiplexer.complete($0) }
                 return configured.map { _ in () }
             } http1ChannelConfigurator: { channel in
-                multiplexer.succeed(nil)
+                multiplexer.complete(.success(nil))
                 return channel.eventLoop.makeSucceededVoidFuture()
             }
         }
-        try installFuture.wait()
+        let completedInstallation = installFuture.flatMapError { error in
+            handshake.complete(.failure(error))
+            multiplexer?.complete(.failure(error))
+            return channel.close()
+                .flatMap { channel.eventLoop.makeFailedFuture(error) }
+                .flatMapError { _ in channel.eventLoop.makeFailedFuture(error) }
+        }
         return TLSInstallation(
+            installed: completedInstallation,
             handshake: handshake.futureResult,
             multiplexer: multiplexer?.futureResult
         )
+    }
+
+    static func tlsServerHostname(for target: String) -> String? {
+        (try? SocketAddress(ipAddress: target, port: 0)) == nil ? target : nil
     }
 
     private func sendHTTP2Request(

@@ -33,6 +33,43 @@ final class CountingSink: CaptureEventSink, @unchecked Sendable {
     var capturedErrors: Int { lock.withLock { errors } }
 }
 
+private final class StreamingRSSSampler: @unchecked Sendable {
+    private let peak: NIOLockedValueBox<UInt64>
+    private let stopRequested = NIOLockedValueBox(false)
+    private let samplingError = NIOLockedValueBox<MachMemoryError?>(nil)
+    private let finished = DispatchGroup()
+
+    init(baseline: UInt64) {
+        peak = NIOLockedValueBox(baseline)
+        finished.enter()
+    }
+
+    func start() {
+        Thread {
+            defer { self.finished.leave() }
+            while !self.stopRequested.withLockedValue({ $0 }) {
+                switch MachMemory.residentBytesResult() {
+                case .success(let current):
+                    self.peak.withLockedValue { $0 = max($0, current) }
+                case .failure(let error):
+                    self.samplingError.withLockedValue { $0 = error }
+                    self.stopRequested.withLockedValue { $0 = true }
+                }
+                usleep(5000)
+            }
+        }.start()
+    }
+
+    func stop() throws -> UInt64 {
+        stopRequested.withLockedValue { $0 = true }
+        finished.wait()
+        if let error = samplingError.withLockedValue({ $0 }) {
+            throw error
+        }
+        return peak.withLockedValue { $0 }
+    }
+}
+
 final class StreamingBackpressureTests: XCTestCase {
     func testBackpressureBoundsMemoryWhileStalledThenDeliversInFull() throws {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
@@ -65,17 +102,17 @@ final class StreamingBackpressureTests: XCTestCase {
         )
 
         Thread.sleep(forTimeInterval: 0.3)
-        let baseline = MachMemory.residentBytes()
+        let baseline = try MachMemory.residentBytes()
         var peak = baseline
         let deadline = Date().addingTimeInterval(1.5)
         while Date() < deadline {
-            peak = max(peak, MachMemory.residentBytes())
+            peak = max(peak, try MachMemory.residentBytes())
             Thread.sleep(forTimeInterval: 0.02)
         }
-        let stalledDelta = Int64(peak) - Int64(baseline)
+        let stalledDelta = MachMemory.growth(from: baseline, to: peak)
         XCTAssertLessThan(
             stalledDelta,
-            Int64(32 * 1024 * 1024),
+            UInt64(32 * 1024 * 1024),
             "RSS grew \(stalledDelta) bytes while the consumer was stalled on a \(bodySize)-byte body — "
                 + "backpressure is not holding across the two proxy legs"
         )
@@ -108,17 +145,10 @@ final class StreamingBackpressureTests: XCTestCase {
         defer { try? proxyChannel.close().wait() }
         let proxyPort = try XCTUnwrap(proxyChannel.localAddress?.port)
 
-        let baseline = MachMemory.residentBytes()
-        let peakBox = NIOLockedValueBox<UInt64>(baseline)
-        let stopBox = NIOLockedValueBox(false)
-        let sampler = Thread {
-            while !stopBox.withLockedValue({ $0 }) {
-                let current = MachMemory.residentBytes()
-                peakBox.withLockedValue { $0 = max($0, current) }
-                usleep(5000)
-            }
-        }
+        let baseline = try MachMemory.residentBytes()
+        let sampler = StreamingRSSSampler(baseline: baseline)
         sampler.start()
+        defer { _ = try? sampler.stop() }
 
         let client = TestHTTP2Client(group: group)
         defer { client.shutdown() }
@@ -127,9 +157,7 @@ final class StreamingBackpressureTests: XCTestCase {
         try client.connectAndRequest(host: "127.0.0.1", port: proxyPort, authority: authority)
         let received = try client.completion.wait()
         let elapsed = Date().timeIntervalSince(start)
-        stopBox.withLockedValue { $0 = true }
-
-        let peakDelta = Int64(peakBox.withLockedValue { $0 }) - Int64(baseline)
+        let peakDelta = MachMemory.growth(from: baseline, to: try sampler.stop())
         let throughputMBps = Double(bodySize) / 1_000_000 / elapsed
         let measurement =
             "STREAMING-MEASURE full-speed: body=\(bodySize / (1024 * 1024))MiB "
@@ -141,7 +169,7 @@ final class StreamingBackpressureTests: XCTestCase {
         XCTAssertEqual(received, bodySize)
         XCTAssertLessThan(
             peakDelta,
-            Int64(96 * 1024 * 1024),
+            UInt64(96 * 1024 * 1024),
             "peak RSS delta \(peakDelta) too high for a streamed \(bodySize)-byte body"
         )
     }

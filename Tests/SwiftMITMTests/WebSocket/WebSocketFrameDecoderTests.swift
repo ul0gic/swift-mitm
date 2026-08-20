@@ -148,6 +148,15 @@ final class WebSocketFrameDecoderTests: XCTestCase {
         XCTAssertEqual(decode([[0x91, 0x00]]).count, 0)
     }
 
+    func testDecodeReportsTerminalFailureAndRemainsFailed() {
+        let decoder = WebSocketFrameDecoder(captureLimit: 16)
+        var frames: [WebSocketFrameDecoder.Frame] = []
+
+        XCTAssertFalse(decoder.decode([0x83, 0x00]) { frames.append($0) })
+        XCTAssertFalse(decoder.decode([0x81, 0x00]) { frames.append($0) })
+        XCTAssertTrue(frames.isEmpty)
+    }
+
     func testControlFrameWithRSV1IsRejected() {
         XCTAssertEqual(decode([[0xC9, 0x00]]).count, 0)
     }
@@ -178,7 +187,9 @@ final class WebSocketFrameDecoderTests: XCTestCase {
 
         parser.feed(
             bytes,
-            methodProvider: { "GET" },
+            requestProvider: {
+                HTTP1RequestMetadata(method: "GET", webSocketUpgradeRequested: true)
+            },
             emit: { outputs.append($0) },
             tunnelBytes: { tunnel.append(contentsOf: $0) }
         )

@@ -217,7 +217,9 @@ final class CaptureSinkContractTests: XCTestCase {
             case .requestTrailers: "trailers"
             case .requestEnd: "end"
             case .responseHead, .responseBodyChunk, .responseTrailers, .responseEnd,
-                 .streamError, .webSocketOpen, .webSocketFrame, .webSocketClose: nil
+                 .streamError, .webSocketOpen, .webSocketFrame, .webSocketClose,
+                 .opaqueOpen, .opaqueData, .opaqueDirectionEnd, .opaqueClose,
+                 .opaqueError, .connectionFailure: nil
             }
         }
     }

@@ -1,18 +1,5 @@
 import Foundation
-import NIOConcurrencyHelpers
 import NIOCore
-
-final class WebSocketCloseEmissionState: Sendable {
-    private let emitted = NIOLockedValueBox(false)
-
-    func claim() -> Bool {
-        emitted.withLockedValue { value in
-            guard !value else { return false }
-            value = true
-            return true
-        }
-    }
-}
 
 final class HTTP1CaptureTapHandler: ChannelInboundHandler {
     typealias InboundIn = ByteBuffer
@@ -25,43 +12,56 @@ final class HTTP1CaptureTapHandler: ChannelInboundHandler {
 
     private let direction: Direction
     private let authority: String
+    private let scheme: String
+    private let target: CapturedTarget?
     private let correlator: HTTP1ExchangeCorrelator
     private let sink: CaptureEventSink
     private let parser: HTTP1MessageParser
     private let captureBodyLimit: Int
-    private let closeEmissionState: WebSocketCloseEmissionState
+    private let webSocketSession: WebSocketCaptureSession
     private var currentID: UUID?
+    private var upgradeRequestID: UUID?
+    private var responseUpgradeRequested = false
     private var bodyBuffer: CaptureBodyBuffer
-    private var webSocket: WebSocketFrameDecoder?
-    private var connectionID: UUID?
     private var permessageDeflate = false
 
     init(
         direction: Direction,
         authority: String,
+        scheme: String = "https",
+        target: CapturedTarget? = nil,
         correlator: HTTP1ExchangeCorrelator,
         sink: CaptureEventSink,
         captureBodyLimit: Int = 0,
-        closeEmissionState: WebSocketCloseEmissionState = WebSocketCloseEmissionState()
+        webSocketSession: WebSocketCaptureSession = WebSocketCaptureSession()
     ) {
         self.direction = direction
         self.authority = authority
+        self.scheme = scheme
+        self.target = target
         self.correlator = correlator
         self.sink = sink
         self.captureBodyLimit = captureBodyLimit
-        self.closeEmissionState = closeEmissionState
+        self.webSocketSession = webSocketSession
         self.parser = HTTP1MessageParser(mode: direction == .request ? .request : .response)
         self.bodyBuffer = CaptureBodyBuffer(limit: captureBodyLimit)
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let buffer = unwrapInboundIn(data)
+        enterAcceptedWebSocketIfNeeded()
         parser.feed(
             buffer.readableBytesView,
-            methodProvider: { [self] in
+            requestProvider: { [self] in
                 let exchange = correlator.peek()
                 currentID = exchange?.id
-                return exchange?.method
+                responseUpgradeRequested = exchange?.webSocketUpgradeRequested ?? false
+                return exchange.map {
+                    HTTP1RequestMetadata(
+                        method: $0.method,
+                        webSocketUpgradeRequested: $0.webSocketUpgradeRequested
+                    )
+                }
             },
             consumeMethod: { [self] in _ = correlator.dequeue() },
             emit: { [self] output in handle(output) },
@@ -73,9 +73,7 @@ final class HTTP1CaptureTapHandler: ChannelInboundHandler {
 
     func channelInactive(context: ChannelHandlerContext) {
         parser.finish { [self] output in handle(output) }
-        if webSocket != nil {
-            emitWebSocketClose(code: nil, reason: nil)
-        }
+        webSocketSession.close()
         context.fireChannelInactive()
     }
 
@@ -103,34 +101,47 @@ final class HTTP1CaptureTapHandler: ChannelInboundHandler {
                     : .responseEnd(requestID: id, truncated: truncated)
             )
             currentID = nil
+        case .upgradeRequested:
+            upgradeRequestID = currentID
         case .upgraded:
-            connectionID = currentID
-            webSocket = WebSocketFrameDecoder(captureLimit: captureBodyLimit)
-            if direction == .response, let id = connectionID {
-                sink.receive(.webSocketOpen(connectionID: id, timestamp: Date(), permessageDeflate: permessageDeflate))
-            }
+            handleWebSocketUpgrade()
         case .failed:
             break
         }
+    }
+
+    private func handleWebSocketUpgrade() {
+        guard let id = currentID else { return }
+        webSocketSession.open(
+            id: id,
+            sink: sink,
+            captureLimit: captureBodyLimit,
+            permessageDeflate: permessageDeflate
+        )
     }
 
     private func emitRequestHead(method: String, path: String, headers: [HTTPHeaderField]) {
         let id = UUID()
         currentID = id
         bodyBuffer = CaptureBodyBuffer(limit: captureBodyLimit)
-        correlator.enqueue(id: id, method: method)
+        correlator.enqueue(
+            id: id,
+            method: method,
+            webSocketUpgradeRequested: HTTP1MessageParser.isWebSocketUpgrade(headers)
+        )
         let host = headers.first { $0.name.lowercased() == "host" }?.value ?? authority
         sink.receive(
             .requestHead(
                 CapturedRequestHead(
                     id: id,
                     timestamp: Date(),
-                    scheme: "https",
+                    scheme: scheme,
                     authority: host,
                     method: method,
                     path: path,
                     version: .http11,
-                    headers: headers
+                    headers: headers,
+                    target: target
                 )
             )
         )
@@ -141,6 +152,7 @@ final class HTTP1CaptureTapHandler: ChannelInboundHandler {
         currentID = id
         bodyBuffer = CaptureBodyBuffer(limit: captureBodyLimit)
         permessageDeflate = Self.negotiatesPermessageDeflate(headers)
+        resolveWebSocketUpgrade(status: status, headers: headers, id: id)
         sink.receive(
             .responseHead(
                 CapturedResponseHead(
@@ -154,36 +166,26 @@ final class HTTP1CaptureTapHandler: ChannelInboundHandler {
         )
     }
 
-    private func captureWebSocket<Bytes: Collection>(_ chunk: Bytes) where Bytes.Element == UInt8 {
-        guard let id = connectionID, let decoder = webSocket else { return }
-        let wsDirection: WebSocketDirection = direction == .request ? .clientToServer : .serverToClient
-        decoder.decode(chunk) { [self] frame in
-            sink.receive(
-                .webSocketFrame(
-                    CapturedWebSocketFrame(
-                        connectionID: id,
-                        timestamp: Date(),
-                        direction: wsDirection,
-                        opcode: frame.opcode,
-                        fin: frame.fin,
-                        compressed: frame.compressed,
-                        bytes: frame.bytes,
-                        byteCount: frame.byteCount,
-                        truncated: frame.truncated,
-                        closeCode: frame.closeCode,
-                        closeReason: frame.closeReason
-                    )
-                )
-            )
-            if frame.opcode == .connectionClose {
-                emitWebSocketClose(code: frame.closeCode, reason: frame.closeReason)
-            }
+    private func resolveWebSocketUpgrade(status: Int, headers: [HTTPHeaderField], id: UUID) {
+        guard responseUpgradeRequested, !((100..<200).contains(status) && status != 101) else { return }
+        if status == 101, HTTP1MessageParser.isWebSocketUpgrade(headers) {
+            correlator.acceptWebSocketUpgrade(id: id)
+        } else {
+            sink.receive(.requestEnd(requestID: id, truncated: false))
         }
+        responseUpgradeRequested = false
     }
 
-    private func emitWebSocketClose(code: Int?, reason: String?) {
-        guard let id = connectionID, closeEmissionState.claim() else { return }
-        sink.receive(.webSocketClose(connectionID: id, timestamp: Date(), code: code, reason: reason))
+    private func enterAcceptedWebSocketIfNeeded() {
+        guard direction == .request,
+              let acceptedID = correlator.takeAcceptedWebSocketUpgradeID(),
+              acceptedID == upgradeRequestID else { return }
+        parser.phase = .tunnel
+    }
+
+    private func captureWebSocket<Bytes: Collection>(_ chunk: Bytes) where Bytes.Element == UInt8 {
+        let wsDirection: WebSocketDirection = direction == .request ? .clientToServer : .serverToClient
+        webSocketSession.capture(chunk, direction: wsDirection)
     }
 
     private static func negotiatesPermessageDeflate(_ headers: [HTTPHeaderField]) -> Bool {

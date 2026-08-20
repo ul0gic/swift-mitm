@@ -5,19 +5,42 @@ final class HTTP1ExchangeCorrelator: Sendable {
     struct Exchange: Sendable {
         let id: UUID
         let method: String
+        let webSocketUpgradeRequested: Bool
     }
 
-    private let queue = NIOLockedValueBox<[Exchange]>([])
+    private struct State {
+        var queue: [Exchange] = []
+        var acceptedWebSocketUpgradeID: UUID?
+    }
 
-    func enqueue(id: UUID, method: String) {
-        queue.withLockedValue { $0.append(Exchange(id: id, method: method)) }
+    private let state = NIOLockedValueBox(State())
+
+    func enqueue(id: UUID, method: String, webSocketUpgradeRequested: Bool = false) {
+        state.withLockedValue {
+            $0.queue.append(Exchange(
+                id: id,
+                method: method,
+                webSocketUpgradeRequested: webSocketUpgradeRequested
+            ))
+        }
     }
 
     func peek() -> Exchange? {
-        queue.withLockedValue { $0.first }
+        state.withLockedValue { $0.queue.first }
     }
 
     func dequeue() -> Exchange? {
-        queue.withLockedValue { $0.isEmpty ? nil : $0.removeFirst() }
+        state.withLockedValue { $0.queue.isEmpty ? nil : $0.queue.removeFirst() }
+    }
+
+    func acceptWebSocketUpgrade(id: UUID) {
+        state.withLockedValue { $0.acceptedWebSocketUpgradeID = id }
+    }
+
+    func takeAcceptedWebSocketUpgradeID() -> UUID? {
+        state.withLockedValue { state in
+            defer { state.acceptedWebSocketUpgradeID = nil }
+            return state.acceptedWebSocketUpgradeID
+        }
     }
 }

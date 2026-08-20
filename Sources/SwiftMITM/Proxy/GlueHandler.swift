@@ -4,12 +4,15 @@ final class GlueHandler {
     private var partner: GlueHandler?
     private var context: ChannelHandlerContext?
     private var pendingRead = false
+    private let propagateInputClosed: Bool
 
-    private init() {}
+    private init(propagateInputClosed: Bool) {
+        self.propagateInputClosed = propagateInputClosed
+    }
 
-    static func matchedPair() -> (GlueHandler, GlueHandler) {
-        let first = GlueHandler()
-        let second = GlueHandler()
+    static func matchedPair(propagateInputClosed: Bool = true) -> (GlueHandler, GlueHandler) {
+        let first = GlueHandler(propagateInputClosed: propagateInputClosed)
+        let second = GlueHandler(propagateInputClosed: propagateInputClosed)
         first.partner = second
         second.partner = first
         return (first, second)
@@ -88,8 +91,10 @@ extension GlueHandler: ChannelDuplexHandler {
     }
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
-        if let event = event as? ChannelEvent, case .inputClosed = event {
+        if let event = event as? ChannelEvent, case .inputClosed = event, propagateInputClosed {
             partner?.partnerWriteEOF()
+        } else if let event = event as? ChannelEvent, case .inputClosed = event {
+            return
         } else {
             context.fireUserInboundEventTriggered(event)
         }

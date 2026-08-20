@@ -37,6 +37,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          RELEASE_VERSION: ${{ inputs.tag || github.ref_name }}
         run: |
           Scripts/validate-release-tag.sh "$RELEASE_TAG"
           test "$(git cat-file -t "refs/tags/$RELEASE_TAG")" = tag
@@ -47,9 +48,25 @@ jobs:
           test "$successful_runs" -gt 0
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
+  distribution:
+    name: Validate tagged distribution
+    needs: validate
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.validate.outputs.tag }}
+      - name: Validate release build and documentation
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.tag }}
+        run: Scripts/verify.sh distribution
+
   release:
     name: Create GitHub release
-    needs: validate
+    needs: [validate, distribution]
     runs-on: ubuntu-latest
     permissions:
       contents: write
