@@ -1,6 +1,6 @@
-# SwiftMITM 2.0.0
+# SwiftMITM 0.2.0
 
-SwiftMITM 2.0.0 adds trusted transparent interception, bounded opaque TCP forwarding, and HTTP/2 WebSocket capture to the standalone SwiftPM library for authorized TLS interception on macOS.
+SwiftMITM 0.2.0 adds trusted transparent interception, bounded opaque TCP forwarding, and HTTP/2 WebSocket capture to the standalone SwiftPM library for authorized TLS interception on macOS.
 
 ## Highlights
 
@@ -31,4 +31,4 @@ SwiftMITM 2.0.0 adds trusted transparent interception, bounded opaque TCP forwar
 - Direct `/dev/pf` lookup is not provided. A host helper owns PF rules, privilege, tuple validation, cancellation, cleanup, and normalization into trusted PROXY v2.
 - The embedding application owns authorization, listener access control, proxy and transparent-forwarding configuration, trust installation, sensitive storage, redaction, persistence, and presentation.
 
-See the [README](https://github.com/ul0gic/swift-mitm/blob/2.0.0/README.md) for installation and the [DocC catalog](https://github.com/ul0gic/swift-mitm/blob/2.0.0/Sources/SwiftMITM/SwiftMITM.docc/SwiftMITM.md) for the complete consumer contract.
+See the [README](https://github.com/ul0gic/swift-mitm/blob/0.2.0/README.md) for installation and the [DocC catalog](https://github.com/ul0gic/swift-mitm/blob/0.2.0/Sources/SwiftMITM/SwiftMITM.docc/SwiftMITM.md) for the complete consumer contract.

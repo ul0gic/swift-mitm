@@ -6,15 +6,15 @@ Create a certificate authority, choose one ingress for one listener, start the p
 
 SwiftMITM requires Swift 6.0 or newer and macOS 14 or newer.
 
-The current supported release is 2.0.0:
+The current supported release is 0.2.0:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/ul0gic/swift-mitm.git", from: "2.0.0")
+    .package(url: "https://github.com/ul0gic/swift-mitm.git", from: "0.2.0")
 ]
 ```
 
-Review <doc:CaptureEvents#Migrate-exhaustive-event-handling-for-2.0.0> before adopting transparent ingress or exhaustively switching on ``CaptureEvent``.
+Review <doc:CaptureEvents#Migrate-exhaustive-event-handling-for-0.2.0> before adopting transparent ingress or exhaustively switching on ``CaptureEvent``.
 
 ## Start an explicit CONNECT listener
 

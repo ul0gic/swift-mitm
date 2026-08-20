@@ -6,7 +6,7 @@ The package is the engine only. Your application owns authorization, CA-key pers
 
 ## Status
 
-SwiftMITM 2.0.0 is the current supported release. It retains explicit `CONNECT` as the default and adds trusted transparent ingress; integrations that exhaustively switch over `CaptureEvent` must migrate before adopting it.
+SwiftMITM 0.2.0 is the current supported release. It retains explicit `CONNECT` as the default and adds trusted transparent ingress; integrations that exhaustively switch over `CaptureEvent` must migrate before adopting it.
 
 ## Capabilities
 
@@ -29,7 +29,7 @@ Install the current supported release:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/ul0gic/swift-mitm.git", from: "2.0.0")
+    .package(url: "https://github.com/ul0gic/swift-mitm.git", from: "0.2.0")
 ],
 targets: [
     .target(
@@ -41,7 +41,7 @@ targets: [
 ]
 ```
 
-Complete the [2.0.0 migration](#capture-events-and-200-migration) before adopting transparent ingress or exhaustively switching on `CaptureEvent`.
+Complete the [0.2.0 migration](#capture-events-and-020-migration) before adopting transparent ingress or exhaustively switching on `CaptureEvent`.
 
 In Xcode, use **File → Add Package Dependencies** and enter `https://github.com/ul0gic/swift-mitm.git`.
 
@@ -57,7 +57,7 @@ The [SwiftPM DocC catalog](Sources/SwiftMITM/SwiftMITM.docc/SwiftMITM.md) contai
 
 ## PROXY v2 conformance contract
 
-Language-neutral receiver and forwarder vectors live at [Conformance/ProxyV2/v1.json](Conformance/ProxyV2/v1.json). The 2.0.0 release artifact has SHA-256 `d9953424cbb63011c25820feca56ca60feb824b1db44dc4f82ef1940588fbf43`.
+Language-neutral receiver and forwarder vectors live at [Conformance/ProxyV2/v1.json](Conformance/ProxyV2/v1.json). The 0.2.0 release artifact has SHA-256 `d9953424cbb63011c25820feca56ca60feb824b1db44dc4f82ef1940588fbf43`.
 
 Guest agents and privileged host helpers must consume that exact release-tagged file and pin and verify its SHA-256 before using it for interoperability. SwiftMITM validates the receiver path and proves a local accepting forwarder without root. Each external repository owns its own PROXY v2 encoder implementation, CI, and evidence that it passes the emitter vectors; package CI cannot establish that proof for another repository.
 
@@ -116,11 +116,11 @@ In transparent mode, PROXY v2 supplies the original destination and original-cli
 
 `ProxyTimeoutPolicy` bounds upstream connection setup to 10 seconds, TLS handshakes to 10 seconds, and initial HTTP/2 SETTINGS to 5 seconds by default. Its failable initializer rejects zero, negative, and unrepresentable deadlines. `TrustedProxyV2Ingress` likewise rejects invalid bounds rather than silently widening resource limits.
 
-## Capture events and 2.0.0 migration
+## Capture events and 0.2.0 migration
 
 `CaptureEventSink.receive(_:)` is synchronous. Return quickly: a slow sink stalls the owning event loop and applies backpressure. The same `Sendable` sink can be called concurrently by independent connections and HTTP/2 streams, so the consumer owns cross-stream synchronization and any bounded asynchronous handoff.
 
-2.0.0 adds `CapturedTarget`, opaque-flow events, and connection-failure events. `CapturedRequestHead.target` is optional so explicit and existing flows remain representable; transparent requests carry physical destination, logical authority, TLS server name when present, ingress provenance, and original-client metadata. Switches that exhaustively handle `CaptureEvent` must add:
+0.2.0 adds `CapturedTarget`, opaque-flow events, and connection-failure events. `CapturedRequestHead.target` is optional so explicit and existing flows remain representable; transparent requests carry physical destination, logical authority, TLS server name when present, ingress provenance, and original-client metadata. Switches that exhaustively handle `CaptureEvent` must add:
 
 - `opaqueOpen`, zero or more `opaqueData`, each direction's `opaqueDirectionEnd`, then exactly one `opaqueClose` on clean completion
 - `opaqueError` instead of a clean close when opaque forwarding fails; no later terminal event follows

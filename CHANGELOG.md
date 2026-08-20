@@ -4,7 +4,7 @@ All notable SwiftMITM changes are recorded here. The project follows [Keep a Cha
 
 ## Unreleased
 
-## 2.0.0 - 2026-08-20
+## 0.2.0 - 2026-08-20
 
 ### Added
 
