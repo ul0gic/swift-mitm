@@ -55,6 +55,6 @@ The HTTP request and response heads retain their normal HTTP/2 events. The reque
 
 Perform only constant-time bounded work in `receive(_:)`. If persistence or analysis is asynchronous, hand off to a consumer-owned queue with an explicit event and retained-byte bound, observable overflow, and a defined shutdown policy. Do not log headers, bodies, cookies, authorization values, WebSocket payloads, or opaque payloads on its drop path.
 
-## Migrate exhaustive event handling for 2.0.0
+## Migrate exhaustive event handling for 0.2.0
 
-2.0.0 is source-breaking for exhaustive `CaptureEvent` switches. Add handling for `opaqueOpen`, `opaqueData`, `opaqueDirectionEnd`, `opaqueClose`, `opaqueError`, and `connectionFailure`. Update any custom serialization or event schema to preserve the new IDs, typed failure reasons, and target metadata. Consumers that construct ``CapturedRequestHead`` can continue using the initializer without `target`; consumers that match it must handle the optional field.
+0.2.0 is source-breaking for exhaustive `CaptureEvent` switches. Add handling for `opaqueOpen`, `opaqueData`, `opaqueDirectionEnd`, `opaqueClose`, `opaqueError`, and `connectionFailure`. Update any custom serialization or event schema to preserve the new IDs, typed failure reasons, and target metadata. Consumers that construct ``CapturedRequestHead`` can continue using the initializer without `target`; consumers that match it must handle the optional field.
