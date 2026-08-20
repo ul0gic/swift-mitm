@@ -124,7 +124,7 @@ final class Phase4PublicLifecycleTests: XCTestCase {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 2)
         let scenario = Phase4OpaqueScenario(
             name: stage.rawValue,
-            clientBytes: [],
+            clientBytes: stage == .opaque ? [0x01, 0x02] : [],
             serverBytes: [],
             serverReplyBytes: [],
             clientClosesOutput: false,
@@ -132,7 +132,9 @@ final class Phase4PublicLifecycleTests: XCTestCase {
             clientClosesAbruptly: false,
             clientStartsStalled: false
         )
-        let peer = Phase4OpaquePeer(group: group, scenario: scenario)
+        let peer: any Phase4LifecycleOrigin = stage == .setup
+            ? Phase4SilentRawOrigin(group: group)
+            : Phase4OpaquePeer(group: group, scenario: scenario)
         let sink = Phase4CaptureSink()
         let deadline = stage == .opaque ? Duration.milliseconds(20) : .seconds(5)
         let proxy = try makeProxy(group: group, sink: sink, classificationDeadline: deadline)
@@ -143,7 +145,7 @@ final class Phase4PublicLifecycleTests: XCTestCase {
             let proxyPort = try await proxy.start(port: 0)
             try client.connect(proxyPort: proxyPort)
             try client.send(stage.bytes(destinationPort: peer.localPort))
-            try await waitForStageBarrier(stage, peer: peer, sink: sink)
+            try await waitForStageBarrier(stage, accepted: peer.accepted, sink: sink)
             let clock = ContinuousClock()
             let started = clock.now
             try await proxy.stop()
@@ -155,14 +157,17 @@ final class Phase4PublicLifecycleTests: XCTestCase {
             peer.stop()
             try await group.shutdownGracefully()
         } catch {
-            await cleanup(proxy: proxy, peer: peer, client: client, group: group)
+            client.stop()
+            try? await proxy.stop()
+            peer.stop()
+            try? await group.shutdownGracefully()
             throw error
         }
     }
 
     private func waitForStageBarrier(
         _ stage: Phase4StopStage,
-        peer: Phase4OpaquePeer,
+        accepted: EventLoopFuture<Void>,
         sink: Phase4CaptureSink
     ) async throws {
         switch stage {
@@ -171,10 +176,11 @@ final class Phase4PublicLifecycleTests: XCTestCase {
         case .classification:
             try sink.waitForClassificationPending()
         case .setup:
-            try await peer.accepted.get()
+            try await accepted.get()
         case .opaque:
-            try await peer.accepted.get()
+            try await accepted.get()
             _ = try sink.wait { $0.opaqueFlows.count == 1 }
+            try sink.waitForOpaqueBridgeReady()
         }
     }
 
@@ -251,6 +257,17 @@ final class Phase4PublicLifecycleTests: XCTestCase {
         try? await group.shutdownGracefully()
     }
 }
+
+private protocol Phase4LifecycleOrigin {
+    var localPort: Int { get }
+    var accepted: EventLoopFuture<Void> { get }
+
+    func start() throws
+    func stop()
+}
+
+extension Phase4OpaquePeer: Phase4LifecycleOrigin {}
+extension Phase4SilentRawOrigin: Phase4LifecycleOrigin {}
 
 private enum Phase4StopStage: String, CaseIterable {
     case partialHeader

@@ -12,7 +12,7 @@ verify_quality() {
 }
 
 verify_tests() {
-    local isolated_test_filter='SwiftMITMTests\.(Phase6OpaqueResourceTests|Phase6TransparentResourceTests|ProductionProxyBackpressureTests|ProxyDiagnosticTests|PublicProxyHTTP2WebSocketBackpressureTests|StreamingBackpressureTests)'
+    local isolated_test_filter='SwiftMITMTests\.(Phase6OpaqueResourceTests|Phase6TransparentResourceTests|ProductionProxyBackpressureTests|ProxyDiagnosticTests|PublicProxyHTTP2WebSocketBackpressureTests|PublicProxyHTTP2WebSocketTests|StreamingBackpressureTests)'
 
     swift test --parallel \
         --skip "$isolated_test_filter"

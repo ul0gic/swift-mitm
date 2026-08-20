@@ -91,6 +91,7 @@ final class Phase4CaptureSink: CaptureEventSink, TransparentIngressStageObserver
     private var storage = Snapshot()
     private var proxyHeaderPendingCount = 0
     private var classificationPendingCount = 0
+    private var opaqueBridgeReadyCount = 0
 
     var snapshot: Snapshot {
         condition.withLock { storage }
@@ -112,6 +113,8 @@ final class Phase4CaptureSink: CaptureEventSink, TransparentIngressStageObserver
                 proxyHeaderPendingCount += 1
             case .classificationPending:
                 classificationPendingCount += 1
+            case .opaqueBridgeReady:
+                opaqueBridgeReadyCount += 1
             }
             condition.broadcast()
         }
@@ -123,6 +126,10 @@ final class Phase4CaptureSink: CaptureEventSink, TransparentIngressStageObserver
 
     func waitForClassificationPending() throws {
         try waitForTransparentIngressStage(.classificationPending)
+    }
+
+    func waitForOpaqueBridgeReady() throws {
+        try waitForTransparentIngressStage(.opaqueBridgeReady)
     }
 
     func wait(
@@ -184,6 +191,8 @@ final class Phase4CaptureSink: CaptureEventSink, TransparentIngressStageObserver
             proxyHeaderPendingCount > 0
         case .classificationPending:
             classificationPendingCount > 0
+        case .opaqueBridgeReady:
+            opaqueBridgeReadyCount > 0
         }
     }
 
