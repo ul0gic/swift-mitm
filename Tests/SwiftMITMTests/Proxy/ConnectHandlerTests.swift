@@ -26,6 +26,35 @@ final class ConnectHandlerTests: XCTestCase {
         XCTAssertEqual(captured.withLockedValue { $0 }, "example.com:443")
     }
 
+    func testEncodedConnectSuccessHasNoHTTPBodyFraming() throws {
+        let channel = EmbeddedChannel()
+        var encoderConfiguration = HTTPResponseEncoder.Configuration()
+        encoderConfiguration.automaticallySetFramingHeaders = false
+        try channel.pipeline.syncOperations.addHandlers([
+            HTTPResponseEncoder(configuration: encoderConfiguration),
+            ByteToMessageHandler(HTTPRequestDecoder(leftOverBytesStrategy: .forwardBytes)),
+            ConnectHandler { _, _ in }
+        ])
+
+        var request = channel.allocator.buffer(capacity: 64)
+        request.writeString("CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n")
+        try channel.writeInbound(request)
+
+        guard case .byteBuffer(let response)? = try channel.readOutbound(as: IOData.self) else {
+            return XCTFail("expected an encoded CONNECT response")
+        }
+        XCTAssertEqual(
+            response.getString(at: response.readerIndex, length: response.readableBytes),
+            "HTTP/1.1 200 Connection Established\r\n\r\n"
+        )
+        guard case .byteBuffer(let end)? = try channel.readOutbound(as: IOData.self) else {
+            return XCTFail("expected an empty response end")
+        }
+        XCTAssertEqual(end.readableBytes, 0)
+        XCTAssertNil(try channel.readOutbound(as: IOData.self))
+        XCTAssertNoThrow(try channel.finish())
+    }
+
     func testNonConnectMethodRejected() throws {
         let channel = EmbeddedChannel()
         try channel.pipeline.syncOperations.addHandler(ConnectHandler { _, _ in })

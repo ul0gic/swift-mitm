@@ -4,6 +4,12 @@ All notable SwiftMITM changes are recorded here. The project follows [Keep a Cha
 
 ## Unreleased
 
+## 0.2.1 - 2026-08-21
+
+### Fixed
+
+- Explicit CONNECT responses no longer emit chunked-transfer terminators before downstream TLS, restoring compatibility with Apple TLS clients including WebKit and SecureTransport curl.
+
 ## 0.2.0 - 2026-08-20
 
 ### Added

@@ -6,7 +6,7 @@ The package is the engine only. Your application owns authorization, CA-key pers
 
 ## Status
 
-SwiftMITM 0.2.0 is the current supported release. It retains explicit `CONNECT` as the default and adds trusted transparent ingress; integrations that exhaustively switch over `CaptureEvent` must migrate before adopting it.
+SwiftMITM 0.2.1 is the current supported release. It retains explicit `CONNECT` as the default and adds trusted transparent ingress; integrations that exhaustively switch over `CaptureEvent` must migrate before adopting it.
 
 ## Capabilities
 
@@ -30,7 +30,7 @@ Install the current supported release:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/ul0gic/swift-mitm.git", from: "0.2.0")
+    .package(url: "https://github.com/ul0gic/swift-mitm.git", from: "0.2.1")
 ],
 targets: [
     .target(

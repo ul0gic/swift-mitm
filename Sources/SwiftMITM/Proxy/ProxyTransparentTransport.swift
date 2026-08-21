@@ -28,7 +28,12 @@ extension ProxyServer {
     ) -> EventLoopFuture<Void> {
         channel.eventLoop.makeCompletedFuture {
             let sync = channel.pipeline.syncOperations
-            try sync.addHandler(HTTPResponseEncoder(), name: Self.encoderName)
+            var encoderConfiguration = HTTPResponseEncoder.Configuration()
+            encoderConfiguration.automaticallySetFramingHeaders = false
+            try sync.addHandler(
+                HTTPResponseEncoder(configuration: encoderConfiguration),
+                name: Self.encoderName
+            )
             try sync.addHandler(
                 ByteToMessageHandler(HTTPRequestDecoder(leftOverBytesStrategy: .forwardBytes)),
                 name: Self.decoderName
