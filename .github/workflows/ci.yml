@@ -16,9 +16,57 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  classify:
+    name: Classify changes
+    runs-on: ubuntu-24.04
+    outputs:
+      diff_range: ${{ steps.scope.outputs.diff_range }}
+      docs_only: ${{ steps.scope.outputs.docs_only }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify change scope
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          case "$EVENT_NAME" in
+            pull_request) diff_range="$BASE_SHA...$PR_HEAD_SHA" ;;
+            push) diff_range="$BEFORE_SHA..$HEAD_SHA" ;;
+            *)
+              echo "diff_range=" >> "$GITHUB_OUTPUT"
+              echo "docs_only=false" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+
+          docs_only=true
+          found_change=false
+          while IFS= read -r -d '' path; do
+            found_change=true
+            if [[ "$path" != *.md ]]; then
+              docs_only=false
+            fi
+          done < <(git diff --name-only -z --no-renames "$diff_range")
+
+          if [[ "$found_change" != true ]]; then
+            docs_only=false
+          fi
+
+          echo "diff_range=$diff_range" >> "$GITHUB_OUTPUT"
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+
   verify:
     name: Verify
-    runs-on: macos-26
+    needs: classify
+    runs-on: ${{ needs.classify.outputs.docs_only == 'true' && 'ubuntu-24.04' || 'macos-26' }}
     timeout-minutes: 45
     env:
       SWIFTPM_CACHE_VERSION: v1
@@ -26,12 +74,29 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
+      - name: Run documentation-only gate
+        if: needs.classify.outputs.docs_only == 'true'
+        env:
+          DIFF_RANGE: ${{ needs.classify.outputs.diff_range }}
+        run: |
+          found_change=false
+          while IFS= read -r -d '' path; do
+            found_change=true
+            [[ "$path" == *.md ]]
+            printf '%s\n' "$path"
+          done < <(git diff --name-only -z --no-renames "$DIFF_RANGE")
+          [[ "$found_change" == true ]]
+          git diff --check "$DIFF_RANGE"
       - name: Verify workflow supply-chain policy
+        if: needs.classify.outputs.docs_only != 'true'
         run: Scripts/verify-action-pinning.sh
       - name: Install current lint tooling
+        if: needs.classify.outputs.docs_only != 'true'
         run: brew install swiftlint
       - name: Record toolchain
+        if: needs.classify.outputs.docs_only != 'true'
         id: toolchain
         run: |
           xcodebuild -version
@@ -41,6 +106,7 @@ jobs:
           fingerprint="$({ xcodebuild -version; swift --version; } | shasum -a 256 | awk '{print $1}')"
           echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
       - name: Restore SwiftPM cache
+        if: needs.classify.outputs.docs_only != 'true'
         id: swiftpm-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -58,13 +124,20 @@ jobs:
           restore-keys: |
             swiftpm-${{ env.SWIFTPM_CACHE_VERSION }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('Package.swift') }}-
       - name: Run quality gate
+        if: needs.classify.outputs.docs_only != 'true'
         run: Scripts/verify.sh quality
       - name: Run correctness and concurrency gate
+        if: needs.classify.outputs.docs_only != 'true'
         run: Scripts/verify.sh tests
       - name: Run release-build and documentation gate
+        if: needs.classify.outputs.docs_only != 'true'
         run: Scripts/verify.sh distribution
       - name: Save SwiftPM cache
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.swiftpm-cache.outputs.cache-hit != 'true'
+        if: >-
+          needs.classify.outputs.docs_only != 'true' &&
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          steps.swiftpm-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |

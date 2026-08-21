@@ -1,6 +1,6 @@
 # SwiftMITM
 
-SwiftMITM is an embeddable Swift TLS-interception engine for authorized traffic. It accepts either explicit HTTP `CONNECT` traffic or a separately configured trusted PROXY protocol v2 ingress, forwards with SwiftNIO backpressure, and emits structured HTTP, WebSocket, opaque-flow, and connection-failure events.
+SwiftMITM is an embeddable Swift interception engine for authorized HTTP and TCP traffic. It accepts either explicit HTTP `CONNECT` traffic or a separately configured trusted PROXY protocol v2 ingress, preserves SwiftNIO backpressure, and emits structured HTTP, WebSocket, opaque-flow, and connection-failure events.
 
 The package is the engine only. Your application owns authorization, CA-key persistence and trust, listener access control, guest or host forwarding, capture storage, redaction, and presentation.
 
@@ -10,11 +10,12 @@ SwiftMITM 0.2.0 is the current supported release. It retains explicit `CONNECT` 
 
 ## Capabilities
 
-- Explicit HTTP `CONNECT` interception with consumer-owned CA identities
-- Trusted PROXY v2 transparent ingress with literal-address or CIDR peer admission
-- Transparent TLS HTTP/1.1, HTTP/2, and WebSocket capture, plus clear HTTP/1.1 capture
+- Explicit HTTP `CONNECT` interception and trusted PROXY v2 transparent ingress with literal-address or CIDR peer admission
+- TLS HTTP/1.1 and HTTP/2 capture through either ingress, with consumer-owned CA identities
+- RFC 6455 WebSocket capture over HTTP/1.1 and RFC 8441 extended `CONNECT` capture over HTTP/2 through either ingress
+- Transparent cleartext HTTP/1.1 and RFC 6455 WebSocket capture
 - Bounded opaque TCP forwarding for ECH, unsupported ALPN, and other unclassified traffic
-- Per-direction bounded HTTP, WebSocket, and opaque payload retention without truncating forwarding
+- Bounded HTTP bodies per direction, WebSocket payloads per frame, and opaque payloads per direction without truncating forwarding
 - Verified upstream TLS, loopback binding, and internal-egress denial by default
 - Explicit finite setup deadlines and deterministic proxy lifecycle ownership
 
@@ -106,13 +107,15 @@ if let transparentIngress = TrustedProxyV2Ingress(trustedPeers: policy) {
 }
 ```
 
-`TrustedPeerPolicy(addressesAndCIDRs:)` accepts only non-empty IP literals and CIDRs. Its `.loopback` policy covers `127.0.0.0/8` and `::1/128`. `TrustedProxyV2Ingress` defaults to a 4 KiB header limit with a 5-second header deadline, followed by a 64 KiB application-classification limit with a 1-second deadline. Invalid, oversized, late, or untrusted transparent connections are closed and emit a typed connection-failure event.
+`TrustedPeerPolicy(addressesAndCIDRs:)` accepts only non-empty IP literals and CIDRs. Its `.loopback` policy covers `127.0.0.0/8` and `::1/128`. PROXY metadata defaults to a 4 KiB header limit and a 5-second deadline. Untrusted peers and invalid, oversized, or late PROXY headers are closed and emit a typed connection-failure event.
+
+Application classification has a separate 64 KiB limit and 1-second deadline. ECH, unsupported ALPN, classification timeout, and bounded non-TLS ambiguity fall back to opaque forwarding. A malformed or over-limit TLS ClientHello is closed with a classification-failure event.
 
 One `ProxyServer` chooses one ingress for its single listener. Run separate instances when an application needs explicit `CONNECT` and transparent traffic simultaneously.
 
 ## Routing and protocol selection
 
-In transparent mode, PROXY v2 supplies the original destination and original-client metadata. SwiftMITM routes upstream to that physical destination. A TLS SNI value refines only the upstream TLS name and the intercepted leaf identity; it never redirects the connection. Clear HTTP/1.1, TLS HTTP/1.1, TLS HTTP/2, and their supported WebSocket paths use the structured capture model. ECH, unsupported ALPN, and traffic that cannot be classified within the configured bounds are forwarded as opaque TCP rather than decoded.
+In transparent mode, PROXY v2 supplies the original destination and original-client metadata. SwiftMITM routes upstream to that physical destination. A TLS SNI value refines only the upstream TLS name and the intercepted leaf identity; it never redirects the connection. Clear HTTP/1.1, TLS HTTP/1.1, TLS HTTP/2, RFC 6455, and RFC 8441 use the structured capture model. Opaque fallback preserves traffic without claiming to decode it.
 
 `ProxyTimeoutPolicy` bounds upstream connection setup to 10 seconds, TLS handshakes to 10 seconds, and initial HTTP/2 SETTINGS to 5 seconds by default. Its failable initializer rejects zero, negative, and unrepresentable deadlines. `TrustedProxyV2Ingress` likewise rejects invalid bounds rather than silently widening resource limits.
 
@@ -120,7 +123,7 @@ In transparent mode, PROXY v2 supplies the original destination and original-cli
 
 `CaptureEventSink.receive(_:)` is synchronous. Return quickly: a slow sink stalls the owning event loop and applies backpressure. The same `Sendable` sink can be called concurrently by independent connections and HTTP/2 streams, so the consumer owns cross-stream synchronization and any bounded asynchronous handoff.
 
-0.2.0 adds `CapturedTarget`, opaque-flow events, and connection-failure events. `CapturedRequestHead.target` is optional so explicit and existing flows remain representable; transparent requests carry physical destination, logical authority, TLS server name when present, ingress provenance, and original-client metadata. Switches that exhaustively handle `CaptureEvent` must add:
+0.2.0 adds `CapturedTarget`, opaque-flow events, and connection-failure events. `CapturedRequestHead.target` remains optional for source-compatible value construction. Production requests through both ingress modes populate it with physical destination, logical authority, TLS server name when present, and ingress provenance; trusted transparent requests also include original-client metadata. Switches that exhaustively handle `CaptureEvent` must add:
 
 - `opaqueOpen`, zero or more `opaqueData`, each direction's `opaqueDirectionEnd`, then exactly one `opaqueClose` on clean completion
 - `opaqueError` instead of a clean close when opaque forwarding fails; no later terminal event follows
@@ -136,7 +139,7 @@ Opaque `bytes` contains only retained bytes, while `byteCount` is the complete o
 | Transparent admission | Not enabled | A trusted PROXY v2 policy accepts only its actual peer addresses. |
 | Upstream TLS | Certificate verification enabled | `verifyCertificate: false` removes upstream identity protection. |
 | Egress policy | Internal, loopback, link-local, and unspecified addresses denied | `EgressPolicy(allowInternal: true)` permits local and private services. |
-| Payload retention | Metadata only | Positive HTTP or opaque limits expose retained payload bytes to the sink. |
+| Payload retention | Metadata only | Positive HTTP/WebSocket or opaque limits expose retained payload bytes to the sink. |
 
 `additionalTrustRootsPEM` augments the system trust store. SwiftMITM neither installs CA trust nor configures proxy settings or transparent forwarding rules. Treat CA keys, traffic metadata, headers, and retained payloads as sensitive data.
 
