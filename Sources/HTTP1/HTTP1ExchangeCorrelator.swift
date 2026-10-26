@@ -9,6 +9,7 @@ final class HTTP1ExchangeCorrelator: Sendable {
         var requestEnded: Bool
         var responseEnded = false
         var published: Bool
+        let admissionReservation: ResourceReservation?
     }
 
     private struct State {
@@ -24,9 +25,11 @@ final class HTTP1ExchangeCorrelator: Sendable {
 
     private let state: NIOLockedValueBox<State>
     private let policy: HTTP1CorrelationPolicy
+    private let admission: ResourceAdmissionController?
 
-    init(policy: HTTP1CorrelationPolicy = .default) {
+    init(policy: HTTP1CorrelationPolicy = .default, admission: ResourceAdmissionController? = nil) {
         self.policy = policy
+        self.admission = admission
         state = NIOLockedValueBox(State(queue: Array(repeating: nil, count: policy.maximumPendingExchanges)))
     }
 
@@ -42,13 +45,17 @@ final class HTTP1ExchangeCorrelator: Sendable {
             let bytes = method.utf8.count
             guard !state.failed, state.count < policy.maximumPendingExchanges,
                 bytes <= policy.maximumPendingMethodBytes - state.methodBytes else { return false }
+            let reservation: ResourceReservation?
+            do { reservation = try admission?.acquire(.stream) }
+            catch { return false }
             let index = (state.first + state.count) % state.queue.count
             state.queue[index] = Exchange(
                 id: id,
                 method: method,
                 webSocketUpgradeRequested: webSocketUpgradeRequested,
                 requestEnded: requestEnded,
-                published: published
+                published: published,
+                admissionReservation: reservation
             )
             state.locations[id] = index
             state.count += 1
@@ -85,6 +92,7 @@ final class HTTP1ExchangeCorrelator: Sendable {
                 state.responseIndex = (index + 1) % state.queue.count
             }
             while let exchange = state.queue[state.first], exchange.requestEnded, exchange.responseEnded {
+                exchange.admissionReservation?.release()
                 state.queue[state.first] = nil
                 state.locations.removeValue(forKey: exchange.id)
                 state.first = (state.first + 1) % state.queue.count
@@ -106,8 +114,9 @@ final class HTTP1ExchangeCorrelator: Sendable {
             state.acceptedWebSocketUpgradeID = nil
             return exchanges
         }
-        for exchange in exchanges where exchange.published {
-            sink.receive(.streamError(requestID: exchange.id, message: message))
+        for exchange in exchanges {
+            exchange.admissionReservation?.release()
+            if exchange.published { sink.receive(.streamError(requestID: exchange.id, message: message)) }
         }
     }
 

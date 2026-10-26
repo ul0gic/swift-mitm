@@ -5,6 +5,8 @@ import NIOHTTP1
 struct HTTPForwardConnection: Sendable {
     let channel: Channel
     let target: CapturedTarget
+    var releaseBufferedReads: (@Sendable () -> EventLoopFuture<Void>)?
+    var usesHTTP2Codec = false
 }
 
 struct HTTPForwardTarget: Sendable {
@@ -14,11 +16,24 @@ struct HTTPForwardTarget: Sendable {
     let requestTarget: String
     let scheme: String
 
-    init?(head: HTTPRequestHead) {
+    init?(scheme: String, authority: String, requestTarget: String) {
+        guard ["http", "https"].contains(scheme),
+              let target = ConnectionTarget(explicitConnectAuthority: authority, ingressProvenance: .explicitHTTP),
+              requestTarget.utf8.allSatisfy({ $0 > 0x20 && $0 < 0x7f }),
+              requestTarget.hasPrefix("/") || requestTarget == "*" else { return nil }
+        self.scheme = scheme
+        host = target.connectionHost
+        port = target.port
+        self.authority = target.logicalAuthority
+        self.requestTarget = requestTarget
+    }
+
+    init?(head: HTTPRequestHead, scheme: String = "http") {
         let uri = head.uri
         guard uri.utf8.allSatisfy({ $0 > 0x20 && $0 < 0x7F }),
             !uri.contains("#"), let separator = uri.range(of: "://"),
-            uri[..<separator.lowerBound].lowercased() == "http" else { return nil }
+            ["http", "https"].contains(scheme),
+            uri[..<separator.lowerBound].lowercased() == scheme else { return nil }
         let remainder = uri[separator.upperBound...]
         let authorityEnd = remainder.firstIndex(where: { $0 == "/" || $0 == "?" }) ?? remainder.endIndex
         let rawAuthority = String(remainder[..<authorityEnd])
@@ -30,7 +45,7 @@ struct HTTPForwardTarget: Sendable {
         } else {
             explicitPort = rawAuthority.contains(":")
         }
-        let connectAuthority = explicitPort ? rawAuthority : rawAuthority + ":80"
+        let connectAuthority = explicitPort ? rawAuthority : rawAuthority + (scheme == "https" ? ":443" : ":80")
         guard let target = ConnectionTarget(
             explicitConnectAuthority: connectAuthority,
             ingressProvenance: .explicitHTTP
@@ -38,7 +53,7 @@ struct HTTPForwardTarget: Sendable {
         host = target.connectionHost
         port = target.port
         authority = target.logicalAuthority
-        scheme = "http"
+        self.scheme = scheme
         let suffix = String(remainder[authorityEnd...])
         if suffix.isEmpty {
             requestTarget = head.method == .OPTIONS ? "*" : "/"

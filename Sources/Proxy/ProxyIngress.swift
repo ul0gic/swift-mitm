@@ -3,6 +3,7 @@ import NIOCore
 public enum ProxyIngress: Sendable {
     case explicitConnect
     case explicitHTTP
+    case priorKnowledgeHTTP2(HTTP2PriorKnowledgeIngress)
     case trustedProxyV2(TrustedProxyV2Ingress)
 }
 
@@ -250,5 +251,17 @@ extension Duration {
         let (nanoseconds, additionOverflow) = secondNanoseconds.addingReportingOverflow(attosecondNanoseconds)
         guard !additionOverflow, nanoseconds > 0 else { return nil }
         return .nanoseconds(nanoseconds)
+    }
+}
+
+
+public struct HTTP2PriorKnowledgeIngress: Sendable {
+    public let authority: String
+
+    public init?(authority: String) {
+        guard let target = ConnectionTarget(
+            explicitConnectAuthority: authority, ingressProvenance: .priorKnowledgeHTTP2
+        ) else { return nil }
+        self.authority = target.logicalAuthority
     }
 }

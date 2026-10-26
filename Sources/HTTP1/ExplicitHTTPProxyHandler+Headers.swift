@@ -1,6 +1,18 @@
 import NIOHTTP1
 
 extension ExplicitHTTPProxyHandler {
+    func forwardTarget(for head: HTTPRequestHead) -> HTTPForwardTarget? {
+        guard let fixedDestination else { return HTTPForwardTarget(head: head) }
+        if head.uri.hasPrefix("/") || head.uri == "*" {
+            return HTTPForwardTarget(
+                scheme: fixedDestination.scheme, authority: fixedDestination.authority, requestTarget: head.uri
+            )
+        }
+        guard let absolute = HTTPForwardTarget(head: head, scheme: fixedDestination.scheme),
+              absolute.authority == fixedDestination.authority else { return nil }
+        return absolute
+    }
+
     static func fields(_ headers: HTTPHeaders) -> [HTTPHeaderField] {
         headers.map { HTTPHeaderField(name: $0.name, value: $0.value) }
     }

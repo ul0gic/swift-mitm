@@ -6,6 +6,7 @@ extension ExplicitHTTPProxyHandler {
         guard let forwardTarget = exchange.target else { return }
         exchange.published = true
         correlator.publish(id: exchange.id)
+        guard !externallyCaptured else { return }
         sink.receive(.requestHead(CapturedRequestHead(
             id: exchange.id,
             timestamp: exchange.timestamp,
@@ -20,11 +21,15 @@ extension ExplicitHTTPProxyHandler {
     }
 
     func captureRequest(_ part: HTTPServerRequestPart, exchange: Exchange) {
+        guard !externallyCaptured else { return }
         guard exchange.published else { return }
         switch part {
         case .head:
             break
         case .body(let body):
+            (sink as? ObservationCaptureSink)?.receiveBody(
+                requestID: exchange.id, direction: .request, bytes: body.readableBytesView
+            )
             sink.receive(.requestBodyChunk(
                 requestID: exchange.id,
                 bytes: exchange.requestBody.take(body.readableBytesView),

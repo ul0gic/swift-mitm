@@ -314,8 +314,16 @@ final class HTTP2CaptureTapHandler: ChannelInboundHandler {
         let bytes: [UInt8]
         switch data {
         case .byteBuffer(let buffer):
+            (sink as? ObservationCaptureSink)?.receiveBody(
+                requestID: requestID,
+                direction: direction == .request ? .request : .response,
+                bytes: buffer.readableBytesView
+            )
             bytes = bodyBuffer.take(buffer.readableBytesView)
         case .fileRegion:
+            (sink as? ObservationCaptureSink)?.observation.bodyUnavailable(
+                HTTPBodyObservation(requestID: requestID, direction: direction == .request ? .request : .response)
+            )
             bytes = bodyBuffer.take(EmptyCollection<UInt8>())
         }
         sink.receive(

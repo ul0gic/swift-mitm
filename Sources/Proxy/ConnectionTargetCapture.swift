@@ -13,6 +13,9 @@ extension ConnectionTarget {
         case .explicitHTTP:
             provenance = .explicitHTTP
             originalClient = nil
+        case .priorKnowledgeHTTP2:
+            provenance = .priorKnowledgeHTTP2
+            originalClient = nil
         case .trustedProxyV2(let address):
             provenance = .trustedProxyV2
             originalClient = address.ipAddress.map {

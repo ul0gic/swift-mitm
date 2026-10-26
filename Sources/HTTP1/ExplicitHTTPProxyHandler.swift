@@ -7,35 +7,6 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
     typealias InboundIn = HTTPServerRequestPart
     typealias OutboundOut = HTTPServerResponsePart
 
-    final class Exchange {
-        let id: UUID
-        let head: HTTPRequestHead
-        let target: HTTPForwardTarget?
-        let requestKeepAlive: Bool
-        let timestamp = Date()
-        var pending: [HTTPServerRequestPart] = []
-        var requestBody: CaptureBodyBuffer
-        var responseBody: CaptureBodyBuffer
-        var requestEnded = false
-        var responseStarted = false
-        var responseEnded = false
-        var earlyResponse = false
-        var upgrading = false
-        var permessageDeflate = false
-        var published = false
-        var originKeepAlive: Bool?
-        var responseConnectionTokens: Set<String> = []
-
-        init(id: UUID, head: HTTPRequestHead, target: HTTPForwardTarget?, bodyLimit: Int, requestKeepAlive: Bool) {
-            self.id = id
-            self.head = head
-            self.target = target
-            self.requestKeepAlive = requestKeepAlive
-            requestBody = CaptureBodyBuffer(limit: bodyLimit)
-            responseBody = CaptureBodyBuffer(limit: bodyLimit)
-        }
-    }
-
     let sink: CaptureEventSink
     let captureBodyLimit: Int
     let correlator: HTTP1ExchangeCorrelator
@@ -43,6 +14,15 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
     let connect: @Sendable (HTTPForwardTarget, EventLoop) -> EventLoopFuture<HTTPForwardConnection>
     let onCONNECT: @Sendable (Channel, String) -> Void
     let onResourceLimit: @Sendable () -> Void
+    let controlRuntime: HTTPControlRuntime?
+    let controlEventSink: (any HTTPControlEventSink)?
+    let admission: ResourceAdmissionController?
+    let fixedDestination: HTTPForwardTarget?
+    let typedHTTP2: Bool
+    let externallyCaptured: Bool
+    let suppliedRequestID: UUID?
+    let reusePool: HTTP1ReusePool?
+    let authorizeReuse: @Sendable (HTTPForwardTarget, Channel) -> Bool
     var queue: [Exchange?]
     var first = 0
     var count = 0
@@ -59,25 +39,38 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
     init(
         sink: CaptureEventSink,
         captureBodyLimit: Int,
-        correlationPolicy: HTTP1CorrelationPolicy = .default,
         connectionID: UUID,
         connect: @escaping @Sendable (HTTPForwardTarget, EventLoop) -> EventLoopFuture<HTTPForwardConnection>,
         onCONNECT: @escaping @Sendable (Channel, String) -> Void,
-        onResourceLimit: @escaping @Sendable () -> Void = {}
+        options: HTTPForwardOptions = HTTPForwardOptions()
     ) {
         self.sink = sink
         self.captureBodyLimit = captureBodyLimit
         self.connectionID = connectionID
         self.connect = connect
         self.onCONNECT = onCONNECT
-        self.onResourceLimit = onResourceLimit
-        correlator = HTTP1ExchangeCorrelator(policy: correlationPolicy)
-        queue = Array(repeating: nil, count: correlationPolicy.maximumPendingExchanges)
+        onResourceLimit = options.onResourceLimit
+        controlRuntime = options.controlRuntime
+        controlEventSink = options.controlEventSink
+        admission = options.admission
+        fixedDestination = options.fixedDestination
+        typedHTTP2 = options.typedHTTP2
+        externallyCaptured = options.externallyCaptured
+        suppliedRequestID = options.requestID
+        reusePool = options.reusePool
+        authorizeReuse = options.authorizeReuse
+        correlator = HTTP1ExchangeCorrelator(policy: options.correlationPolicy)
+        queue = Array(repeating: nil, count: options.correlationPolicy.maximumPendingExchanges)
     }
 
     func handlerAdded(context: ChannelHandlerContext) {
         self.context = context
-        context.channel.setOption(ChannelOptions.autoRead, value: false).assumeIsolated().whenComplete { result in
+        let channel = context.channel
+        var ready = channel.setOption(ChannelOptions.autoRead, value: false)
+        if controlRuntime != nil, !typedHTTP2 {
+            ready = ready.flatMap { channel.setOption(ChannelOptions.maxMessagesPerRead, value: 1) }
+        }
+        ready.assumeIsolated().whenComplete { result in
             switch result {
             case .success:
                 context.read()
@@ -101,7 +94,7 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
         let part = unwrapInboundIn(data)
         switch part {
         case .head(let head):
-            guard let isKeepAlive = pendingRequestKeepAlive else {
+            guard let isKeepAlive = typedHTTP2 ? true : pendingRequestKeepAlive else {
                 reject(status: .badRequest, message: "Missing HTTP/1 request parser metadata")
                 return
             }
@@ -113,21 +106,36 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
                 return
             }
             captureRequest(part, exchange: exchange)
+            if retainControlledRequest(part, exchange: exchange) { return }
             forward(part, for: exchange)
-        case .end:
-            guard let exchange = receiving else {
-                reject(status: .badRequest, message: "Unexpected HTTP/1 request end")
+        case .end(let trailers):
+            receiveRequestEnd(trailers)
+        }
+    }
+
+    func receiveRequestEnd(_ trailers: HTTPHeaders?) {
+        guard let exchange = receiving else {
+            reject(status: .badRequest, message: "Unexpected HTTP/1 request end")
+            return
+        }
+        exchange.requestEnded = true
+        exchange.requestControlTrailers = trailers
+        captureRequest(.end(trailers), exchange: exchange)
+        correlator.end(id: exchange.id, request: true)
+        receiving = nil
+        if exchange.controlCollectingBody {
+            guard trailers?.isEmpty ?? true else {
+                controlFailed(exchange, error: HTTPControlError.unsupportedEdit)
                 return
             }
-            exchange.requestEnded = true
-            captureRequest(part, exchange: exchange)
-            correlator.end(id: exchange.id, request: true)
-            receiving = nil
-            if exchange.head.method == .CONNECT {
-                if active === exchange { establishCONNECT(exchange) }
-            } else {
-                forward(part, for: exchange)
-            }
+            completeControlledRequest(exchange)
+            return
+        }
+        if !exchange.controlReady { return }
+        if exchange.head.method == .CONNECT {
+            if active === exchange { establishCONNECT(exchange) }
+        } else {
+            forward(.end(trailers), for: exchange)
         }
     }
 
@@ -137,7 +145,8 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
     }
 
     func channelWritabilityChanged(context: ChannelHandlerContext) {
-        if context.channel.isWritable { upstream?.read() }
+        active?.responseFaultWriter?.drain()
+        readOriginIfNeeded()
         context.fireChannelWritabilityChanged()
     }
 
@@ -172,23 +181,9 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
     }
 
     func admit(_ head: HTTPRequestHead, isKeepAlive: Bool) {
-        guard receiving == nil, !Self.ambiguous(head.headers), head.version == .http1_1 else {
-            reject(status: .badRequest, message: "Invalid HTTP/1 request framing")
-            return
-        }
-        let target = HTTPForwardTarget(head: head)
-        if head.method == .CONNECT {
-            guard ConnectionTarget(explicitConnectAuthority: head.uri) != nil,
-                !head.headers.contains(name: "transfer-encoding"),
-                head.headers["content-length"].allSatisfy({ $0 == "0" }) else {
-                reject(status: .badRequest, message: "Invalid CONNECT request")
-                return
-            }
-        } else if target == nil {
-            reject(status: .badRequest, message: "Invalid absolute HTTP request target")
-            return
-        }
-        let id = UUID()
+        let target = forwardTarget(for: head)
+        guard validateAdmission(head, target: target) else { return }
+        let id = suppliedRequestID ?? UUID()
         guard correlator.enqueue(id: id, method: head.method.rawValue, requestEnded: false, published: false) else {
             connectionFailureEmitted = true
             abort(message: "HTTP/1 correlation resource limit exceeded", close: false)
@@ -206,16 +201,52 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
         queue[(first + count) % queue.count] = exchange
         count += 1
         receiving = exchange
+        do {
+            if !typedHTTP2 { exchange.admissionReservation = try admission?.acquire(.stream) }
+        } catch {
+            reject(status: .serviceUnavailable, message: "HTTP stream admission exceeded")
+            return
+        }
+        if !prepareControlledRequest(exchange) { return }
         if active == nil { startNext() }
     }
 
+    func validateAdmission(_ head: HTTPRequestHead, target: HTTPForwardTarget?) -> Bool {
+        guard receiving == nil, !Self.ambiguous(head.headers),
+              head.version == .http1_1 || (typedHTTP2 && head.version.major == 2) else {
+            reject(status: .badRequest, message: "Invalid HTTP/1 request framing")
+            return false
+        }
+        if head.method == .CONNECT {
+            guard ConnectionTarget(explicitConnectAuthority: head.uri) != nil,
+                !head.headers.contains(name: "transfer-encoding"),
+                head.headers["content-length"].allSatisfy({ $0 == "0" }) else {
+                reject(status: .badRequest, message: "Invalid CONNECT request")
+                return false
+            }
+        } else if target == nil {
+            reject(status: .badRequest, message: "Invalid absolute HTTP request target")
+            return false
+        }
+        return true
+    }
+
     func startNext() {
-        guard !stopped, active == nil, let exchange = queue[first], let context else { return }
+        guard !stopped, active == nil, let exchange = queue[first], exchange.controlReady, let context else { return }
         active = exchange
+        if let decision = exchange.syntheticDecision, case .respond(let status, _, let body) = decision.action {
+            guard let headers = decision.syntheticResponseHeaders else {
+                controlFailed(exchange, error: HTTPControlError.invalidHeaders)
+                return
+            }
+            sendControlledResponse(status: status, headers: headers, body: body, exchange: exchange)
+            return
+        }
         guard let target = exchange.target else {
             if exchange.requestEnded { establishCONNECT(exchange) }
             return
         }
+        if takeReusableOrigin(exchange, target: target) { return }
         connect(target, context.eventLoop).hop(to: context.eventLoop).assumeIsolated().whenComplete { result in
             switch result {
             case .failure(let error):
@@ -232,65 +263,4 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
         }
     }
 
-    func configureOrigin(_ connection: HTTPForwardConnection, exchange: Exchange) {
-        guard let target = exchange.target else { return }
-        let channel = connection.channel
-        upstream = channel
-        do {
-            var configuration = BytePreservingHTTPRequestEncoder.Configuration()
-            configuration.automaticallySetFramingHeaders = false
-            try channel.pipeline.syncOperations.addHandlers([
-                BytePreservingHTTPRequestEncoder(configuration: configuration),
-                ByteToMessageHandler(BytePreservingHTTPResponseDecoder(
-                    leftOverBytesStrategy: .forwardBytes,
-                    informationalResponseStrategy: .forward
-                )),
-                HTTPForwardResponseHandler(owner: self)
-            ])
-            captureRequestHead(exchange, target: connection.target)
-            var head = exchange.head
-            head.uri = target.requestTarget
-            head.headers = Self.hopHeaders(head.headers, upgrading: Self.isWebSocket(head.headers))
-            head.headers.replaceOrAdd(name: "host", value: target.authority)
-            Self.frameRequest(&head, original: exchange.head.headers)
-            channel.write(NIOAny(HTTPClientRequestPart.head(head)), promise: nil)
-            let pending = exchange.pending
-            exchange.pending.removeAll()
-            for part in pending {
-                captureRequest(part, exchange: exchange)
-                write(part, exchange: exchange, to: channel)
-            }
-            channel.flush()
-            channel.read()
-            readClientIfNeeded()
-        } catch {
-            reject(status: .badGateway, message: "HTTP/1 origin pipeline failed")
-        }
-    }
-
-    func forward(_ part: HTTPServerRequestPart, for exchange: Exchange) {
-        if active === exchange, let upstream, !exchange.earlyResponse {
-            write(part, exchange: exchange, to: upstream)
-        } else {
-            exchange.pending.append(part)
-        }
-    }
-
-    func write(_ part: HTTPServerRequestPart, exchange: Exchange, to channel: Channel) {
-        switch part {
-        case .head:
-            break
-        case .body(let buffer):
-            channel.writeAndFlush(NIOAny(HTTPClientRequestPart.body(.byteBuffer(buffer))), promise: nil)
-        case .end(let trailers):
-            channel.writeAndFlush(NIOAny(HTTPClientRequestPart.end(trailers.map {
-                Self.hopHeaders(
-                    $0,
-                    upgrading: false,
-                    appendVia: false,
-                    excluding: HTTP1MessageParser.tokens(Self.fields(exchange.head.headers), named: "connection")
-                )
-            })), promise: nil)
-        }
-    }
 }

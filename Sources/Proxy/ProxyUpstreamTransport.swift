@@ -111,9 +111,16 @@ extension ProxyServer {
         setupToken.onCancellation(on: loop) {
             resolver.cancelQueries()
         }
-        return ClientBootstrap(group: loop)
+        let reservation: ResourceReservation?
+        do {
+            reservation = try admission?.acquire(.connection(destination: target.logicalAuthority.lowercased()))
+        } catch {
+            return loop.makeFailedFuture(error)
+        }
+        let connection = ClientBootstrap(group: loop)
             .resolver(resolver)
             .channelInitializer { [self] channel in
+                channel.closeFuture.whenComplete { _ in reservation?.release() }
                 guard connectionRegistry.register(channel) else {
                     return channel.closeFuture.flatMapThrowing { throw ProxyConnectionError.serverStopping }
                 }
@@ -123,6 +130,8 @@ extension ProxyServer {
                 return channel.eventLoop.makeSucceededFuture(())
             }
             .connect(host: target.connectionHost, port: target.port)
+        connection.whenFailure { _ in reservation?.release() }
+        return connection
     }
 
     private func negotiateUpstreamTLS(

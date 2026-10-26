@@ -231,6 +231,11 @@ final class HTTP1CaptureTapHandler: ChannelInboundHandler {
     private func captureBody<Bytes: Collection>(_ chunk: Bytes) where Bytes.Element == UInt8 {
         guard !correlator.isFailed, let id = currentID else { return }
         let fullSize = chunk.count
+        (sink as? ObservationCaptureSink)?.receiveBody(
+            requestID: id,
+            direction: direction == .request ? .request : .response,
+            bytes: chunk
+        )
         let bytes = bodyBuffer.take(chunk)
         sink.receive(
             direction == .request

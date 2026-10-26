@@ -34,6 +34,24 @@ final class WebSocketCaptureSession {
             clientDecoder: WebSocketFrameDecoder(captureLimit: captureLimit),
             serverDecoder: WebSocketFrameDecoder(captureLimit: captureLimit)
         )
+        if let observer = sink as? any WebSocketObservationSink, let session = active {
+            for (direction, decoder) in [
+                (WebSocketDirection.clientToServer, session.clientDecoder),
+                (WebSocketDirection.serverToClient, session.serverDecoder),
+            ] {
+                decoder.frameStarted = { opcode, fin, compressed, count in
+                    observer.webSocketFrameStarted(
+                        connectionID: id, direction: direction, opcode: opcode,
+                        fin: fin, compressed: compressed, byteCount: count)
+                }
+                decoder.frameBytes = { bytes in
+                    observer.webSocketFrameBytes(connectionID: id, direction: direction, bytes: bytes)
+                }
+                decoder.frameEnded = {
+                    observer.webSocketFrameEnded(connectionID: id, direction: direction)
+                }
+            }
+        }
     }
 
     func open(id: UUID, sink: CaptureEventSink, captureLimit: Int, permessageDeflate: Bool) {

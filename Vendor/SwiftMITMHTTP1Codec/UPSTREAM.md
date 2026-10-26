@@ -6,6 +6,7 @@ The source comes from these files at [the pinned upstream revision](https://gith
 
 ## Deliberate differences
 
+- `isAtMessageBoundary` exposes an idle, non-upgraded, error-free parser boundary only outside an active decode call; optional HTTP1 reuse checks this after the decode turn to reject partially parsed unsolicited responses. It does not establish socket idleness or replace peer/framing checks.
 - Distinct `BytePreservingHTTPDecoder`, request/response aliases and encoder classes avoid shadowing official NIO codecs.
 - Received field values and trailers map each byte to its equal-valued Unicode scalar; encoding applies the inverse mapping.
 - Outbound head/trailer validation rejects invalid names, prohibited controls and scalars above U+00FF before emitting that write or changing encoder state.

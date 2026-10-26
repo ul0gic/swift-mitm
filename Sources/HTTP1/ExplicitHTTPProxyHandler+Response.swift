@@ -5,32 +5,50 @@ import NIOHTTP1
 extension ExplicitHTTPProxyHandler {
     func receive(_ part: HTTPClientResponsePart) {
         guard !stopped, let exchange = active, let context else { return }
+        guard !exchange.responseEnded else {
+            exchange.reusePoisoned = true
+            upstream?.close(promise: nil)
+            return
+        }
         switch part {
         case .head(let head):
-            guard let isKeepAlive = pendingResponseKeepAlive else {
+            guard let isKeepAlive = exchange.upstreamHTTP2 ? true : pendingResponseKeepAlive else {
                 originFailed()
                 return
             }
             pendingResponseKeepAlive = nil
             receiveHead(head, exchange: exchange, context: context, isKeepAlive: isKeepAlive)
         case .body(let body):
+            if !externallyCaptured {
+            (sink as? ObservationCaptureSink)?.receiveBody(
+                requestID: exchange.id, direction: .response, bytes: body.readableBytesView
+            )
             sink.receive(.responseBodyChunk(
                 requestID: exchange.id,
                 bytes: exchange.responseBody.take(body.readableBytesView),
                 byteCount: body.readableBytes
             ))
-            context.writeAndFlush(wrapOutboundOut(.body(.byteBuffer(body))), promise: nil)
+            }
+            if retainControlledResponse(body, exchange: exchange) { return }
+            if let writer = exchange.responseFaultWriter {
+                do { try writer.enqueue(body) }
+                catch { controlFailed(exchange, error: error) }
+            } else { writeResponseBody(body, exchange: exchange, context: context) }
         case .end(let trailers):
+            if exchange.responseControlHead != nil {
+                completeControlledResponse(trailers, exchange: exchange)
+                return
+            }
             receiveEnd(trailers, exchange: exchange, context: context)
         }
     }
 
     func receiveEnd(_ trailers: HTTPHeaders?, exchange: Exchange, context: ChannelHandlerContext) {
         exchange.responseEnded = true
-        if let trailers, !trailers.isEmpty {
+        if !externallyCaptured, let trailers, !trailers.isEmpty {
             sink.receive(.responseTrailers(requestID: exchange.id, headers: Self.fields(trailers)))
         }
-        sink.receive(.responseEnd(requestID: exchange.id, truncated: exchange.responseBody.truncated))
+        if !externallyCaptured { sink.receive(.responseEnd(requestID: exchange.id, truncated: exchange.responseBody.truncated)) }
         correlator.end(id: exchange.id, request: false)
         if exchange.originKeepAlive == false, !exchange.upgrading {
             let origin = upstream
@@ -40,7 +58,14 @@ extension ExplicitHTTPProxyHandler {
         let end = HTTPServerResponsePart.end(trailers.map {
             Self.hopHeaders($0, upgrading: false, appendVia: false, excluding: exchange.responseConnectionTokens)
         })
-        context.writeAndFlush(wrapOutboundOut(end)).assumeIsolated().whenComplete { result in
+        let complete = {
+            if exchange.controlSnapshot != nil {
+                if case .end(let fields) = end, let fields, !fields.isEmpty {
+                    (self.sink as? ObservationCaptureSink)?.receiveEffective(.responseTrailers(requestID: exchange.id, headers: Self.fields(fields)))
+                }
+                (self.sink as? ObservationCaptureSink)?.receiveEffective(.responseEnd(requestID: exchange.id, truncated: false))
+            }
+            context.writeAndFlush(self.wrapOutboundOut(end)).assumeIsolated().whenComplete { result in
             switch result {
             case .success:
                 if exchange.upgrading {
@@ -51,7 +76,10 @@ extension ExplicitHTTPProxyHandler {
             case .failure:
                 self.abort(message: "HTTP/1 response write failed")
             }
+            }
         }
+        if let writer = exchange.responseFaultWriter { writer.finish(complete) }
+        else { complete() }
     }
 
     func receiveHead(
@@ -71,6 +99,9 @@ extension ExplicitHTTPProxyHandler {
             return
         }
         if !informational {
+            exchange.reusableFraming = exchange.head.method == .HEAD || !receivedHead.status.mayHaveResponseBody
+                || receivedHead.headers.contains(name: "content-length")
+                || HTTP1MessageParser.tokens(Self.fields(receivedHead.headers), named: "transfer-encoding").contains("chunked")
             exchange.responseStarted = true
             exchange.originKeepAlive = isKeepAlive
             exchange.responseConnectionTokens = HTTP1MessageParser.tokens(
@@ -82,13 +113,14 @@ extension ExplicitHTTPProxyHandler {
                 $0.lowercased().contains("permessage-deflate")
             }
         }
-        sink.receive(.responseHead(CapturedResponseHead(
+        if !externallyCaptured { sink.receive(.responseHead(CapturedResponseHead(
             requestID: exchange.id,
             timestamp: Date(),
             status: Int(receivedHead.status.code),
             version: .http11,
             headers: Self.fields(receivedHead.headers)
-        )))
+        ))) }
+        if prepareControlledResponse(receivedHead, exchange: exchange) { return }
         forwardResponseHead(receivedHead, exchange: exchange, context: context)
     }
 
@@ -108,19 +140,54 @@ extension ExplicitHTTPProxyHandler {
         if !exchange.requestKeepAlive || exchange.earlyResponse {
             head.headers.replaceOrAdd(name: "connection", value: "close")
         }
+        if typedHTTP2 {
+            head.headers.remove(name: "connection")
+            head.headers.remove(name: "transfer-encoding")
+            head.headers = HTTPHeaders(head.headers.map { ($0.name.lowercased(), $0.value) })
+        }
+        if exchange.controlSnapshot != nil {
+            controlEventSink?.receive(.effectiveHead(
+                requestID: exchange.id, phase: .response,
+                headers: Self.fields(head.headers), appliedRuleIDs: exchange.responseControlRuleIDs
+            ))
+            (sink as? ObservationCaptureSink)?.receiveEffective(.responseHead(CapturedResponseHead(
+                requestID: exchange.id, timestamp: Date(), status: Int(head.status.code), version: typedHTTP2 ? .http2 : .http11,
+                headers: Self.fields(head.headers)
+            )))
+        }
         context.writeAndFlush(wrapOutboundOut(.head(head)), promise: nil)
     }
 
     func finish(_ exchange: Exchange) {
         guard !stopped, active === exchange else { return }
+        if typedHTTP2, !exchange.requestEnded {
+            readClientIfNeeded()
+            return
+        }
+        if finishWithReuse(exchange) { return }
+        finishExchange(exchange)
+    }
+
+    func finishExchange(_ exchange: Exchange) {
+        guard !stopped, active === exchange else { return }
         let origin = upstream
+        if let origin { retainControlBytesUntilClosed(origin, exchange: exchange) }
         upstream = nil
         origin?.close(promise: nil)
-        if exchange.earlyResponse || !exchange.requestKeepAlive {
+        if (exchange.earlyResponse && !typedHTTP2) || !exchange.requestKeepAlive {
             abort(message: "HTTP/1 connection ended with unfinished requests")
             return
         }
         queue[first] = nil
+        exchange.controlReservation = nil
+        exchange.responseControlReservation = nil
+        exchange.controlAdmissionReservation = nil
+        exchange.responseControlAdmissionReservation = nil
+        exchange.breakpointEditReservation = nil
+        exchange.breakpointEditAdmissionReservation = nil
+        exchange.requestFaultWriter?.cancel()
+        exchange.responseFaultWriter?.cancel()
+        exchange.admissionReservation?.release()
         first = (first + 1) % queue.count
         count -= 1
         active = nil
@@ -134,17 +201,28 @@ extension ExplicitHTTPProxyHandler {
     }
 
     func readClientIfNeeded() {
-        guard !stopped, let exchange = active, !exchange.requestEnded, !exchange.earlyResponse,
+        if active?.requestFaultWriter?.hasPending == true { return }
+        if let receiving, receiving.controlCollectingBody, !stopped {
+            context?.read()
+            return
+        }
+        guard !stopped, let exchange = active, !exchange.requestEnded, !exchange.earlyResponse || typedHTTP2,
             upstream?.isWritable == true else { return }
         context?.read()
     }
 
     func readOriginIfNeeded() {
+        if active?.responseFaultWriter?.hasPending == true { return }
+        if let active, active.responseControlHead != nil, !active.responseControlCollecting { return }
         guard !stopped, context?.channel.isWritable == true else { return }
         upstream?.read()
     }
 
     func originFailed(channel: Channel? = nil) {
+        if typedHTTP2, active?.responseEnded == true, active?.requestEnded == false {
+            abort(message: "HTTP/2 origin closed before request completion")
+            return
+        }
         guard !stopped, let upstream, active?.responseEnded != true else { return }
         if let channel, upstream !== channel { return }
         if active?.responseStarted == true {
@@ -180,7 +258,26 @@ extension ExplicitHTTPProxyHandler {
             diagnose(reason: .transportFailure, stage: .capture, code: .transportFailure)
         }
         stopped = true
-        correlator.failOutstanding(sink: sink, message: message)
+        reusePool?.close(downstreamID: connectionID)
+        for exchange in queue.compactMap({ $0 }) {
+            if let context { retainControlBytesUntilClosed(context.channel, exchange: exchange) }
+            if active === exchange, let upstream { retainControlBytesUntilClosed(upstream, exchange: exchange) }
+            exchange.controlTask?.cancel()
+            exchange.controlReservation = nil
+            exchange.responseControlReservation = nil
+            exchange.controlAdmissionReservation = nil
+            exchange.responseControlAdmissionReservation = nil
+            exchange.breakpointEditReservation = nil
+            exchange.breakpointEditAdmissionReservation = nil
+            exchange.requestFaultWriter?.cancel()
+            exchange.responseFaultWriter?.cancel()
+            exchange.admissionReservation?.release()
+            if let runtime = controlRuntime {
+                let requestID = exchange.id
+                Task { await runtime.cancel(requestID: requestID) }
+            }
+        }
+        if !externallyCaptured { correlator.failOutstanding(sink: sink, message: message) }
         let origin = upstream
         upstream = nil
         origin?.close(promise: nil)

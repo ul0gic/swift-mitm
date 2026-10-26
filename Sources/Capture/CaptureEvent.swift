@@ -28,6 +28,7 @@ public struct CapturedNetworkEndpoint: Sendable {
 public enum CapturedIngressProvenance: String, Sendable {
     case explicitConnect
     case explicitHTTP
+    case priorKnowledgeHTTP2
     case trustedProxyV2
 }
 

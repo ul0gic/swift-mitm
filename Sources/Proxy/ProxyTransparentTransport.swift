@@ -10,10 +10,16 @@ struct ResolvedRawUpstreamConnection: Sendable {
 
 extension ProxyServer {
     func configureInbound(_ channel: Channel, tlsRuntime: ProxyTLSRuntime) -> EventLoopFuture<Void> {
+        let reservation: ResourceReservation?
+        do { reservation = try admission?.acquire(.connection(destination: nil)) }
+        catch { return channel.close() }
+        channel.closeFuture.whenComplete { _ in reservation?.release() }
         guard connectionRegistry.register(channel) else {
             return channel.closeFuture
         }
         switch ingress {
+        case .priorKnowledgeHTTP2(let configuration):
+            return configurePriorKnowledgeHTTP2(channel, configuration: configuration)
         case .explicitConnect:
             return configureExplicitInbound(channel, tlsRuntime: tlsRuntime)
         case .explicitHTTP:
@@ -286,10 +292,15 @@ extension ProxyServer {
         setupToken suppliedToken: ProxyConnectionSetupToken? = nil,
         allowHalfClosure: Bool = false
     ) -> EventLoopFuture<ResolvedRawUpstreamConnection> {
+        let reservation: ResourceReservation?
+        do { reservation = try admission?.acquire(.connection(destination: target.logicalAuthority.lowercased())) }
+        catch { return loop.makeFailedFuture(error) }
         guard let setupToken = suppliedToken ?? connectionRegistry.beginSetup() else {
+            reservation?.release()
             return loop.makeFailedFuture(ProxyConnectionError.serverStopping)
         }
         if egressPolicy.deniesLiteral(target.connectionHost) {
+            reservation?.release()
             if suppliedToken == nil { setupToken.complete() }
             return loop.makeFailedFuture(ProxyConnectionError.egressBlocked(target.connectionHost))
         }
@@ -304,6 +315,7 @@ extension ProxyServer {
             .channelOption(ChannelOptions.autoRead, value: false)
             .channelOption(ChannelOptions.allowRemoteHalfClosure, value: allowHalfClosure)
             .channelInitializer { channel in
+                channel.closeFuture.whenComplete { _ in reservation?.release() }
                 setupToken.onCancellation(on: channel.eventLoop) { channel.close(promise: nil) }
                 guard !setupToken.isCancelled, registry.register(channel) else {
                     return channel.close().flatMapThrowing { throw ProxyConnectionError.serverStopping }
@@ -311,6 +323,7 @@ extension ProxyServer {
                 return channel.eventLoop.makeSucceededVoidFuture()
             }
             .connect(host: target.connectionHost, port: target.port)
+        connect.whenFailure { _ in reservation?.release() }
         return enforceSetupDeadline(
             connect,
             timeout: timeoutPolicy.upstreamConnectDeadline.nioTimeAmount ?? .seconds(10),

@@ -82,7 +82,26 @@ jobs:
           test "$(cat "$RUNNER_TEMP/consumer/candidate-sha.txt")" = "$GITHUB_SHA"
           tar -xzf "$RUNNER_TEMP/consumer/FirstCapture.tar.gz" -C "$RUNNER_TEMP/consumer"
           test -x "$RUNNER_TEMP/consumer/FirstCapture"
+          tar -xzf "$RUNNER_TEMP/consumer/InterceptionLab.tar.gz" -C "$RUNNER_TEMP/consumer"
+          test -x "$RUNNER_TEMP/consumer/InterceptionLab"
+          echo "SWIFTMITM_INTERCEPTION_LAB=$RUNNER_TEMP/consumer/InterceptionLab" >> "$GITHUB_ENV"
           echo "SWIFTMITM_FIRST_CAPTURE=$RUNNER_TEMP/consumer/FirstCapture" >> "$GITHUB_ENV"
+      - name: Generate independent protobuf descriptors
+        if: matrix.partition == 'behavior'
+        run: |
+          curl --fail --location --output "$RUNNER_TEMP/protoc.zip" \
+            https://github.com/protocolbuffers/protobuf/releases/download/v32.1/protoc-32.1-osx-universal_binary.zip
+          echo "95a1e03847cf7057b2db1b68fb92685c3cd9d14e777a879475663adc13989cd7  $RUNNER_TEMP/protoc.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/protoc.zip" -d "$RUNNER_TEMP/protoc"
+          "$RUNNER_TEMP/protoc/bin/protoc" --version | tee evidence/protoc.txt
+          "$RUNNER_TEMP/protoc/bin/protoc" --proto_path=Tests/Clients/Stage2 \
+            --include_imports --descriptor_set_out="$RUNNER_TEMP/stage2-descriptor.pb" probe.proto
+          "$RUNNER_TEMP/protoc/bin/protoc" --proto_path=Tests/Clients/Stage2 \
+            --include_imports --descriptor_set_out="$RUNNER_TEMP/stage2-renamed-descriptor.pb" probe-renamed.proto
+          python3 Tests/Clients/Stage2/make_compression_vectors.py "$RUNNER_TEMP/stage2-compression"
+          echo "STAGE2_COMPRESSION_VECTORS=$RUNNER_TEMP/stage2-compression" >> "$GITHUB_ENV"
+          echo "STAGE2_DESCRIPTOR_PATH=$RUNNER_TEMP/stage2-descriptor.pb" >> "$GITHUB_ENV"
+          echo "STAGE2_RENAMED_DESCRIPTOR_PATH=$RUNNER_TEMP/stage2-renamed-descriptor.pb" >> "$GITHUB_ENV"
       - name: Build and discover executable tests
         run: |
           swift build --build-tests --force-resolved-versions -Xswiftc -warnings-as-errors
@@ -101,12 +120,15 @@ jobs:
           assert len(tests) == len(set(tests)), 'Duplicate discovered methods'
           resources = {'Phase6OpaqueResourceTests', 'Phase6TransparentResourceTests',
                        'ProductionProxyBackpressureTests', 'PublicProxyHTTP2WebSocketBackpressureTests',
-                       'StreamingBackpressureTests', 'Release022CorrelationResourceTests'}
+                       'StreamingBackpressureTests', 'Release022CorrelationResourceTests',
+                       'Stage2ControlResourceAcceptanceTests', 'Stage2CancellationAcceptanceTests',
+                       'Stage2SharedBudgetAcceptanceTests'}
           compatibility = {'AppleTLSProxyCompatibilityTests', 'Phase4PublicTransparentTLSTests',
                            'ProxyDiagnosticTests', 'PublicProxyHTTP2WebSocketTests',
                            'Release022PublicTrustTests', 'Release022ClientCompatibilityTests',
                            'Release022BrowserCompatibilityTests', 'Release022IndependentGRPCCompatibilityTests',
-                           'Release022ConsumerCompatibilityTests'}
+                           'Release022ConsumerCompatibilityTests', 'Stage2ConsumerCompatibilityTests',
+                           'Stage2PassiveTLSCompatibilityTests', 'Stage2HTTP2FaultCompatibilityTests'}
           required = resources | compatibility | {'Release022PublicHTTP1Tests',
                                                   'Release022PublicHTTP1ForwardingTests',
                                                   'Release022PublicHTTP1OctetTests',
@@ -116,6 +138,47 @@ jobs:
           classes = {test.split('.', 1)[1].split('/', 1)[0] for test in tests}
           assert required <= classes, f'Missing required classes: {sorted(required - classes)}'
           expected = {
+              'Stage2SharedBudgetAcceptanceTests': {
+                  'testSharedInspectionBudgetExhaustionPreservesZeroRetentionForwardingAndReleasesCharges'},
+              'Stage2PassiveTLSCompatibilityTests': {
+                  'testPassiveTLSHTTP1RejectsExcessStreamWithoutEvictingHeldResponse'},
+              'Stage2HTTP2FaultCompatibilityTests': {
+                  'testIndependentHTTP2ThrottlePreservesLargeTerminalResponseSiblingsAndCancellation'},
+              'Stage2CancellationAcceptanceTests': {
+                  'testStopReportsNoncooperativeCallbackUntilItsTaskAndBytesActuallyExit',
+                  'testRestartWithSharedEventLoopRetainsOrphanAccountingAndServesNewTraffic'},
+              'Stage2ProvenanceAcceptanceTests': {
+                  'testSyntheticResponseKeepsEditedRequestAndResponseHeadersInTheirOwnRepresentations'},
+              'Stage2ConsumerCompatibilityTests': {
+                  'testExternalInterceptionLabShowsSixPublicWorkflowsAndDrainsOnStop'},
+              'Stage2CodingAcceptanceTests': {
+                  'testIndependentGzipDeflateAndConcatenatedOuterMembersPreserveDecodedEvents',
+                  'testSSEEventAtLimitAndPlusOneDoesNotTruncateTransport'},
+              'Stage2ControlResourceAcceptanceTests': {
+                  'testBodyReplacementAcceptsLimitAndRejectsLimitPlusOneBeforeEgress',
+                  'testMapRemoteStripsCredentialsAndReauthorizesDeniedDestination',
+                  'testOneHundredEligibleExchangesReuseOnlyTheirDownstreamSession',
+                  'testAdmissionAtConnectionCeilingRejectsNewWorkWithoutEvictingActiveClient',
+                  'testDelayedRequestDoesNotBlockIndependentRequest',
+                  'testTwentyTerminalAndRejectedUpgradeCyclesReleaseInspectionState',
+                  'testReplayUsesControlsAndAcceptsEarlyFinalResponseWithoutRetry',
+                  'testResponseBodyReplacementPreservesTrailersAndOriginalCapture'},
+              'Stage2HTTP2AcceptanceTests': {
+                  'testNativeGRPCUsesPinnedSchemaWhileRegistryRejectsAndReplacesSnapshots',
+                  'testPausedHTTP2StreamDoesNotBlockThirtyOneSiblingsAndCancelsOnce'},
+              'Stage2InspectionAcceptanceTests': {
+                  'testSSEPublishesFragmentedUTF8BeforeEOFWithZeroRawRetention',
+                  'testMalformedCodingEndsObservationWithoutChangingForwardedBody',
+                  'testGRPCWebTextPublishesPaddedSegmentsBeforeTrailerAndEOF',
+                  'testFragmentedDeflateWebSocketMessageDoesNotDependOnFrameRetention',
+                  'testWebSocketContextTakeoverKeepsTheDictionaryAcrossMessages'},
+              'Stage2PriorKnowledgeAcceptanceTests': {
+                  'testConfiguredPriorKnowledgeHTTP2ForwardsGRPCAndRejectsChangedAuthority'},
+              'Stage2WorkflowAcceptanceTests': {
+                  'testHeaderEditChangesOriginWithoutOverwritingOriginalEvidence',
+                  'testBreakpointResumesOnceAndReleasesItsReservation',
+                  'testReplaySendsOneCredentialFreePOSTAndRejectsIncompleteInputBeforeConnect',
+                  'testHARExportRedactsEveryCapturedCredentialLocationAndOmitsBody'},
               'Release022ClientCompatibilityTests': {
                   'testCurlHTTPAndHTTPSWithExplicitTrust',
                   'testURLSessionHTTP11WithExplicitTrustAndProxy',
@@ -303,32 +366,37 @@ jobs:
             grep -Eq 'Swift version 6\.4([ .]|$)' evidence/swift.txt
           fi
           git rev-parse HEAD > evidence/candidate-sha.txt
-          cp -R Examples/FirstCapture "$RUNNER_TEMP/FirstCapture"
-          cp Package.resolved "$RUNNER_TEMP/FirstCapture/Package.resolved"
-          python3 - <<'PY'
+          for example in FirstCapture InterceptionLab; do
+            export EXAMPLE="$example"
+            cp -R "Examples/$example" "$RUNNER_TEMP/$example"
+            cp Package.resolved "$RUNNER_TEMP/$example/Package.resolved"
+            python3 - <<'PY_MANIFEST'
           import os, pathlib
-          manifest = pathlib.Path(os.environ['RUNNER_TEMP']) / 'FirstCapture/Package.swift'
+          manifest = pathlib.Path(os.environ['RUNNER_TEMP']) / os.environ['EXAMPLE'] / 'Package.swift'
           source = manifest.read_text()
           old = '.package(path: "../..")'
           assert source.count(old) == 1, 'Expected the public example local dependency once'
           dependency = f'.package(url: "file://{os.environ["GITHUB_WORKSPACE"]}", revision: "{os.environ["GITHUB_SHA"]}")'
           manifest.write_text(source.replace(old, dependency))
-          PY
-          cd "$RUNNER_TEMP/FirstCapture"
-          swift build -c release -Xswiftc -warnings-as-errors 2>&1 | tee "$GITHUB_WORKSPACE/evidence/build.log"
-          cp Package.resolved "$GITHUB_WORKSPACE/evidence/Package.resolved"
-          python3 - <<'PY'
+          PY_MANIFEST
+            (
+              cd "$RUNNER_TEMP/$example"
+              swift build -c release -Xswiftc -warnings-as-errors 2>&1 | tee "$GITHUB_WORKSPACE/evidence/$example-build.log"
+              cp Package.resolved "$GITHUB_WORKSPACE/evidence/$example-Package.resolved"
+              python3 - <<'PY_PINS'
           import json, os, pathlib
           candidate = pathlib.Path(os.environ['GITHUB_WORKSPACE'])
           original = {pin['identity']: pin['state'] for pin in json.loads((candidate / 'Package.resolved').read_text())['pins']}
           external = {pin['identity']: pin['state'] for pin in json.loads(pathlib.Path('Package.resolved').read_text())['pins']}
           assert external['swift-mitm']['revision'] == os.environ['GITHUB_SHA'], 'Consumer did not resolve the candidate'
           assert all(external.get(name) == state for name, state in original.items()), 'Consumer dependency versions drifted'
-          PY
-          if [[ "$COMPILER" == current ]]; then
-            binary_directory="$(swift build -c release --show-bin-path)"
-            tar -czf "$GITHUB_WORKSPACE/evidence/FirstCapture.tar.gz" -C "$binary_directory" FirstCapture
-          fi
+          PY_PINS
+              if [[ "$COMPILER" == current ]]; then
+                binary_directory="$(swift build -c release --show-bin-path)"
+                tar -czf "$GITHUB_WORKSPACE/evidence/$example.tar.gz" -C "$binary_directory" "$example"
+              fi
+            )
+          done
       - name: Retain external compiler evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -451,3 +519,4 @@ jobs:
           printf 'Candidate `%s`: all configured checks passed.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
           printf 'Configured current-runtime clients: curl, URLSession HTTP/1.1 + HTTP/2, WKWebView SSE/WebSocket, pinned stable Chromium and independent gRPC.\n' >> "$GITHUB_STEP_SUMMARY"
           printf 'Runtime evidence covers macOS 27 suites and a macOS 26 public-consumer smoke. Full minimum-runtime acceptance remains incomplete; the smoke does not replace the client/resource matrix.\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'Stage 2 final acceptance remains incomplete: HTTP/3 transport is not implemented, dependency feasibility is separate, and full hard-ceiling/RSS and protocol-edge qualification is outstanding. This configured-check result is not release approval.\n' >> "$GITHUB_STEP_SUMMARY"

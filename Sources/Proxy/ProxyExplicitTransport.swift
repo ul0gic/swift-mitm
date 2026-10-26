@@ -8,7 +8,10 @@ extension ProxyServer {
         _ channel: Channel,
         tlsRuntime: ProxyTLSRuntime
     ) -> EventLoopFuture<Void> {
-        channel.eventLoop.makeCompletedFuture {
+        if case .priorKnowledgeHTTP2(let configuration) = ingress {
+            return configurePriorKnowledgeHTTP2(channel, configuration: configuration)
+        }
+        return channel.eventLoop.makeCompletedFuture {
             let sync = channel.pipeline.syncOperations
             if case .explicitHTTP = ingress {
                 var configuration = BytePreservingHTTPResponseEncoder.Configuration()
@@ -32,13 +35,12 @@ extension ProxyServer {
                 )
             }
             let connectionID = UUID()
-            switch ingress {
-            case .explicitHTTP:
+            if case .explicitHTTP = ingress {
                 try sync.addHandler(makeExplicitHTTPHandler(
                     connectionID: connectionID,
                     tlsRuntime: tlsRuntime
                 ))
-            case .explicitConnect, .trustedProxyV2:
+            } else {
                 try sync.addHandler(
                     ConnectHandler(onRejected: { [self] reason, code in
                         sink.receive(.connectionFailure(CapturedConnectionFailure(
@@ -65,23 +67,30 @@ extension ProxyServer {
         connectionID: UUID,
         tlsRuntime: ProxyTLSRuntime
     ) -> ExplicitHTTPProxyHandler {
-        ExplicitHTTPProxyHandler(
+        var options = HTTPForwardOptions()
+        options.correlationPolicy = correlationPolicy
+        options.controlRuntime = controlRuntime
+        options.controlEventSink = controlEventSink
+        options.admission = admission
+        options.reusePool = http1ReusePool
+        options.authorizeReuse = { [self] target, channel in
+            guard !egressPolicy.deniesLiteral(target.host), let remote = channel.remoteAddress else { return false }
+            return !egressPolicy.denies(remote)
+        }
+        options.onResourceLimit = { [self] in
+            sink.receive(.connectionFailure(CapturedConnectionFailure(
+                id: connectionID,
+                timestamp: Date(),
+                reason: .transportFailure,
+                stage: .capture,
+                code: .resourceLimit
+            )))
+        }
+        return ExplicitHTTPProxyHandler(
             sink: sink,
             captureBodyLimit: captureBodyLimit,
-            correlationPolicy: correlationPolicy,
             connectionID: connectionID,
-            connect: { [self] target, loop in
-                guard let connectionTarget = ConnectionTarget(
-                    host: target.host,
-                    port: target.port,
-                    ingressProvenance: .explicitHTTP
-                ) else {
-                    return loop.makeFailedFuture(ProxyConnectionError.egressBlocked(target.host))
-                }
-                return connectUpstreamRaw(target: connectionTarget, on: loop).map {
-                    HTTPForwardConnection(channel: $0.channel, target: $0.target.capturedTarget)
-                }
-            },
+            connect: { [self] target, loop in connectControlledHTTP(target: target, tlsRuntime: tlsRuntime, on: loop) },
             onCONNECT: { [self] tunnel, authority in
                 onConnectEstablished(
                     channel: tunnel,
@@ -90,16 +99,44 @@ extension ProxyServer {
                     tlsRuntime: tlsRuntime
                 )
             },
-            onResourceLimit: { [self] in
-                sink.receive(.connectionFailure(CapturedConnectionFailure(
-                    id: connectionID,
-                    timestamp: Date(),
-                    reason: .transportFailure,
-                    stage: .capture,
-                    code: .resourceLimit
-                )))
-            }
+            options: options
         )
+    }
+
+    func connectControlledHTTP(target: HTTPForwardTarget, tlsRuntime: ProxyTLSRuntime,
+                               on loop: EventLoop, setupToken: ProxyConnectionSetupToken? = nil) -> EventLoopFuture<HTTPForwardConnection> {
+        guard let destination = ConnectionTarget(host: target.host, port: target.port, ingressProvenance: .explicitHTTP) else {
+            return loop.makeFailedFuture(ProxyConnectionError.egressBlocked(target.host))
+        }
+        if target.scheme == "https" {
+            return connectUpstreamTLS(
+                target: destination, applicationProtocols: [.http11], tlsRuntime: tlsRuntime,
+                setupToken: setupToken, on: loop
+            ).flatMap { [self] connected in
+                configureControlReads(HTTPForwardConnection(
+                    channel: connected.connection.channel, target: connected.target.capturedTarget,
+                    releaseBufferedReads: { connected.connection.releaseBufferedReads() }
+                ))
+            }
+        }
+        return connectUpstreamRaw(target: destination, on: loop, setupToken: setupToken).flatMap { [self] in
+            configureControlReads(HTTPForwardConnection(channel: $0.channel, target: $0.target.capturedTarget))
+        }
+    }
+
+    private func configureControlReads(_ connection: HTTPForwardConnection) -> EventLoopFuture<HTTPForwardConnection> {
+        guard controlRuntime != nil else { return connection.channel.eventLoop.makeSucceededFuture(connection) }
+        return connection.channel.setOption(ChannelOptions.maxMessagesPerRead, value: 1)
+            .map { connection }
+            .flatMapError { error in
+                connection.channel.close().flatMapThrowing { throw error }
+            }
+    }
+
+    func connectControlledHTTP(target: HTTPForwardTarget, on loop: EventLoop,
+                               setupToken: ProxyConnectionSetupToken? = nil) -> EventLoopFuture<HTTPForwardConnection> {
+        do { return connectControlledHTTP(target: target, tlsRuntime: try activeTLSRuntime(), on: loop, setupToken: setupToken) }
+        catch { return loop.makeFailedFuture(error) }
     }
 
     private func onConnectEstablished(

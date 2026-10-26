@@ -5,6 +5,7 @@ import NIOHTTP2
 import NIOSSL
 import NIOTLS
 import os
+import SwiftMITMHTTP1Codec
 
 private let alpnLog = Logger(subsystem: "SwiftMITM", category: "ProxyALPN")
 
@@ -31,7 +32,9 @@ extension ProxyServer {
         tlsRuntime: ProxyTLSRuntime,
         failureHandler: NIOLoopBound<TransparentConnectionFailureHandler>? = nil
     ) -> EventLoopFuture<Void> {
-        upstream.connection.channel.closeFuture.whenComplete { _ in channel.close(promise: nil) }
+        if controlRuntime == nil {
+            upstream.connection.channel.closeFuture.whenComplete { _ in channel.close(promise: nil) }
+        }
         channel.closeFuture.whenComplete { _ in upstream.connection.channel.close(promise: nil) }
         failureHandler?.value.updateStage(.downstreamTLS)
         return tlsRuntime
@@ -122,11 +125,12 @@ extension ProxyServer {
         )
     }
 
-    private func bridgeHTTP2(
+    func bridgeHTTP2(
         inbound: Channel,
         upstream: NegotiatedUpstreamConnection,
         authority: String,
-        target: CapturedTarget
+        target: CapturedTarget,
+        validateAuthority: Bool = false
     ) -> EventLoopFuture<Void> {
         let sink = sink
         let captureBodyLimit = captureBodyLimit
@@ -158,26 +162,48 @@ extension ProxyServer {
                     .map { (upstreamMux, $0) }
             }
             .flatMap { upstreamMux, extendedConnectEnabled in
-                inbound.configureHTTP2Pipeline(
-                    mode: .server,
-                    connectionConfiguration: self.downstreamConnectionConfiguration(
-                        extendedConnectEnabled: extendedConnectEnabled
-                    ),
-                    streamConfiguration: streamConfiguration
-                ) { inboundStream in
-                    H2StreamGlue.glue(
-                        inboundStream: inboundStream,
-                        upstreamMux: upstreamMux,
-                        authority: authority,
-                        target: target,
-                        sink: sink,
-                        captureBodyLimit: captureBodyLimit,
-                        extendedConnectEnabled: extendedConnectEnabled
+                self.configureHTTP2Downstream(
+                    inbound: inbound, upstreamMux: upstreamMux, validateAuthority: validateAuthority,
+                    configuration: .init(
+                        authority: authority, target: target, sink: sink, captureBodyLimit: captureBodyLimit,
+                        extendedConnectEnabled: extendedConnectEnabled, controlServer: self
                     )
-                }
-                .map { _ in () }
+                )
             }
             .flatMap { inbound.setOption(ChannelOptions.autoRead, value: true) }
+    }
+
+    private func configureHTTP2Downstream(
+        inbound: Channel, upstreamMux: NIOHTTP2Handler.StreamMultiplexer,
+        validateAuthority: Bool, configuration: H2StreamGlue.Configuration
+    ) -> EventLoopFuture<Void> {
+        let initialize: NIOChannelInitializer = { inboundStream in
+            let validation = inboundStream.eventLoop.makeCompletedFuture {
+                if validateAuthority {
+                    try inboundStream.pipeline.syncOperations.addHandler(
+                        HTTP2PriorKnowledgeAuthorityHandler(authority: configuration.authority)
+                    )
+                }
+            }
+            return validation.flatMap {
+                H2StreamGlue.glue(
+                    inboundStream: inboundStream, upstreamMux: upstreamMux, configuration: configuration
+                )
+            }
+        }
+        let connectionConfiguration = downstreamConnectionConfiguration(
+            extendedConnectEnabled: configuration.extendedConnectEnabled
+        )
+        if controlRuntime != nil {
+            return HTTP2ControlPipeline.configure(
+                channel: inbound, mode: .server, configuration: connectionConfiguration,
+                initializer: initialize
+            ).map { _ in () }
+        }
+        return inbound.configureHTTP2Pipeline(
+            mode: .server, connectionConfiguration: connectionConfiguration,
+            streamConfiguration: streamConfiguration, inboundStreamInitializer: initialize
+        ).map { _ in () }
     }
 
     private func bridgeHTTP1(
@@ -188,10 +214,17 @@ extension ProxyServer {
         target: CapturedTarget,
         connectionID: UUID
     ) -> EventLoopFuture<Void> {
+        if let controlRuntime, !controlRuntime.configurationSnapshot.rules.isEmpty {
+            return bridgeControlledHTTP1(inbound: inbound, upstream: upstream, authority: authority,
+                                         target: target, connectionID: connectionID)
+        }
+        if controlRuntime != nil {
+            upstream.channel.closeFuture.whenComplete { _ in inbound.close(promise: nil) }
+        }
         let loop = inbound.eventLoop
         let sink = sink
         let captureBodyLimit = captureBodyLimit
-        let correlator = HTTP1ExchangeCorrelator(policy: correlationPolicy)
+        let correlator = HTTP1ExchangeCorrelator(policy: correlationPolicy, admission: admission)
         let webSocketSession = WebSocketCaptureSession()
         let reportResourceLimit: @Sendable () -> Void = {
             sink.receive(.connectionFailure(CapturedConnectionFailure(
@@ -235,6 +268,32 @@ extension ProxyServer {
             ])
         }
         .flatMap { upstream.releaseBufferedReads() }
+    }
+
+    private func bridgeControlledHTTP1(inbound: Channel, upstream: NegotiatedUpstreamConnection,
+                                      authority: String, target: CapturedTarget, connectionID: UUID) -> EventLoopFuture<Void> {
+        inbound.eventLoop.makeCompletedFuture {
+            guard let destination = HTTPForwardTarget(scheme: "https", authority: authority, requestTarget: "/") else { throw HTTPControlError.invalidConfiguration }
+            var configuration = BytePreservingHTTPResponseEncoder.Configuration()
+            configuration.automaticallySetFramingHeaders = false
+            let encoder = BytePreservingHTTPResponseEncoder(configuration: configuration)
+            try inbound.pipeline.syncOperations.addHandler(encoder)
+            try inbound.pipeline.syncOperations.addHandler(ByteToMessageHandler(BytePreservingHTTPRequestDecoder(leftOverBytesStrategy: .forwardBytes, responseEncoder: encoder)))
+            var options = HTTPForwardOptions()
+            options.correlationPolicy = correlationPolicy
+            options.controlRuntime = controlRuntime
+            options.controlEventSink = controlEventSink
+            options.admission = admission
+            options.fixedDestination = destination
+            try inbound.pipeline.syncOperations.addHandler(ExplicitHTTPProxyHandler(
+                sink: sink, captureBodyLimit: captureBodyLimit,
+                connectionID: connectionID,
+                connect: { [self] target, loop in connectControlledHTTP(target: target, on: loop) },
+                onCONNECT: { channel, _ in channel.close(promise: nil) },
+                options: options
+            ))
+            upstream.channel.close(promise: nil)
+        }
     }
 
     func makeUpstreamConfiguration(alpn: String) throws -> TLSConfiguration {

@@ -5,16 +5,28 @@ let package = Package(
     name: "SwiftMITM",
     platforms: [.macOS(.v26)],
     products: [
-        .library(name: "SwiftMITM", targets: ["SwiftMITM"])
+        .library(name: "SwiftMITM", targets: ["SwiftMITM"]),
+        .library(name: "SwiftMITMInspection", targets: ["SwiftMITMInspection"])
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.104.0"),
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.29.0"),
         .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.44.0"),
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.5.0"),
-        .package(url: "https://github.com/apple/swift-crypto.git", from: "4.0.0")
+        .package(url: "https://github.com/apple/swift-crypto.git", from: "4.0.0"),
+        .package(url: "https://github.com/apple/swift-protobuf.git", exact: "1.32.0")
     ],
     targets: [
+        .target(
+            name: "SwiftMITMInspection",
+            dependencies: [
+                "SwiftMITM",
+                .product(name: "Crypto", package: "swift-crypto"),
+                .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+                .product(name: "NIOConcurrencyHelpers", package: "swift-nio")
+            ],
+            path: "Inspection/Sources/SwiftMITMInspection"
+        ),
         .target(
             name: "SwiftMITM",
             dependencies: [
@@ -53,6 +65,7 @@ let package = Package(
             name: "SwiftMITMTests",
             dependencies: [
                 "SwiftMITM",
+                "SwiftMITMInspection",
                 .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
                 .product(name: "NIOCore", package: "swift-nio"),

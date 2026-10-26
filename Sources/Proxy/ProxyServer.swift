@@ -38,6 +38,12 @@ public final class ProxyServer: Sendable {
     let timeoutPolicy: ProxyTimeoutPolicy
     let correlationPolicy: HTTP1CorrelationPolicy
     let interceptionPolicy: ProxyInterceptionPolicy
+    let controlRuntime: HTTPControlRuntime?
+    private let controlRuntimeOwner = UUID()
+    let controlEventSink: (any HTTPControlEventSink)?
+    let admission: ResourceAdmissionController?
+    let replayCoordinator: ReplayCoordinator
+    let http1ReusePool: HTTP1ReusePool?
     private let allowNonLoopbackBind: Bool
     let targetWindowSize: Int
     let captureBodyLimit: Int
@@ -58,10 +64,25 @@ public final class ProxyServer: Sendable {
         captureBodyLimit: Int = 0,
         opaqueCaptureByteLimit: Int = 0,
         correlationPolicy: HTTP1CorrelationPolicy = .default,
-        interceptionPolicy: ProxyInterceptionPolicy = .default
+        interceptionPolicy: ProxyInterceptionPolicy = .default,
+        observationSink: (any HTTPObservationSink)? = nil,
+        controlRuntime: HTTPControlRuntime? = nil,
+        controlEventSink: (any HTTPControlEventSink)? = nil,
+        admission: ResourceAdmissionController? = nil,
+        replayConfiguration: ReplayConfiguration = .default,
+        http1ReusePolicy: HTTP1ReusePolicy? = nil
     ) {
+        self.controlEventSink = controlEventSink
+        self.controlRuntime = controlRuntime
+        self.http1ReusePool = http1ReusePolicy.map(HTTP1ReusePool.init(policy:))
+        self.admission = admission
+        self.replayCoordinator = ReplayCoordinator(configuration: replayConfiguration)
         self.authority = certificateAuthority
-        self.sink = sink
+        if let observationSink {
+            self.sink = ObservationCaptureSink(capture: sink, observation: observationSink)
+        } else {
+            self.sink = sink
+        }
         self.upstreamPolicy = upstreamPolicy
         self.egressPolicy = egressPolicy
         self.ingress = ingress
@@ -101,7 +122,10 @@ public final class ProxyServer: Sendable {
         }
         connectionRegistry.startAccepting()
         var tlsRuntime: ProxyTLSRuntime?
+        var controlRuntimeBound = false
         do {
+            try await controlRuntime?.beginServing(owner: controlRuntimeOwner, admission: admission)
+            controlRuntimeBound = controlRuntime != nil
             let runtime = try await ProxyTLSRuntime.make(authority: authority, upstreamPolicy: upstreamPolicy)
             tlsRuntime = runtime
             let bootstrap = ServerBootstrap(group: group)
@@ -122,6 +146,9 @@ public final class ProxyServer: Sendable {
             return channel.localAddress?.port ?? port
         } catch {
             await shutDownConnections()
+            if controlRuntimeBound {
+                _ = await controlRuntime?.endServing(owner: controlRuntimeOwner)
+            }
             _ = await tlsRuntime?.shutdownGracefully()
             lifecycleState.withLockedValue { state in
                 if case .starting = state {
@@ -136,10 +163,12 @@ public final class ProxyServer: Sendable {
         let resources = try transitionToStopping()
         guard resources.channel != nil || ownsGroup else { return }
         let connections = connectionRegistry.beginShutdown()
+        http1ReusePool?.closeAll()
         let listenerError = await closeListener(resources.channel)
         forceClose(connections)
         await connectionRegistry.waitForQuiescence()
         connectionRegistry.finishShutdown()
+        _ = await controlRuntime?.endServing(owner: controlRuntimeOwner)
         let tlsRuntimeError = await resources.tlsRuntime?.shutdownGracefully()
         let groupError = await shutDownOwnedGroup()
         lifecycleState.withLockedValue { state in
@@ -147,6 +176,20 @@ public final class ProxyServer: Sendable {
         }
         if let error = listenerError ?? tlsRuntimeError ?? groupError {
             throw error
+        }
+    }
+
+    func replayEventLoop() throws -> EventLoop {
+        try lifecycleState.withLockedValue { state in
+            guard case .running = state else { throw ProxyConnectionError.serverStopping }
+            return group.next()
+        }
+    }
+
+    func activeTLSRuntime() throws -> ProxyTLSRuntime {
+        try lifecycleState.withLockedValue { state in
+            guard case .running(_, let runtime) = state else { throw ProxyConnectionError.serverStopping }
+            return runtime
         }
     }
 

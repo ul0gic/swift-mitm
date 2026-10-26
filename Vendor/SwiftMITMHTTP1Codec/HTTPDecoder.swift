@@ -53,6 +53,11 @@ private class BetterHTTPParser {
     private let kind: HTTPDecoderKind
     var requestHeads = CircularBuffer<HTTPRequestHead>(initialCapacity: 1)
 
+    var isAtMessageBoundary: Bool {
+        guard case .beforeMessageBegin = self.decodingState else { return false }
+        return self.httpErrno == nil && self.richerError == nil
+    }
+
     enum MessageContinuation {
         case normal
         case skipBody
@@ -500,6 +505,10 @@ public final class BytePreservingHTTPDecoder<In, Out>: ByteToMessageDecoder, HTT
     private var lastResponseHeaderWasInformational = false
 
     private var responseEncoder: BytePreservingHTTPResponseEncoder? = nil
+
+    public var isAtMessageBoundary: Bool {
+        self.context == nil && !self.stopParsing && self.parser.isAtMessageBoundary
+    }
 
     public init(
         leftOverBytesStrategy: RemoveAfterUpgradeStrategy = .dropBytes,

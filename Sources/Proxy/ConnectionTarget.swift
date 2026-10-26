@@ -3,6 +3,7 @@ import NIOCore
 enum ConnectionIngressProvenance: Sendable {
     case explicitConnect
     case explicitHTTP
+    case priorKnowledgeHTTP2
     case trustedProxyV2(originalClient: SocketAddress)
 }
 

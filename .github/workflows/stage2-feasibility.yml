@@ -1,0 +1,198 @@
+name: Stage 2 dependency feasibility
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'Package.swift'
+      - 'Package.resolved'
+      - 'Packages/SwiftMITMHTTP3/**'
+      - '.github/workflows/stage2-feasibility.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stage2-feasibility-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+
+jobs:
+  combined-graph:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Record candidate and prepare proposed Crypto 5 graph
+        run: |
+          mkdir -p evidence
+          git rev-parse HEAD > evidence/candidate-sha.txt
+          xcodebuild -version > evidence/xcode.txt
+          swift --version > evidence/swift.txt
+          sw_vers > evidence/os.txt
+          grep -Fx 'Xcode 27.1' evidence/xcode.txt
+          grep -Fx 'Build version 27A9275' evidence/xcode.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          manifest = Path('Package.swift')
+          before = manifest.read_text()
+          old = '.package(url: "https://github.com/apple/swift-crypto.git", from: "4.0.0")'
+          new = '.package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.0")'
+          assert before.count(old) == 1, 'Probe requires the reviewed Crypto4 baseline'
+          manifest.write_text(before.replace(old, new))
+          PY
+          git diff -- Package.swift > evidence/proposed-graph.patch
+      - name: Resolve and build combined graph
+        working-directory: Packages/SwiftMITMHTTP3
+        run: |
+          swift package resolve
+          cp Package.resolved "$GITHUB_WORKSPACE/evidence/combined-Package.resolved"
+          swift build --force-resolved-versions -Xswiftc -warnings-as-errors
+          swift run --skip-build HTTP3DependencyProbe | tee "$GITHUB_WORKSPACE/evidence/combined-probe.txt"
+      - name: Check core with the proposed graph
+        run: |
+          cp Packages/SwiftMITMHTTP3/Package.resolved Package.resolved
+          swift build --build-tests -Xswiftc -warnings-as-errors
+          cp Package.resolved evidence/core-Package.resolved
+          swift test --skip-build --filter 'Release022PublicTrustTests|Release022PublicHTTP1OctetTests' \
+            --xunit-output evidence/core-results.xml 2>&1 | tee evidence/core-tests.log
+      - name: Prepare Crypto5 core consumer for macOS26
+        run: |
+          swift build --package-path Examples/FirstCapture -c release -Xswiftc -warnings-as-errors
+          mkdir -p core-consumer
+          binary_directory="$(swift build --package-path Examples/FirstCapture -c release --show-bin-path)"
+          tar -czf core-consumer/FirstCapture.tar.gz -C "$binary_directory" FirstCapture
+          cp evidence/candidate-sha.txt evidence/swift.txt evidence/xcode.txt core-consumer/
+          cp Examples/FirstCapture/Package.resolved evidence/consumer-Package.resolved
+          python3 - <<'PYTHON'
+          import json
+          def pins(path):
+              return {p['identity']:p['state'] for p in json.load(open(path))['pins']}
+          combined = pins('evidence/combined-Package.resolved')
+          consumer = pins('evidence/consumer-Package.resolved')
+          for name in combined.keys() & consumer.keys():
+              assert combined[name] == consumer[name], f'Dependency drift: {name}'
+          assert consumer['swift-crypto']['version'].startswith('5.')
+          PYTHON
+      - name: Retain Crypto5 core consumer
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: stage2-crypto5-consumer-${{ github.sha }}
+          path: core-consumer/
+          if-no-files-found: error
+      - name: Record explicit scope of evidence
+        run: |
+          echo 'Dependency and core compatibility probe only; macOS26 evidence is the separate smoke job, no two-leg HTTP3 transport or final acceptance established.' > evidence/scope.txt
+          cat evidence/scope.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain feasibility evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: stage2-feasibility-${{ github.sha }}
+          path: evidence/
+          if-no-files-found: error
+
+  crypto5-minimum-runtime:
+    name: Crypto5 core macOS26 smoke
+    needs: combined-graph
+    runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: stage2-crypto5-consumer-${{ github.sha }}
+          path: ${{ runner.temp }}/consumer
+      - name: Exercise the Xcode 27.1 binary on the deployment minimum
+        run: |
+          mkdir -p evidence
+          sw_vers > evidence/os.txt
+          grep -Eq '^ProductVersion:[[:space:]]+26\.' evidence/os.txt
+          test "$(cat "$RUNNER_TEMP/consumer/candidate-sha.txt")" = "$GITHUB_SHA"
+          cp "$RUNNER_TEMP/consumer/candidate-sha.txt" evidence/
+          cp "$RUNNER_TEMP/consumer/swift.txt" evidence/build-swift.txt
+          cp "$RUNNER_TEMP/consumer/xcode.txt" evidence/build-xcode.txt
+          tar -xzf "$RUNNER_TEMP/consumer/FirstCapture.tar.gz" -C "$RUNNER_TEMP/consumer"
+          export OPENSSL_BIN="$(brew --prefix openssl@3)/bin/openssl"
+          "$OPENSSL_BIN" version > evidence/openssl.txt
+          python3 - <<'PY'
+          import http.server, json, os, pathlib, selectors, signal, subprocess, tempfile, threading, time
+          body = b'SwiftMITM macOS 26 runtime smoke\n'
+          class Origin(http.server.BaseHTTPRequestHandler):
+              def do_GET(self):
+                  self.send_response(200)
+                  self.send_header('Content-Length', str(len(body)))
+                  self.end_headers()
+                  self.wfile.write(body)
+              def log_message(self, *_):
+                  pass
+          evidence = pathlib.Path('evidence')
+          binary = pathlib.Path(os.environ['RUNNER_TEMP']) / 'consumer/FirstCapture'
+          origin = http.server.HTTPServer(('127.0.0.1', 0), Origin)
+          origin_thread = threading.Thread(target=origin.serve_forever)
+          origin_thread.start()
+          process = None
+          try:
+              with tempfile.TemporaryDirectory() as temporary:
+                  root = pathlib.Path(temporary)
+                  key, certificate = root / 'ca-key.pem', root / 'ca.pem'
+                  subprocess.run([os.environ['OPENSSL_BIN'], 'genpkey', '-algorithm', 'EC', '-pkeyopt',
+                                  'ec_paramgen_curve:P-256', '-out', str(key)], check=True, timeout=20)
+                  subprocess.run([os.environ['OPENSSL_BIN'], 'req', '-new', '-x509', '-key', str(key),
+                                  '-out', str(certificate), '-days', '1', '-subj', '/CN=SwiftMITM CI',
+                                  '-addext', 'basicConstraints=critical,CA:TRUE',
+                                  '-addext', 'keyUsage=critical,keyCertSign,cRLSign'], check=True, timeout=20)
+                  with (evidence / 'stderr.txt').open('wb') as errors:
+                      process = subprocess.Popen([str(binary), '--ca-cert', str(certificate),
+                          '--ca-key', str(key), '--port', '0', '--allow-internal'],
+                          stdout=subprocess.PIPE, stderr=errors)
+                      with selectors.DefaultSelector() as selector:
+                          selector.register(process.stdout, selectors.EVENT_READ)
+                          deadline = time.monotonic() + 20
+                          first = bytearray()
+                          while not first.endswith(b'\n'):
+                              assert selector.select(timeout=max(0, deadline - time.monotonic())), 'Proxy did not announce startup'
+                              chunk = os.read(process.stdout.fileno(), 4096)
+                              assert chunk, 'Proxy exited before announcing startup'
+                              first.extend(chunk)
+                      listening = json.loads(first)
+                      assert listening['type'] == 'listening'
+                      response = subprocess.run(['/usr/bin/curl', '--silent', '--show-error', '--fail',
+                          '--max-time', '20', '--noproxy', '', '--proxy',
+                          f'http://127.0.0.1:{listening["port"]}',
+                          f'http://127.0.0.1:{origin.server_port}/smoke'],
+                          check=True, stdout=subprocess.PIPE, timeout=25)
+                      assert response.stdout == body, 'Forwarded response differs from origin bytes'
+                      process.send_signal(signal.SIGINT)
+                      remaining, _ = process.communicate(timeout=20)
+                      transcript = first + remaining
+                      (evidence / 'events.jsonl').write_bytes(transcript)
+                      assert process.returncode == 0, 'Proxy did not stop cleanly'
+                      events = [json.loads(line)['type'] for line in transcript.splitlines()]
+                      assert events.count('requestHead') == 1 and events.count('responseEnd') == 1
+                      assert events[-1] == 'stopped'
+                      assert not {'streamError', 'connectionFailure', 'deliveryLoss'} & set(events)
+                  (evidence / 'scope.txt').write_text(
+                      'Passed public startup, HTTP forwarding/capture and SIGINT stop only.\n'
+                      'TLS, streaming clients and resource ceilings on macOS 26 remain unverified.\n')
+          finally:
+              if process is not None and process.poll() is None:
+                  process.kill()
+                  process.wait(timeout=10)
+              origin.shutdown()
+              origin.server_close()
+              origin_thread.join(timeout=10)
+          PY
+      - name: Retain minimum-runtime smoke evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: stage2-crypto5-minimum-runtime-${{ github.sha }}
+          path: evidence/
+          if-no-files-found: error
+

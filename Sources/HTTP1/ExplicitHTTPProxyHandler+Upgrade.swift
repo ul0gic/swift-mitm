@@ -8,6 +8,7 @@ extension ExplicitHTTPProxyHandler {
             reject(status: .badRequest, message: "CONNECT cannot follow pipelined requests")
             return
         }
+        reusePool?.close(downstreamID: connectionID)
         let head = HTTPResponseHead(version: .http1_1, status: .ok, headers: ["via": "1.1 SwiftMITM"])
         correlator.end(id: exchange.id, request: false)
         context.write(wrapOutboundOut(.head(head)), promise: nil)

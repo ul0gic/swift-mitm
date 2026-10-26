@@ -4,10 +4,11 @@ import NIOTLS
 struct NegotiatedUpstreamConnection: Sendable {
     let channel: Channel
     let applicationProtocol: ALPNProtocol
-    let alpnHandler: NIOLoopBound<UpstreamALPNHandler>
+    let alpnHandler: NIOLoopBound<UpstreamALPNHandler>?
 
     func releaseBufferedReads() -> EventLoopFuture<Void> {
-        alpnHandler.value.releaseBufferedReads()
+        if let alpnHandler { return alpnHandler.value.releaseBufferedReads() }
+        return channel.setOption(ChannelOptions.autoRead, value: true)
     }
 }
 

@@ -30,6 +30,9 @@ final class WebSocketFrameDecoder {
     private var remaining = 0
     private var total = 0
     private var captured: [UInt8] = []
+    var frameStarted: ((WebSocketOpcode, Bool, Bool, Int) -> Void)?
+    var frameBytes: ((UnsafeRawBufferPointer) -> Void)?
+    var frameEnded: (() -> Void)?
 
     init(captureLimit: Int) {
         self.captureLimit = max(0, captureLimit)
@@ -45,18 +48,40 @@ final class WebSocketFrameDecoder {
         shouldContinue: () -> Bool = { true },
         emit: (Frame) -> Void
     ) -> Bool where Bytes.Element == UInt8 {
-        for byte in bytes {
-            guard shouldContinue() else { return true }
-            switch phase {
-            case .header:
-                consumeHeaderByte(byte, emit: emit)
-            case .payload:
-                consumePayloadByte(byte, emit: emit)
-            case .failed:
-                return false
+        if frameBytes == nil {
+            for byte in bytes {
+                guard shouldContinue() else { return true }
+                switch phase {
+                case .header: consumeHeaderByte(byte, emit: emit)
+                case .payload: consumePayloadByte(byte, emit: emit)
+                case .failed: return false
+                }
             }
+            return phase != .failed
         }
-        return phase != .failed
+        return withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 16_384) { scratch in
+            var count = 0
+            defer { if count > 0 { frameBytes?(UnsafeRawBufferPointer(start: scratch.baseAddress, count: count)) } }
+            for byte in bytes {
+                guard shouldContinue() else { return true }
+                switch phase {
+                case .header:
+                    consumeHeaderByte(byte, emit: emit)
+                case .payload:
+                    let unmasked = masked ? byte ^ maskKey[maskIndex & 3] : byte
+                    scratch[count] = unmasked
+                    count += 1
+                    if count == scratch.count || remaining == 1 {
+                        frameBytes?(UnsafeRawBufferPointer(start: scratch.baseAddress, count: count))
+                        count = 0
+                    }
+                    consumePayloadByte(byte, emit: emit)
+                case .failed:
+                    return false
+                }
+            }
+            return phase != .failed
+        }
     }
 
     private func consumeHeaderByte(_ byte: UInt8, emit: (Frame) -> Void) {
@@ -66,7 +91,9 @@ final class WebSocketFrameDecoder {
             phase = .failed
             return
         }
+        frameStarted?(opcode, fin, compressed, total)
         if remaining == 0 {
+            frameEnded?()
             emit(makeFrame())
             resetForNextFrame()
         }
@@ -145,6 +172,7 @@ final class WebSocketFrameDecoder {
         }
         remaining -= 1
         guard remaining == 0 else { return }
+        frameEnded?()
         emit(makeFrame())
         resetForNextFrame()
     }

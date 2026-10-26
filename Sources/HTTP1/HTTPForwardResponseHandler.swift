@@ -9,12 +9,16 @@ final class HTTPForwardResponseHandler: ChannelInboundHandler, RemovableChannelH
     init(owner: ExplicitHTTPProxyHandler) { self.owner = owner }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-        owner?.receive(unwrapInboundIn(data))
+        guard let owner, !owner.stopped, owner.upstream === context.channel else { return }
+        owner.receive(unwrapInboundIn(data))
     }
 
     func channelReadComplete(context: ChannelHandlerContext) { owner?.readOriginIfNeeded() }
 
-    func channelWritabilityChanged(context: ChannelHandlerContext) { owner?.readClientIfNeeded() }
+    func channelWritabilityChanged(context: ChannelHandlerContext) {
+        owner?.active?.requestFaultWriter?.drain()
+        owner?.readClientIfNeeded()
+    }
 
     func channelInactive(context: ChannelHandlerContext) {
         owner?.originFailed(channel: context.channel)
