@@ -147,18 +147,10 @@ final class TransparentConnectionFailureHandler: ChannelInboundHandler, Removabl
 
     private static func code(for error: Error) -> ConnectionFailureCode {
         if let connectionError = connectionError(for: error) {
-            switch connectionError {
-            case .egressBlocked: return .egressDenied
-            case .serverStopping: return .serverStopping
-            case .setupTimedOut: return .setupTimedOut
-            }
+            return code(for: connectionError)
         }
         if let ingressError = error as? TrustedProxyV2IngressError {
-            switch ingressError {
-            case .untrustedPeer, .peerAddressUnavailable: return .untrustedPeer
-            case .targetUnavailable: return .destinationUnavailable
-            case .deadlineExceeded: return .setupTimedOut
-            }
+            return code(for: ingressError)
         }
         if error is ProxyV2ParserError {
             return .invalidProxyMetadata
@@ -170,17 +162,37 @@ final class TransparentConnectionFailureHandler: ChannelInboundHandler, Removabl
             return settingsError == .deadlineExceeded ? .setupTimedOut : .transportFailure
         }
         if let alpnError = error as? ProxyALPNError {
-            switch alpnError {
-            case .malformedClientHello: return .malformedClientHello
-            case .noSupportedClientProtocol, .unsupportedProtocol: return .unsupportedProtocol
-            case .protocolMismatch: return .protocolMismatch
-            case .channelClosedBeforeNegotiation: return .transportFailure
-            }
+            return code(for: alpnError)
         }
         if error is NIOSSLExtraError || error is NIOSSLError {
             return .tlsHandshakeFailed
         }
         return .upstreamConnectFailed
+    }
+
+    private static func code(for error: ProxyConnectionError) -> ConnectionFailureCode {
+        switch error {
+        case .egressBlocked: return .egressDenied
+        case .serverStopping: return .serverStopping
+        case .setupTimedOut: return .setupTimedOut
+        }
+    }
+
+    private static func code(for error: TrustedProxyV2IngressError) -> ConnectionFailureCode {
+        switch error {
+        case .untrustedPeer, .peerAddressUnavailable: return .untrustedPeer
+        case .targetUnavailable: return .destinationUnavailable
+        case .deadlineExceeded: return .setupTimedOut
+        }
+    }
+
+    private static func code(for error: ProxyALPNError) -> ConnectionFailureCode {
+        switch error {
+        case .malformedClientHello: return .malformedClientHello
+        case .noSupportedClientProtocol, .unsupportedProtocol: return .unsupportedProtocol
+        case .protocolMismatch: return .protocolMismatch
+        case .channelClosedBeforeNegotiation: return .transportFailure
+        }
     }
 
     private static func connectionError(for error: Error) -> ProxyConnectionError? {

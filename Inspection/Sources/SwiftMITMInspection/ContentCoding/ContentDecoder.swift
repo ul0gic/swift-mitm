@@ -42,7 +42,9 @@ public final class ContentDecoder {
     private var failed = false
 
     public init(
-        coding: ContentCoding, budget: InspectionMemoryBudget, outputSliceBytes: Int = 65_536
+        coding: ContentCoding,
+        budget: InspectionMemoryBudget,
+        outputSliceBytes: Int = 65_536
     ) throws {
         guard outputSliceBytes > 0, outputSliceBytes <= 65_536 else {
             throw ContentDecoderError.invalidConfiguration
@@ -54,7 +56,11 @@ public final class ContentDecoder {
         sliceBytes = outputSliceBytes
         output = .allocate(capacity: outputSliceBytes)
         appleStream = compression_stream(
-            dst_ptr: output, dst_size: 0, src_ptr: output, src_size: 0, state: nil
+            dst_ptr: output,
+            dst_size: 0,
+            src_ptr: output,
+            src_size: 0,
+            state: nil
         )
         if coding == .brotli {
             guard compression_stream_init(&appleStream, COMPRESSION_STREAM_DECODE, COMPRESSION_BROTLI)
@@ -67,7 +73,10 @@ public final class ContentDecoder {
             let stream = UnsafeMutablePointer<z_stream>.allocate(capacity: 1)
             stream.initialize(to: z_stream())
             let status = inflateInit2_(
-                stream, coding == .gzip ? 31 : 15, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)
+                stream,
+                coding == .gzip ? 31 : 15,
+                ZLIB_VERSION,
+                Int32(MemoryLayout<z_stream>.size)
             )
             guard status == Z_OK else {
                 stream.deinitialize(count: 1)
@@ -168,22 +177,31 @@ public final class ContentDecoder {
             }
             if try needsInput((used, written), consumed: consumed, inputCount: input.count, final: final) {
                 return ContentDecoderProgress(
-                    consumedBytes: consumed, producedBytes: produced, state: .needsInput
+                    consumedBytes: consumed,
+                    producedBytes: produced,
+                    state: .needsInput
                 )
             }
             if consumed == input.count && written < capacity && !final {
                 return ContentDecoderProgress(
-                    consumedBytes: consumed, producedBytes: produced, state: .needsInput
+                    consumedBytes: consumed,
+                    producedBytes: produced,
+                    state: .needsInput
                 )
             }
         }
         return ContentDecoderProgress(
-            consumedBytes: consumed, producedBytes: produced, state: .outputLimit
+            consumedBytes: consumed,
+            producedBytes: produced,
+            state: .outputLimit
         )
     }
 
     private func needsInput(
-        _ progress: (used: Int, written: Int), consumed: Int, inputCount: Int, final: Bool
+        _ progress: (used: Int, written: Int),
+        consumed: Int,
+        inputCount: Int,
+        final: Bool
     ) throws -> Bool {
         guard progress.used == 0 && progress.written == 0 else { return false }
         if final {
@@ -215,7 +233,9 @@ public final class ContentDecoder {
     }
 
     private func nativeStep(
-        _ input: UnsafeRawBufferPointer, capacity: Int, final: Bool
+        _ input: UnsafeRawBufferPointer,
+        capacity: Int,
+        final: Bool
     ) throws -> (used: Int, written: Int) {
         let source = input.baseAddress?.assumingMemoryBound(to: UInt8.self)
         if let zstream {
@@ -235,7 +255,8 @@ public final class ContentDecoder {
         appleStream.dst_ptr = output
         appleStream.dst_size = capacity
         let status = compression_stream_process(
-            &appleStream, final ? Int32(COMPRESSION_STREAM_FINALIZE.rawValue) : 0
+            &appleStream,
+            final ? Int32(COMPRESSION_STREAM_FINALIZE.rawValue) : 0
         )
         guard status != COMPRESSION_STATUS_ERROR else { throw ContentDecoderError.malformed }
         ended = status == COMPRESSION_STATUS_END

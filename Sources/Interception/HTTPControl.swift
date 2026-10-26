@@ -162,13 +162,13 @@ public struct HTTPControlDecision: Sendable {
         bytes += appliedRuleIDs.reduce(0) { $0 + $1.utf8.count }
         bytes += syntheticResponseHeaders?.reduce(0) { $0 + $1.name.utf8.count + $1.value.utf8.count } ?? 0
         switch action {
-        case .replaceBody(let body, _, let encoding, _):
+        case let .replaceBody(body, _, encoding, _):
             bytes += body.count + (encoding?.utf8.count ?? 0)
-        case .respond(_, let headers, let body):
+        case let .respond(_, headers, body):
             bytes += body.count + headers.reduce(0) { $0 + $1.name.utf8.count + $1.value.utf8.count }
-        case .route(let authority, let sensitive):
+        case let .route(authority, sensitive):
             bytes += authority.utf8.count + sensitive.reduce(0) { $0 + $1.utf8.count }
-        case .editHeaders(let remove, let append):
+        case let .editHeaders(remove, append):
             bytes += remove.reduce(0) { $0 + $1.utf8.count }
                 + append.reduce(0) { $0 + $1.name.utf8.count + $1.value.utf8.count }
         default: break
@@ -200,7 +200,8 @@ public struct HTTPControlConfiguration: Sendable {
         var bytes = 0
         var identifiers = Set<String>()
         for rule in rules {
-            guard !rule.id.isEmpty, identifiers.insert(rule.id).inserted else { throw HTTPControlError.invalidConfiguration }
+            guard !rule.id.isEmpty,
+                  identifiers.insert(rule.id).inserted else { throw HTTPControlError.invalidConfiguration }
             bytes += try Self.ruleBytes(rule, limits: limits)
             guard bytes <= limits.maximumConfigurationBytes else { throw HTTPControlError.capacityExceeded }
         }
@@ -223,24 +224,23 @@ public struct HTTPControlConfiguration: Sendable {
             switch rule.action {
             case .forward:
                 continue
-            case .editHeaders(let remove, let append):
+            case let .editHeaders(remove, append):
                 guard !Self.unsupported(message) else { throw HTTPControlError.unsupportedEdit }
                 let names = Set(remove.map { $0.lowercased() })
                 headers.removeAll { names.contains($0.name.lowercased()) }
                 headers.append(contentsOf: append)
-            case .fault(let fault):
+            case let .fault(fault):
                 guard !Self.isUpgrade(message) else { throw HTTPControlError.unsupportedEdit }
                 faults.append(fault)
             default:
                 let terminal = try Self.terminalHeaders(rule.action, headers: headers, message: message)
                 if message.phase == .request, case .respond = rule.action {
                     synthetic = terminal
-                }
-                else {
+                } else {
                     headers = terminal
                 }
                 outcome = rule.action
-                if case .replaceBody(_, _, _, let explicit) = outcome {
+                if case let .replaceBody(_, _, _, explicit) = outcome {
                     override = explicit
                 }
                 break rulesLoop
@@ -253,15 +253,19 @@ public struct HTTPControlConfiguration: Sendable {
             _ = try Self.headerBytes(synthetic, multiplexed: message.isHTTP2OrLater)
         }
         return HTTPControlDecision(
-            headers: headers, action: outcome, appliedRuleIDs: applied,
-            faults: faults, overridesNoTransform: override, syntheticResponseHeaders: synthetic
+            headers: headers,
+            action: outcome,
+            appliedRuleIDs: applied,
+            faults: faults,
+            overridesNoTransform: override,
+            syntheticResponseHeaders: synthetic
         )
     }
 
     public func evaluateHead(_ message: HTTPControlMessage) throws -> HTTPControlHeadResult {
         for rule in rules where rule.matches(message) {
             switch rule.action {
-            case .replaceBody(_, let maximum, _, let override):
+            case let .replaceBody(_, maximum, _, override):
                 try Self.requireBodyEdit(message, overrideNoTransform: override)
                 return .needsBody(maximumBytes: maximum)
             case .forward, .editHeaders, .fault: continue
@@ -283,7 +287,7 @@ public struct HTTPControlConfiguration: Sendable {
     }
 
     static func sensitiveNames(_ action: HTTPControlAction) -> Set<String> {
-        if case .route(_, let extra) = action {
+        if case let .route(_, extra) = action {
             return Set(["authorization", "proxy-authorization", "cookie"] + extra.map { $0.lowercased() })
         }
         return []

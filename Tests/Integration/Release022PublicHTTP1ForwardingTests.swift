@@ -72,7 +72,7 @@ final class Release022PublicHTTP1ForwardingTests: XCTestCase {
             try origin.write(Array("HTTP/1.1 201 Created\r\nContent-Length: 0\r\n\r\n".utf8))
             _ = try sink.wait { release022ResponseEnds($0).count == 1 }
             let statuses = sink.events.compactMap { event -> Int? in
-                if case .responseHead(let head) = event {
+                if case let .responseHead(head) = event {
                     head.status
                 } else {
                     nil
@@ -110,7 +110,10 @@ final class Release022PublicHTTP1ForwardingTests: XCTestCase {
         let sink = Release022Events()
         let proxy = ProxyServer(
             certificateAuthority: try CertificateAuthority.generate().authority,
-            sink: sink, group: group, egressPolicy: .init(allowInternal: true), ingress: .explicitHTTP
+            sink: sink,
+            group: group,
+            egressPolicy: .init(allowInternal: true),
+            ingress: .explicitHTTP
         )
         var client: Channel?
         do {
@@ -171,7 +174,7 @@ final class Release022PublicHTTP1ForwardingTests: XCTestCase {
             try received.waitForClose()
             XCTAssertEqual(origin.acceptedConnections, 0)
             let failures = sink.events.compactMap { event -> CapturedConnectionFailure? in
-                if case .connectionFailure(let failure) = event {
+                if case let .connectionFailure(failure) = event {
                     failure
                 } else {
                     nil

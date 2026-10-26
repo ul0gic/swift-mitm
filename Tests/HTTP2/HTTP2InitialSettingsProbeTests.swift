@@ -41,7 +41,7 @@ final class HTTP2InitialSettingsProbeTests: XCTestCase {
                 switch try probe.receive(&chunk) {
                 case .incomplete:
                     break
-                case .complete(let completed):
+                case let .complete(completed):
                     result = completed
                 }
             }
@@ -58,7 +58,7 @@ final class HTTP2InitialSettingsProbeTests: XCTestCase {
     func testCoalescedBytesAfterInitialSettingsRemainUnconsumed() throws {
         var frame = settingsFrame([(identifier: 0x8, value: 1)], trailing: [0x01, 0x02, 0x03])
         var probe = HTTP2InitialSettingsProbe()
-        guard case .complete(let result) = try probe.receive(&frame) else {
+        guard case let .complete(result) = try probe.receive(&frame) else {
             return XCTFail("Expected a complete SETTINGS frame")
         }
         let expectedReplay = settingsFrame([(identifier: 0x8, value: 1)])
@@ -73,7 +73,7 @@ final class HTTP2InitialSettingsProbeTests: XCTestCase {
         ] {
             var probe = HTTP2InitialSettingsProbe()
             var frame = settingsFrame(settings)
-            guard case .complete(let result) = try probe.receive(&frame) else {
+            guard case let .complete(result) = try probe.receive(&frame) else {
                 return XCTFail("Expected a complete SETTINGS frame")
             }
             XCTAssertFalse(result.enablesExtendedConnect)
@@ -83,7 +83,7 @@ final class HTTP2InitialSettingsProbeTests: XCTestCase {
     func testEmptySettingsFrameCompletesWithoutCapability() throws {
         var probe = HTTP2InitialSettingsProbe()
         var frame = settingsFrame([])
-        guard case .complete(let result) = try probe.receive(&frame) else {
+        guard case let .complete(result) = try probe.receive(&frame) else {
             return XCTFail("Expected a complete SETTINGS frame")
         }
         XCTAssertFalse(result.enablesExtendedConnect)
@@ -96,7 +96,7 @@ final class HTTP2InitialSettingsProbeTests: XCTestCase {
         ] {
             var probe = HTTP2InitialSettingsProbe()
             var frame = settingsFrame(settings)
-            guard case .complete(let result) = try probe.receive(&frame) else {
+            guard case let .complete(result) = try probe.receive(&frame) else {
                 return XCTFail("Expected a complete SETTINGS frame")
             }
             XCTAssertTrue(result.enablesExtendedConnect)

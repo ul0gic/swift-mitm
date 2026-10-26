@@ -33,7 +33,9 @@ public final class SSEParser {
     private var failed = false
 
     public init(
-        maximumLineBytes: Int, maximumEventBytes: Int, budget: InspectionMemoryBudget
+        maximumLineBytes: Int,
+        maximumEventBytes: Int,
+        budget: InspectionMemoryBudget
     ) throws {
         guard maximumLineBytes > 0, maximumLineBytes <= 262_144,
             maximumEventBytes > 0, maximumEventBytes <= 4_194_304

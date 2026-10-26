@@ -50,13 +50,13 @@ final class WebSocketCloseDeduplicationTests: XCTestCase {
         _ = try responseChannel.finish()
 
         let frameDirections = sink.events.compactMap { event -> WebSocketDirection? in
-            if case .webSocketFrame(let frame) = event {
+            if case let .webSocketFrame(frame) = event {
                 return frame.direction
             }
             return nil
         }
         let closes = sink.events.compactMap { event -> UUID? in
-            if case .webSocketClose(let connectionID, _, _, _) = event {
+            if case let .webSocketClose(connectionID, _, _, _) = event {
                 return connectionID
             }
             return nil

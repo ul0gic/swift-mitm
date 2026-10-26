@@ -10,13 +10,15 @@ import SwiftMITM
 final class Release022PublicHTTP2StreamingTests: XCTestCase {
     func testGRPCUnaryPreservesEnvelopeBinaryMetadataAndTrailers() async throws {
         try await grpc(
-            requestMessages: [[0, 0, 0, 0, 3, 1, 2, 3]], responseMessages: [[0, 0, 0, 0, 2, 4, 5]]
+            requestMessages: [[0, 0, 0, 0, 3, 1, 2, 3]],
+            responseMessages: [[0, 0, 0, 0, 2, 4, 5]]
         )
     }
 
     func testGRPCClientStreamingPreservesEveryEnvelope() async throws {
         try await grpc(
-            requestMessages: [[0, 0, 0, 0, 1, 1], [0, 0, 0, 0, 1, 2]], responseMessages: [[0, 0, 0, 0, 1, 3]]
+            requestMessages: [[0, 0, 0, 0, 1, 1], [0, 0, 0, 0, 1, 2]],
+            responseMessages: [[0, 0, 0, 0, 1, 3]]
         )
     }
 
@@ -30,7 +32,8 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
     func testGRPCBidirectionalStreamingReleasesResponsesBeforeRequestEnd() async throws {
         try await grpc(
             requestMessages: [[0, 0, 0, 0, 1, 1], [0, 0, 0, 0, 1, 2]],
-            responseMessages: [[0, 0, 0, 0, 1, 3], [0, 0, 0, 0, 1, 4]], interleave: true
+            responseMessages: [[0, 0, 0, 0, 1, 3], [0, 0, 0, 0, 1, 4]],
+            interleave: true
         )
     }
 
@@ -41,11 +44,13 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
             let upstream = try origin.stream(0)
             try upstream.wait { !$0.isEmpty }
             try upstream.write(.headers(.init(headers: HPACKHeaders([
-                (":status", "200"), ("content-type", "application/grpc"),
-                ("grpc-status", "7"), ("grpc-message", "permission%20denied")
+                (":status", "200"),
+                ("content-type", "application/grpc"),
+                ("grpc-status", "7"),
+                ("grpc-message", "permission%20denied")
             ]), endStream: true)))
             try client.wait { $0.contains {
-                if case .headers(let h) = $0 {
+                if case let .headers(h) = $0 {
                     h.endStream
                 } else {
                     false
@@ -59,7 +64,7 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
                 }
             } }
             let heads = sink.events.compactMap { event -> CapturedResponseHead? in
-                if case .responseHead(let head) = event {
+                if case let .responseHead(head) = event {
                     head
                 } else {
                     nil
@@ -91,17 +96,21 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
             try first.wait { !$0.isEmpty }
             let control = try self.newStream(multiplexer)
             try control.write(.headers(.init(
-                headers: self.requestHeaders(port: origin.port, path: "/rpc/control"), endStream: true
+                headers: self.requestHeaders(port: origin.port, path: "/rpc/control"),
+                endStream: true
             )))
             let second = try origin.stream(1)
             try second.wait { !$0.isEmpty }
             try cancelled.write(.rstStream(.cancel))
-            try second.write(.headers(.init(headers: HPACKHeaders([(":status", "200"), ("content-type", "application/grpc")]))))
+            try second.write(.headers(.init(headers: HPACKHeaders([
+                (":status", "200"),
+                ("content-type", "application/grpc")
+            ]))))
             let bytes: [UInt8] = [0, 0, 0, 0, 1, 42]
             try second.write(.data(.init(data: .byteBuffer(ByteBuffer(bytes: bytes)))))
             try second.write(.headers(.init(headers: HPACKHeaders([("grpc-status", "0")]), endStream: true)))
             try control.wait { $0.contains {
-                if case .headers(let h) = $0 {
+                if case let .headers(h) = $0 {
                     h.endStream
                 } else {
                     false
@@ -116,7 +125,7 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
                 }
             } }
             let requests = sink.events.compactMap { event -> CapturedRequestHead? in
-                if case .requestHead(let head) = event {
+                if case let .requestHead(head) = event {
                     head
                 } else {
                     nil
@@ -124,7 +133,7 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
             }
             let controlID = try XCTUnwrap(requests.first { $0.path == "/rpc/control" }?.id)
             XCTAssertFalse(sink.events.contains {
-                if case .streamError(let id, _) = $0 {
+                if case let .streamError(id, _) = $0 {
                     id == controlID
                 } else {
                     false
@@ -142,7 +151,7 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
             try upstream.write(.headers(.init(headers: HPACKHeaders([(":status", "200")]))))
             try upstream.write(.data(.init(data: .byteBuffer(ByteBuffer(string: "done")), endStream: true)))
             try client.wait { $0.contains {
-                if case .data(let data) = $0 {
+                if case let .data(data) = $0 {
                     data.endStream
                 } else {
                     false
@@ -185,10 +194,16 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
     func testHTTP2SSEChunksArriveBeforeNextBarrierAndEndStream() async throws {
         try await withHTTP2 { origin, multiplexer, sink in
             let client = try self.newStream(multiplexer)
-            try client.write(.headers(.init(headers: self.requestHeaders(port: origin.port, path: "/events"), endStream: true)))
+            try client.write(.headers(.init(
+                headers: self.requestHeaders(port: origin.port, path: "/events"),
+                endStream: true
+            )))
             let upstream = try origin.stream(0)
             try upstream.wait { !$0.isEmpty }
-            try upstream.write(.headers(.init(headers: HPACKHeaders([(":status", "200"), ("content-type", "text/event-stream")]))))
+            try upstream.write(.headers(.init(headers: HPACKHeaders([
+                (":status", "200"),
+                ("content-type", "text/event-stream")
+            ]))))
             let chunks: [[UInt8]] = [Array(": heartbeat\n\ndata: ".utf8) + [0xE2], [0x82, 0xAC, 10, 10]]
             var released: [UInt8] = []
             for chunk in chunks {
@@ -217,7 +232,9 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
     }
 
     private func grpc(
-        requestMessages: [[UInt8]], responseMessages: [[UInt8]], interleave: Bool = false
+        requestMessages: [[UInt8]],
+        responseMessages: [[UInt8]],
+        interleave: Bool = false
     ) async throws {
         try await withHTTP2 { origin, multiplexer, sink in
             let client = try self.newStream(multiplexer)
@@ -225,8 +242,10 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
             let upstream = try origin.stream(0)
             try upstream.wait { !$0.isEmpty }
             try upstream.write(.headers(.init(headers: HPACKHeaders([
-                (":status", "200"), ("content-type", "application/grpc"),
-                ("grpc-encoding", "gzip"), ("server-bin", "AP8=")
+                (":status", "200"),
+                ("content-type", "application/grpc"),
+                ("grpc-encoding", "gzip"),
+                ("server-bin", "AP8=")
             ]))))
             for (index, bytes) in requestMessages.enumerated() {
                 try client.write(.data(.init(data: .byteBuffer(ByteBuffer(bytes: bytes)))))
@@ -248,7 +267,7 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
             }
             try client.write(.headers(.init(headers: HPACKHeaders([("client-bin", "AQI=")]), endStream: true)))
             try upstream.wait { $0.contains {
-                if case .headers(let h) = $0 {
+                if case let .headers(h) = $0 {
                     h.endStream
                 } else {
                     false
@@ -268,9 +287,12 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
                     }
                 })
             }
-            try upstream.write(.headers(.init(headers: HPACKHeaders([("grpc-status", "0"), ("grpc-message", "ok"), ("trailer-bin", "//4=")]), endStream: true)))
+            try upstream.write(.headers(.init(
+                headers: HPACKHeaders([("grpc-status", "0"), ("grpc-message", "ok"), ("trailer-bin", "//4=")]),
+                endStream: true
+            )))
             try client.wait { $0.contains {
-                if case .headers(let h) = $0 {
+                if case let .headers(h) = $0 {
                     h.endStream
                 } else {
                     false
@@ -286,7 +308,7 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
             XCTAssertEqual(self.dataBytes(client.frames), responseMessages.flatMap(\.self))
             XCTAssertEqual(self.responseBytes(events), responseMessages.flatMap(\.self))
             let requestBytes = events.flatMap { event -> [UInt8] in
-                if case .requestBodyChunk(_, let bytes, _) = event {
+                if case let .requestBodyChunk(_, bytes, _) = event {
                     bytes
                 } else {
                     []
@@ -294,7 +316,7 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
             }
             XCTAssertEqual(requestBytes, requestMessages.flatMap(\.self))
             let trailers = events.flatMap { event -> [HTTPHeaderField] in
-                if case .responseTrailers(_, let headers) = event {
+                if case let .responseTrailers(_, headers) = event {
                     headers
                 } else {
                     []
@@ -314,8 +336,13 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
 
     private func requestHeaders(port: Int, path: String = "/rpc/Exchange") -> HPACKHeaders {
         HPACKHeaders([
-            (":method", "POST"), (":scheme", "https"), (":authority", "localhost:\(port)"),
-            (":path", path), ("content-type", "application/grpc"), ("te", "trailers"), ("client-bin", "AQI=")
+            (":method", "POST"),
+            (":scheme", "https"),
+            (":authority", "localhost:\(port)"),
+            (":path", path),
+            ("content-type", "application/grpc"),
+            ("te", "trailers"),
+            ("client-bin", "AQI=")
         ])
     }
 
@@ -329,7 +356,7 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
 
     private func dataBytes(_ frames: [HTTP2Frame.FramePayload]) -> [UInt8] {
         frames.flatMap { frame in
-            if case .data(let data) = frame, case .byteBuffer(let buffer) = data.data {
+            if case let .data(data) = frame, case let .byteBuffer(buffer) = data.data {
                 Array(buffer.readableBytesView)
             } else {
                 []
@@ -339,7 +366,7 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
 
     private func responseBytes(_ events: [CaptureEvent]) -> [UInt8] {
         events.flatMap {
-            if case .responseBodyChunk(_, let bytes, _) = $0 {
+            if case let .responseBodyChunk(_, bytes, _) = $0 {
                 bytes
             } else {
                 []
@@ -355,9 +382,12 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
         let authority = try CertificateAuthority.generate().authority
         let sink = Release022Events()
         let proxy = ProxyServer(
-            certificateAuthority: authority, sink: sink, group: group,
+            certificateAuthority: authority,
+            sink: sink,
+            group: group,
             upstreamPolicy: .init(additionalTrustRootsPEM: [origin.authority.caCertificatePEM]),
-            egressPolicy: .init(allowInternal: true), captureBodyLimit: 65_536
+            egressPolicy: .init(allowInternal: true),
+            captureBodyLimit: 65_536
         )
         var client: Channel?
         do {
@@ -367,8 +397,11 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
             let channel = try peer.openTunnel(proxyPort: port, originHost: "localhost", originPort: origin.port)
             client = channel
             let tls = try peer.installTLS(
-                on: channel, serverHostname: "localhost", mitmCACertificatePEM: authority.caCertificatePEM,
-                applicationProtocols: ["h2"], configuresHTTP2: true
+                on: channel,
+                serverHostname: "localhost",
+                mitmCACertificatePEM: authority.caCertificatePEM,
+                applicationProtocols: ["h2"],
+                configuresHTTP2: true
             )
             try phase4BoundedWait(tls.installed)
             XCTAssertEqual(try phase4BoundedWait(tls.handshake), "h2")

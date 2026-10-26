@@ -177,13 +177,13 @@ final class CaptureSinkContractTests: XCTestCase {
         XCTAssertFalse(sink.timedOut)
 
         let heads = sink.events.compactMap { event -> UUID? in
-            if case .requestHead(let head) = event {
+            if case let .requestHead(head) = event {
                 return head.id
             }
             return nil
         }
         let ends = sink.events.compactMap { event -> UUID? in
-            if case .requestEnd(let requestID, _) = event {
+            if case let .requestEnd(requestID, _) = event {
                 return requestID
             }
             return nil

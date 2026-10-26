@@ -16,19 +16,21 @@ struct ReplayResponseReader: Sendable {
         capture = CaptureBodyBuffer(limit: execution.server.captureBodyLimit)
         let invocation = execution.invocation
         controls = ReplayResponseControls(
-            controls: invocation.controls, inheritedFaults: invocation.faults,
-            attemptID: invocation.identity.attemptID, responseSink: invocation.responseSink,
+            controls: invocation.controls,
+            inheritedFaults: invocation.faults,
+            attemptID: invocation.identity.attemptID,
+            responseSink: invocation.responseSink,
             observation: execution.server.sink as? ObservationCaptureSink
         )
     }
 
     mutating func receive(_ part: HTTPClientResponsePart) async throws -> ReplayResult? {
         switch part {
-        case .head(let head): return try await receiveHead(head)
-        case .body(let body):
+        case let .head(head): return try await receiveHead(head)
+        case let .body(body):
             try await receiveBody(body)
             return nil
-        case .end(let trailers): return try await receiveEnd(trailers)
+        case let .end(trailers): return try await receiveEnd(trailers)
         }
     }
 
@@ -37,8 +39,10 @@ struct ReplayResponseReader: Sendable {
         guard !ExplicitHTTPProxyHandler.ambiguous(received.headers), received.status.code != 101,
             status == nil else { throw ReplayError.incompleteResponse }
         let response = CapturedResponseHead(
-            requestID: execution.invocation.identity.requestID, timestamp: Date(),
-            status: Int(received.status.code), version: .http11,
+            requestID: execution.invocation.identity.requestID,
+            timestamp: Date(),
+            status: Int(received.status.code),
+            version: .http11,
             headers: ExplicitHTTPProxyHandler.fields(received.headers)
         )
         if received.status.code >= 200 {
@@ -58,12 +62,18 @@ struct ReplayResponseReader: Sendable {
         let (newCount, overflow) = receivedBytes.addingReportingOverflow(body.readableBytes)
         guard !overflow else { throw ReplayError.incompleteResponse }
         receivedBytes = newCount
-        let requestID = execution.invocation.identity.requestID
+        let requestID = execution.invocation
+.identity
+.requestID
         (execution.server.sink as? ObservationCaptureSink)?.receiveBody(
-            requestID: requestID, direction: .response, bytes: body.readableBytesView
+            requestID: requestID,
+            direction: .response,
+            bytes: body.readableBytesView
         )
         execution.server.sink.receive(.responseBodyChunk(
-            requestID: requestID, bytes: capture.take(body.readableBytesView), byteCount: body.readableBytes
+            requestID: requestID,
+            bytes: capture.take(body.readableBytesView),
+            byteCount: body.readableBytes
         ))
         var buffer = body
         while let bytes = buffer.readBytes(length: min(65_536, buffer.readableBytes)), !bytes.isEmpty {
@@ -82,20 +92,25 @@ struct ReplayResponseReader: Sendable {
             execution.server.sink.receive(.responseTrailers(requestID: invocation.identity.requestID, headers: fields))
             if !controls.representationChanged {
                 try await invocation.responseSink.receive(.trailers(
-                    attemptID: invocation.identity.attemptID, requestID: invocation.identity.requestID, headers: fields
+                    attemptID: invocation.identity.attemptID,
+                    requestID: invocation.identity.requestID,
+                    headers: fields
                 ))
             }
         }
         execution.server.sink.receive(.responseEnd(
-            requestID: invocation.identity.requestID, truncated: capture.truncated
+            requestID: invocation.identity.requestID,
+            truncated: capture.truncated
         ))
         return result(status: status, measurement: try timing.measurement())
     }
 
     private func result(status: Int, measurement: ReplayMeasurement) -> ReplayResult {
         execution.invocation.identity.result(
-            status: controls.effectiveStatus ?? status, responseBodyBytes: controls.effectiveBodyBytes,
-            headers: controls.effectiveHeaders, measurement: measurement
+            status: controls.effectiveStatus ?? status,
+            responseBodyBytes: controls.effectiveBodyBytes,
+            headers: controls.effectiveHeaders,
+            measurement: measurement
         )
     }
 }

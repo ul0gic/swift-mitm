@@ -61,7 +61,8 @@ final class TestHTTP2Client {
         self.connection = connection.0
         let state = state
         let promise = donePromise
-        let stream = try connection.1.createStreamChannel { stream in
+        let stream = try connection.1
+.createStreamChannel { stream in
             stream.setOption(ChannelOptions.autoRead, value: false).flatMapThrowing {
                 try stream.pipeline.syncOperations.addHandler(
                     ConsumingHandler(authority: authority, state: state, done: promise)
@@ -118,12 +119,12 @@ private final class ConsumingHandler: ChannelDuplexHandler {
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let payload = unwrapInboundIn(data)
         switch payload {
-        case .data(let frame):
+        case let .data(frame):
             state.add(frame.data.readableBytes)
             if frame.endStream {
                 complete()
             }
-        case .headers(let frame):
+        case let .headers(frame):
             if frame.endStream {
                 complete()
             }

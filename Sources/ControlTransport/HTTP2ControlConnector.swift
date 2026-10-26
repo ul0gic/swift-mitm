@@ -3,9 +3,13 @@ import NIOCore
 import NIOHTTP2
 
 extension ProxyServer {
-    func connectControlledHTTP2(target: HTTPForwardTarget, requestID: UUID,
-                                errorState: HTTP2StreamErrorState,
-                                downstream: Channel, on loop: EventLoop) -> EventLoopFuture<HTTPForwardConnection> {
+    func connectControlledHTTP2(
+        target: HTTPForwardTarget,
+        requestID: UUID,
+        errorState: HTTP2StreamErrorState,
+        downstream: Channel,
+        on loop: EventLoop
+    ) -> EventLoopFuture<HTTPForwardConnection> {
         guard target.scheme == "https" || target.scheme == "http",
               let destination = ConnectionTarget(explicitConnectAuthority: target.authority),
               let token = connectionRegistry.beginSetup() else {
@@ -18,14 +22,19 @@ extension ProxyServer {
             do { runtime = try activeTLSRuntime() }
             catch { token.complete(); return loop.makeFailedFuture(error) }
             connection = connectUpstreamTLS(
-                target: destination, applicationProtocols: [.http2],
-                tlsRuntime: runtime, setupToken: token, on: loop
+                target: destination,
+                applicationProtocols: [.http2],
+                tlsRuntime: runtime,
+                setupToken: token,
+                on: loop
             )
         } else {
             connection = connectUpstreamRaw(target: destination, on: loop, setupToken: token).map {
                 ResolvedUpstreamConnection(
                     connection: NegotiatedUpstreamConnection(
-                        channel: $0.channel, applicationProtocol: .http2, alpnHandler: nil
+                        channel: $0.channel,
+                        applicationProtocol: .http2,
+                        alpnHandler: nil
                     ),
                     target: $0.target
                 )
@@ -34,16 +43,22 @@ extension ProxyServer {
         return connection
             .flatMap { resolved in
                 self.configureControlledHTTP2(
-                    resolved, target: target, requestID: requestID,
-                    errorState: errorState, downstream: downstream
+                    resolved,
+                    target: target,
+                    requestID: requestID,
+                    errorState: errorState,
+                    downstream: downstream
                 )
             }
             .always { _ in token.complete() }
     }
 
     private func configureControlledHTTP2(
-        _ resolved: ResolvedUpstreamConnection, target: HTTPForwardTarget, requestID: UUID,
-        errorState: HTTP2StreamErrorState, downstream: Channel
+        _ resolved: ResolvedUpstreamConnection,
+        target: HTTPForwardTarget,
+        requestID: UUID,
+        errorState: HTTP2StreamErrorState,
+        downstream: Channel
     ) -> EventLoopFuture<HTTPForwardConnection> {
         let connection = resolved.connection
         guard downstream.isActive else {
@@ -55,15 +70,20 @@ extension ProxyServer {
         var configuration = NIOHTTP2Handler.ConnectionConfiguration()
         configuration.targetWindowSize = targetWindowSize
         return HTTP2ControlPipeline.configure(
-            channel: connection.channel, mode: .client, configuration: configuration,
+            channel: connection.channel,
+            mode: .client,
+            configuration: configuration,
             initializer: { $0.close() }
         )
             .flatMap { mux in
                 connection.releaseBufferedReads().flatMap {
                     mux.value.createStreamChannel { stream in
                         self.configureControlledHTTP2Stream(
-                            stream, resolved: resolved, target: target,
-                            requestID: requestID, errorState: errorState
+                            stream,
+                            resolved: resolved,
+                            target: target,
+                            requestID: requestID,
+                            errorState: errorState
                         )
                     }
                 }
@@ -75,8 +95,11 @@ extension ProxyServer {
     }
 
     private func configureControlledHTTP2Stream(
-        _ stream: Channel, resolved: ResolvedUpstreamConnection, target: HTTPForwardTarget,
-        requestID: UUID, errorState: HTTP2StreamErrorState
+        _ stream: Channel,
+        resolved: ResolvedUpstreamConnection,
+        target: HTTPForwardTarget,
+        requestID: UUID,
+        errorState: HTTP2StreamErrorState
     ) -> EventLoopFuture<Void> {
         let connection = resolved.connection
         stream.closeFuture.whenComplete { _ in connection.channel.close(promise: nil) }
@@ -87,9 +110,13 @@ extension ProxyServer {
                     gate: NIOLoopBound(gate, eventLoop: stream.eventLoop)
                 ))
                 try stream.pipeline.syncOperations.addHandler(HTTP2CaptureTapHandler(
-                    direction: .response, requestID: requestID, authority: target.authority,
-                    target: resolved.target.capturedTarget, sink: self.sink,
-                    captureBodyLimit: self.captureBodyLimit, errorState: errorState
+                    direction: .response,
+                    requestID: requestID,
+                    authority: target.authority,
+                    target: resolved.target.capturedTarget,
+                    sink: self.sink,
+                    captureBodyLimit: self.captureBodyLimit,
+                    errorState: errorState
                 ))
             }
         }

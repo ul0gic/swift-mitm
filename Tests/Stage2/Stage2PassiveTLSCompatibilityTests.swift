@@ -13,11 +13,15 @@ final class Stage2PassiveTLSCompatibilityTests: XCTestCase {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 2)
         let root = try CertificateAuthority.generate().authority
         let capture = Release022Events()
-        let admission = ResourceAdmissionController(configuration: try ResourceAdmissionConfiguration(maximumStreams: 1))
+        let admission =
+            ResourceAdmissionController(configuration: try ResourceAdmissionConfiguration(maximumStreams: 1))
         let proxy = ProxyServer(
-            certificateAuthority: root, sink: capture, group: group,
+            certificateAuthority: root,
+            sink: capture,
+            group: group,
             upstreamPolicy: .init(additionalTrustRootsPEM: [try String(contentsOfFile: ready.root, encoding: .utf8)]),
-            egressPolicy: .init(allowInternal: true), admission: admission
+            egressPolicy: .init(allowInternal: true),
+            admission: admission
         )
         do {
             let port = try await proxy.start(port: 0)
@@ -51,12 +55,17 @@ final class Stage2PassiveTLSCompatibilityTests: XCTestCase {
     }
 
     private func connectedClient(
-        group: EventLoopGroup, proxyPort: Int, originPort: Int, authority: CertificateAuthority
+        group: EventLoopGroup,
+        proxyPort: Int,
+        originPort: Int,
+        authority: CertificateAuthority
     ) throws -> (channel: Channel, received: Release022WireObservation) {
         let peer = ProxyTestClient(group: group)
         let channel = try peer.openTunnel(proxyPort: proxyPort, originHost: "localhost", originPort: originPort)
         let tls = try peer.installTLS(
-            on: channel, serverHostname: "localhost", mitmCACertificatePEM: authority.caCertificatePEM,
+            on: channel,
+            serverHostname: "localhost",
+            mitmCACertificatePEM: authority.caCertificatePEM,
             applicationProtocols: ["http/1.1"]
         )
         try phase4BoundedWait(tls.installed)
@@ -70,8 +79,16 @@ final class Stage2PassiveTLSCompatibilityTests: XCTestCase {
 
     private func originGet(_ path: String, ready: Release022PeerReady) throws -> String {
         try release022RunProcess(executable: "/usr/bin/curl", arguments: [
-            "--silent", "--show-error", "--fail", "--max-time", "10", "--noproxy", "*",
-            "--cacert", ready.root, "https://localhost:\(ready.port)\(path)"
+            "--silent",
+            "--show-error",
+            "--fail",
+            "--max-time",
+            "10",
+            "--noproxy",
+            "*",
+            "--cacert",
+            ready.root,
+            "https://localhost:\(ready.port)\(path)"
         ])
     }
 }

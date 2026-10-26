@@ -27,7 +27,7 @@ extension TransparentApplicationClassifierTests {
         assertFull(try contiguous.channel.writeInbound(ByteBuffer(bytes: bytes)))
         contiguous.channel.embeddedEventLoop.run()
 
-        guard case .interceptedTLS(let metadata) = fragmentedStorage.classification else {
+        guard case let .interceptedTLS(metadata) = fragmentedStorage.classification else {
             return XCTFail("expected intercepted TLS")
         }
         XCTAssertEqual(metadata.serverName, "api.example.com")

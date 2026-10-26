@@ -153,7 +153,7 @@ final class LeafIdentityCacheTests: XCTestCase {
     }
 
     private func leafDER(_ identity: MintedIdentity) throws -> [UInt8] {
-        guard case .certificate(let certificate) = identity.certificateChain.first else {
+        guard case let .certificate(certificate) = identity.certificateChain.first else {
             throw CacheTestError.invalidIdentity
         }
         return try certificate.toDERBytes()

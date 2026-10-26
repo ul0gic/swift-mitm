@@ -95,7 +95,11 @@ struct ProtobufWireInterpreter {
     }
 
     private mutating func scalar(
-        _ field: ProtobufField, wire: Int, cursor: inout Int, end: Int, depth: Int
+        _ field: ProtobufField,
+        wire: Int,
+        cursor: inout Int,
+        end: Int,
+        depth: Int
     ) throws -> ProtobufValue {
         guard wire == scalarWire(field.type) else { throw ProtobufInspectionError.schemaMismatch }
         switch field.type {

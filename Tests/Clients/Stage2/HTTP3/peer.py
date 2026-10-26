@@ -18,12 +18,14 @@ from client_tls import create_identity
 
 
 class Origin(QuicConnectionProtocol):
-    def __init__(self, *args, stats, publish, **kwargs):
+    def __init__(self, *args, stats, publish, release_file, **kwargs):
         super().__init__(*args, **kwargs)
         self.http = H3Connection(self._quic)
         self.stats = stats
         self.publish = publish
         self.paths = {}
+        self.release_file = release_file
+        self.fin_tasks = set()
 
     def quic_event_received(self, event):
         if isinstance(event, HandshakeCompleted):
@@ -49,6 +51,17 @@ class Origin(QuicConnectionProtocol):
         values = dict(event.headers)
         path = values.get(b":path")
         if path is None:
+            path = self.paths.get(event.stream_id, b"")
+            if path.startswith(b"/split-fin/"):
+                sequence = int(path.rsplit(b"/", 1)[1])
+                assert event.headers == [(b"x-request-trailer", str(sequence).encode("ascii"))]
+                self.stats["splitRequestTrailers"].append(sequence)
+                self.http.send_headers(event.stream_id, [
+                    (b"x-response-trailer", str(sequence).encode("ascii"))
+                ], end_stream=False)
+                task = asyncio.create_task(self.finish_split_response(event.stream_id, sequence))
+                self.fin_tasks.add(task)
+                task.add_done_callback(self.fin_tasks.discard)
             return
         if len(self.paths) >= 64:
             raise RuntimeError("independent origin request bound exceeded")
@@ -65,9 +78,22 @@ class Origin(QuicConnectionProtocol):
         elif path == b"/large":
             self.http.send_data(event.stream_id, bytes(range(256)) * 1024, end_stream=True)
             self.paths.pop(event.stream_id)
+        elif path.startswith(b"/split-fin/"):
+            self.http.send_data(event.stream_id, b"split-response", end_stream=False)
         else:
             self.http.send_data(event.stream_id, b"origin", end_stream=True)
             self.paths.pop(event.stream_id)
+
+    async def finish_split_response(self, stream, sequence):
+        # The driver releases this only after the client received these trailers.
+        async with asyncio.timeout(15):
+            while not self.release_file.exists() or int(self.release_file.read_text()) < sequence:
+                await asyncio.sleep(0.01)
+        self._quic.send_stream_data(stream, b"", end_stream=True)
+        self.transmit()
+        self.stats["splitResponseFin"].append(sequence)
+        self.paths.pop(stream, None)
+        self.publish()
 
     def data(self, event):
         path = self.paths.get(event.stream_id)
@@ -99,8 +125,10 @@ async def serve(arguments):
     certificate, key = create_identity(directory)
     stats = {"datagrams": 0, "handshakes": 0, "alpn": [], "earlyDataAccepted": False,
              "requests": 0, "paths": [], "uploadBytes": 0, "cancelSignals": 0,
-             "peerQpackCapacity": None, "peerQpackBlocked": None}
+             "peerQpackCapacity": None, "peerQpackBlocked": None,
+             "splitRequestTrailers": [], "splitResponseFin": []}
     stats_file = directory / "stats.json"
+    release_file = directory / "release-fin.txt"
 
     def publish():
         temporary = stats_file.with_suffix(".tmp")
@@ -113,7 +141,7 @@ async def serve(arguments):
     transport, server = await loop.create_datagram_endpoint(
         lambda: CountingServer(
             configuration=configuration, stats=stats, publish=publish,
-            create_protocol=partial(Origin, stats=stats, publish=publish)
+            create_protocol=partial(Origin, stats=stats, publish=publish, release_file=release_file)
         ), local_addr=("127.0.0.1", 0)
     )
     stopped = asyncio.Event()
@@ -122,7 +150,8 @@ async def serve(arguments):
     publish()
     arguments.ready_file.write_text(json.dumps({
         "port": transport.get_extra_info("sockname")[1], "hostname": "localhost",
-        "certificate": str(certificate), "key": str(key), "stats": str(stats_file)
+        "certificate": str(certificate), "key": str(key), "stats": str(stats_file),
+        "releaseFin": str(release_file)
     }), encoding="utf-8")
     try:
         await asyncio.wait_for(stopped.wait(), timeout=180)

@@ -96,7 +96,7 @@ struct InterceptionLab {
                     + "[--allow-internal] [--origin-ca PATH]"
             )
             exit(2)
-        } catch LabError.missingHARTimings(let reason) {
+        } catch let LabError.missingHARTimings(reason) {
             writeError(
                 "HAR export unavailable: measured replay timings are missing "
                     + "(\(reason?.label ?? "unknown reason"))."
@@ -147,10 +147,14 @@ struct InterceptionLab {
     }
 
     private static func serve(
-        _ arguments: Arguments, authority: CertificateAuthority, output: ConsoleOutput
+        _ arguments: Arguments,
+        authority: CertificateAuthority,
+        output: ConsoleOutput
     ) async throws -> Bool {
         let (server, inspector, breakpoints, limits) = try makeServer(
-            arguments, authority: authority, output: output
+            arguments,
+            authority: authority,
+            output: output
         )
         let editHeader = arguments.editHeader
         let breakpointConsumer = Task {
@@ -203,12 +207,15 @@ struct InterceptionLab {
     }
 
     private static func makeServer(
-        _ arguments: Arguments, authority: CertificateAuthority, output: ConsoleOutput
+        _ arguments: Arguments,
+        authority: CertificateAuthority,
+        output: ConsoleOutput
     ) throws -> (ProxyServer, HTTPInspector, ConsoleBreakpointSink, HTTPControlLimits) {
         let inspection = ConsoleInspectionSink(output: output)
         let admission = ResourceAdmissionController(configuration: try ResourceAdmissionConfiguration())
         let inspector = try HTTPInspector(
-            configuration: InspectionConfiguration(budget: InspectionMemoryBudget(admission: admission)), sink: inspection
+            configuration: InspectionConfiguration(budget: InspectionMemoryBudget(admission: admission)),
+            sink: inspection
         )
         let breakpoints = ConsoleBreakpointSink(output: output)
         let limits = try HTTPControlLimits()
@@ -239,8 +246,10 @@ struct InterceptionLab {
     }
 
     private static func resolve(
-        _ handle: BreakpointHandle, limits: HTTPControlLimits,
-        editHeader: (name: String, value: String)?, output: ConsoleOutput
+        _ handle: BreakpointHandle,
+        limits: HTTPControlLimits,
+        editHeader: (name: String, value: String)?,
+        output: ConsoleOutput
     ) async {
         output.emit("paused \(handle.original.method) \(handle.original.path.prefix(256)) [\(handle.phase)]")
         guard let editHeader else {
@@ -276,7 +285,9 @@ struct InterceptionLab {
     }
 
     private static func replay(
-        _ arguments: Arguments, authority: CertificateAuthority, output: ConsoleOutput
+        _ arguments: Arguments,
+        authority: CertificateAuthority,
+        output: ConsoleOutput
     ) async throws {
         guard let rawURL = arguments.value, let url = URL(string: rawURL),
             let scheme = url.scheme, ["http", "https"].contains(scheme.lowercased()), url.host != nil
@@ -312,8 +323,11 @@ struct InterceptionLab {
     }
 
     private static func exportHAR(
-        _ path: String, result: ReplayResult, request: CapturedRequestHead,
-        response: CapturedResponseHead, output: ConsoleOutput
+        _ path: String,
+        result: ReplayResult,
+        request: CapturedRequestHead,
+        response: CapturedResponseHead,
+        output: ConsoleOutput
     ) async throws {
         guard let timings = result.timings else {
             throw LabError.missingHARTimings(result.timingUnavailable)
@@ -344,7 +358,9 @@ struct InterceptionLab {
     }
 
     private static func performReplay(
-        _ request: ReplayRequest, on server: ProxyServer, sink: any ReplayResponseSink
+        _ request: ReplayRequest,
+        on server: ProxyServer,
+        sink: any ReplayResponseSink
     ) async throws -> ReplayResult {
         do {
             _ = try await server.start(port: 0)

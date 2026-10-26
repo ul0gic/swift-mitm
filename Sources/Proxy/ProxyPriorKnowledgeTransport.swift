@@ -18,7 +18,9 @@ extension ProxyServer {
                 bridgeHTTP2(
                     inbound: channel,
                     upstream: NegotiatedUpstreamConnection(
-                        channel: upstream.channel, applicationProtocol: .http2, alpnHandler: nil
+                        channel: upstream.channel,
+                        applicationProtocol: .http2,
+                        alpnHandler: nil
                     ),
                     authority: configuration.authority,
                     target: upstream.target.capturedTarget,
@@ -45,7 +47,7 @@ final class HTTP2PriorKnowledgeAuthorityHandler: ChannelInboundHandler {
             context.fireChannelRead(data)
             return
         }
-        guard case .headers(let head) = payload,
+        guard case let .headers(head) = payload,
               head.headers.first(name: ":scheme") == "http",
               let value = head.headers.first(name: ":authority") else {
             context.close(promise: nil)

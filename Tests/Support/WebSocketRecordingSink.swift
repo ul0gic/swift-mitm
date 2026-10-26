@@ -70,7 +70,7 @@ final class WebSocketRecordingSink: CaptureEventSink, @unchecked Sendable {
 
     private func recordRequest(_ event: CaptureEvent, in snapshot: inout Snapshot) {
         switch event {
-        case .requestHead(let head):
+        case let .requestHead(head):
             snapshot.requestHeads.append(RequestHead(
                 id: head.id,
                 scheme: head.scheme,
@@ -94,7 +94,7 @@ final class WebSocketRecordingSink: CaptureEventSink, @unchecked Sendable {
 
     private func recordResponse(_ event: CaptureEvent, in snapshot: inout Snapshot) {
         switch event {
-        case .responseHead(let head):
+        case let .responseHead(head):
             snapshot.responseHeads.append(ResponseHead(
                 requestID: head.requestID,
                 status: head.status,
@@ -120,7 +120,7 @@ final class WebSocketRecordingSink: CaptureEventSink, @unchecked Sendable {
         case let .webSocketOpen(connectionID, _, permessageDeflate):
             snapshot.opens.append(Open(connectionID: connectionID, permessageDeflate: permessageDeflate))
             snapshot.eventKinds.append(.webSocketOpen)
-        case .webSocketFrame(let frame):
+        case let .webSocketFrame(frame):
             snapshot.frames.append(frame)
             snapshot.eventKinds.append(.webSocketFrame(
                 direction: frame.direction.rawValue,

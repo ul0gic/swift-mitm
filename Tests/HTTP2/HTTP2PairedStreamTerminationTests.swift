@@ -111,7 +111,7 @@ final class HTTP2PairedStreamTerminationTests: XCTestCase {
         channels.response.pipeline.fireChannelReadComplete()
 
         let forwarded = try XCTUnwrap(channels.request.readOutbound(as: HTTP2Frame.FramePayload.self))
-        guard case .data(let frame) = forwarded, case .byteBuffer(let buffer) = frame.data else {
+        guard case let .data(frame) = forwarded, case let .byteBuffer(buffer) = frame.data else {
             return XCTFail("Expected final DATA")
         }
         XCTAssertEqual(Array(buffer.readableBytesView), [0x82, 0x00])

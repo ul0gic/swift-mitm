@@ -67,8 +67,10 @@ public final class ResourceAdmissionController: Sendable {
     public var usage: ResourceAdmissionUsage {
         state.withLockedValue {
             ResourceAdmissionUsage(
-                connections: $0.connections, streams: $0.streams,
-                retainedBytes: $0.retainedBytes, replayAttempts: $0.replayAttempts
+                connections: $0.connections,
+                streams: $0.streams,
+                retainedBytes: $0.retainedBytes,
+                replayAttempts: $0.replayAttempts
             )
         }
     }
@@ -96,7 +98,7 @@ public final class ResourceAdmissionController: Sendable {
     func acquire(_ kind: Kind) throws -> ResourceReservation {
         try state.withLockedValue { state in
             switch kind {
-            case .connection(let destination):
+            case let .connection(destination):
                 guard state.connections < configuration.maximumConnections else {
                     throw ResourceAdmissionError.capacityExceeded
                 }
@@ -113,7 +115,7 @@ public final class ResourceAdmissionController: Sendable {
                     throw ResourceAdmissionError.capacityExceeded
                 }
                 state.streams += 1
-            case .retainedBytes(let bytes):
+            case let .retainedBytes(bytes):
                 guard Self.reserveRetainedBytes(
                     bytes,
                     used: &state.retainedBytes,
@@ -134,18 +136,17 @@ public final class ResourceAdmissionController: Sendable {
     fileprivate func release(_ kind: Kind) {
         state.withLockedValue { state in
             switch kind {
-            case .connection(let destination):
+            case let .connection(destination):
                 state.connections -= 1
                 if let destination, let count = state.destinations[destination] {
                     if count == 1 {
                         state.destinations.removeValue(forKey: destination)
-                    }
-                    else {
+                    } else {
                         state.destinations[destination] = count - 1
                     }
                 }
             case .stream: state.streams -= 1
-            case .retainedBytes(let bytes): state.retainedBytes -= bytes
+            case let .retainedBytes(bytes): state.retainedBytes -= bytes
             case .replay: state.replayAttempts -= 1
             }
         }

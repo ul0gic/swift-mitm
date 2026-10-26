@@ -19,7 +19,7 @@ func stage2H2Stream(_ multiplexer: NIOHTTP2Handler.StreamMultiplexer) throws -> 
 
 func stage2H2Bytes(_ frames: [HTTP2Frame.FramePayload]) -> [UInt8] {
     frames.flatMap { payload in
-        if case .data(let data) = payload, case .byteBuffer(let buffer) = data.data {
+        if case let .data(data) = payload, case let .byteBuffer(buffer) = data.data {
             Array(buffer.readableBytesView)
         } else {
             []
@@ -30,8 +30,8 @@ func stage2H2Bytes(_ frames: [HTTP2Frame.FramePayload]) -> [UInt8] {
 func stage2H2Ended(_ frames: [HTTP2Frame.FramePayload]) -> Bool {
     frames.contains { payload in
         switch payload {
-        case .headers(let headers): headers.endStream
-        case .data(let data): data.endStream
+        case let .headers(headers): headers.endStream
+        case let .data(data): data.endStream
         default: false
         }
     }
@@ -39,8 +39,12 @@ func stage2H2Ended(_ frames: [HTTP2Frame.FramePayload]) -> Bool {
 
 func stage2H2Headers(port: Int, path: String, scheme: String = "https", host: String = "localhost") -> HPACKHeaders {
     HPACKHeaders([
-        (":method", "POST"), (":scheme", scheme), (":authority", "\(host):\(port)"), (":path", path),
-        ("content-type", "application/grpc"), ("te", "trailers")
+        (":method", "POST"),
+        (":scheme", scheme),
+        (":authority", "\(host):\(port)"),
+        (":path", path),
+        ("content-type", "application/grpc"),
+        ("te", "trailers")
     ])
 }
 
@@ -52,11 +56,18 @@ final class Stage2HTTP2AcceptanceTests: XCTestCase {
         let root = try CertificateAuthority.generate().authority
         let raw = Release022Events()
         let events = Stage2InspectionEvents()
-        let inspector = try HTTPInspector(configuration: InspectionConfiguration(budget: schema.budget, schema: schema.original), sink: events)
+        let inspector = try HTTPInspector(
+            configuration: InspectionConfiguration(budget: schema.budget, schema: schema.original),
+            sink: events
+        )
         let proxy = ProxyServer(
-            certificateAuthority: root, sink: raw, group: group,
+            certificateAuthority: root,
+            sink: raw,
+            group: group,
             upstreamPolicy: .init(additionalTrustRootsPEM: [origin.authority.caCertificatePEM]),
-            egressPolicy: .init(allowInternal: true), captureBodyLimit: 0, observationSink: inspector
+            egressPolicy: .init(allowInternal: true),
+            captureBodyLimit: 0,
+            observationSink: inspector
         )
         var channel: Channel?
         do {
@@ -65,13 +76,21 @@ final class Stage2HTTP2AcceptanceTests: XCTestCase {
             let client = ProxyTestClient(group: group)
             let tunnel = try client.openTunnel(proxyPort: port, originHost: "localhost", originPort: origin.port)
             channel = tunnel
-            let tls = try client.installTLS(on: tunnel, serverHostname: "localhost", mitmCACertificatePEM: root.caCertificatePEM,
-                                            applicationProtocols: ["h2"], configuresHTTP2: true)
+            let tls = try client.installTLS(
+                on: tunnel,
+                serverHostname: "localhost",
+                mitmCACertificatePEM: root.caCertificatePEM,
+                applicationProtocols: ["h2"],
+                configuresHTTP2: true
+            )
             try phase4BoundedWait(tls.installed)
             XCTAssertEqual(try phase4BoundedWait(tls.handshake), "h2")
             let multiplexer = try XCTUnwrap(try phase4BoundedWait(try XCTUnwrap(tls.multiplexer)))
             let downstream = try stage2H2Stream(multiplexer)
-            try downstream.write(.headers(.init(headers: stage2H2Headers(port: origin.port, path: "/stage2.Probe/Call"), endStream: true)))
+            try downstream.write(.headers(.init(
+                headers: stage2H2Headers(port: origin.port, path: "/stage2.Probe/Call"),
+                endStream: true
+            )))
             let upstream = try origin.stream(0)
             try await schema.exercise(upstream: upstream, downstream: downstream, events: events, raw: raw)
             try await tunnel.close().get()
@@ -86,8 +105,7 @@ final class Stage2HTTP2AcceptanceTests: XCTestCase {
                 if let channel, channel.isActive {
                     try await channel.close().get()
                 }; try await proxy.stop()
-            }
-            catch { XCTFail("H2 proxy teardown failed: \(error)") }
+            } catch { XCTFail("H2 proxy teardown failed: \(error)") }
             origin.stop()
             let shutdown = await inspector.shutdown()
             XCTAssertTrue(shutdown.drained)
@@ -102,14 +120,26 @@ final class Stage2HTTP2AcceptanceTests: XCTestCase {
         let root = try CertificateAuthority.generate().authority
         let controls = Stage2ControlEvents()
         let runtime = HTTPControlRuntime(configuration: try HTTPControlConfiguration(rules: [
-            HTTPRule(id: "hold-h2", match: HTTPRuleMatch(phase: .request, path: "/hold"),
-                     action: .breakpoint),
-            HTTPRule(id: "edit-h2", match: HTTPRuleMatch(phase: .request),
-                     action: .editHeaders(remove: [], append: [HTTPHeaderField(name: "x-proof", value: "h2")]))
+            HTTPRule(
+                id: "hold-h2",
+                match: HTTPRuleMatch(phase: .request, path: "/hold"),
+                action: .breakpoint
+            ),
+            HTTPRule(
+                id: "edit-h2",
+                match: HTTPRuleMatch(phase: .request),
+                action: .editHeaders(remove: [], append: [HTTPHeaderField(name: "x-proof", value: "h2")])
+            )
         ], limits: HTTPControlLimits()))
-        let proxy = ProxyServer(certificateAuthority: root, sink: Release022Events(), group: group,
-                                upstreamPolicy: .init(additionalTrustRootsPEM: [origin.caCertificatePEM]),
-                                egressPolicy: .init(allowInternal: true), controlRuntime: runtime, controlEventSink: controls)
+        let proxy = ProxyServer(
+            certificateAuthority: root,
+            sink: Release022Events(),
+            group: group,
+            upstreamPolicy: .init(additionalTrustRootsPEM: [origin.caCertificatePEM]),
+            egressPolicy: .init(allowInternal: true),
+            controlRuntime: runtime,
+            controlEventSink: controls
+        )
         var channel: Channel?
         do {
             try origin.start()
@@ -117,13 +147,21 @@ final class Stage2HTTP2AcceptanceTests: XCTestCase {
             let client = ProxyTestClient(group: group)
             let tunnel = try client.openTunnel(proxyPort: port, originHost: "localhost", originPort: origin.localPort)
             channel = tunnel
-            let tls = try client.installTLS(on: tunnel, serverHostname: "localhost", mitmCACertificatePEM: root.caCertificatePEM,
-                                            applicationProtocols: ["h2"], configuresHTTP2: true)
+            let tls = try client.installTLS(
+                on: tunnel,
+                serverHostname: "localhost",
+                mitmCACertificatePEM: root.caCertificatePEM,
+                applicationProtocols: ["h2"],
+                configuresHTTP2: true
+            )
             try phase4BoundedWait(tls.installed)
             XCTAssertEqual(try phase4BoundedWait(tls.handshake), "h2")
             let multiplexer = try XCTUnwrap(try phase4BoundedWait(try XCTUnwrap(tls.multiplexer)))
             try await assertPausedStreamIsolation(
-                multiplexer: multiplexer, originPort: origin.localPort, controls: controls, runtime: runtime
+                multiplexer: multiplexer,
+                originPort: origin.localPort,
+                controls: controls,
+                runtime: runtime
             )
             try await tunnel.close().get()
             try await proxy.stop()
@@ -138,8 +176,7 @@ final class Stage2HTTP2AcceptanceTests: XCTestCase {
                 if let channel, channel.isActive {
                     try await channel.close().get()
                 }; try await proxy.stop()
-            }
-            catch { XCTFail("H2 control teardown failed: \(error)") }
+            } catch { XCTFail("H2 control teardown failed: \(error)") }
             origin.stop()
             do { try await group.shutdownGracefully() } catch { XCTFail("H2 control group teardown failed: \(error)") }
             throw failure
@@ -147,8 +184,10 @@ final class Stage2HTTP2AcceptanceTests: XCTestCase {
     }
 
     private func assertPausedStreamIsolation(
-        multiplexer: NIOHTTP2Handler.StreamMultiplexer, originPort: Int,
-        controls: Stage2ControlEvents, runtime: HTTPControlRuntime
+        multiplexer: NIOHTTP2Handler.StreamMultiplexer,
+        originPort: Int,
+        controls: Stage2ControlEvents,
+        runtime: HTTPControlRuntime
     ) async throws {
         let held = try stage2H2Stream(multiplexer)
         try held.write(.headers(.init(headers: stage2H2Headers(port: originPort, path: "/hold"), endStream: true)))
@@ -156,7 +195,10 @@ final class Stage2HTTP2AcceptanceTests: XCTestCase {
         var siblings: [Release022H2Stream] = []
         for index in 0..<31 {
             let stream = try stage2H2Stream(multiplexer)
-            try stream.write(.headers(.init(headers: stage2H2Headers(port: originPort, path: "/sibling/\(index)"), endStream: true)))
+            try stream.write(.headers(.init(
+                headers: stage2H2Headers(port: originPort, path: "/sibling/\(index)"),
+                endStream: true
+            )))
             siblings.append(stream)
         }
         for sibling in siblings {
@@ -171,7 +213,7 @@ final class Stage2HTTP2AcceptanceTests: XCTestCase {
             XCTFail("Cancelled H2 stream accepted late breakpoint response")
         }
         let effectiveRequests = controls.events.filter { event in
-            if case .effectiveHead(_, .request, let headers, _) = event {
+            if case let .effectiveHead(_, .request, headers, _) = event {
                 headers.contains { $0.name == "x-proof" && $0.value == "h2" }
             } else {
                 false

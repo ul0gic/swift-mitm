@@ -36,7 +36,11 @@ final class AppleTLSProxyCompatibilityTests: XCTestCase {
         do {
             try origin.start()
             let proxyPort = try await proxy.start(port: 0)
-            let result = try fetchThroughProxy(proxyPort: proxyPort, originPort: origin.localPort, certificate: certificate.path)
+            let result = try fetchThroughProxy(
+                proxyPort: proxyPort,
+                originPort: origin.localPort,
+                certificate: certificate.path
+            )
 
             XCTAssertEqual(result.terminationStatus, 0, result.standardError)
             XCTAssertEqual(result.standardOutput, "200")

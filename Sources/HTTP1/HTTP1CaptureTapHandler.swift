@@ -111,7 +111,7 @@ final class HTTP1CaptureTapHandler: ChannelInboundHandler {
             emitResponseHead(status: status, headers: headers)
         case .bodyChunk:
             break
-        case .trailers(let headers):
+        case let .trailers(headers):
             guard let id = currentID else { return }
             sink.receive(
                 direction == .request

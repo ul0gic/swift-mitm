@@ -6,7 +6,7 @@ enum MachMemoryError: Error, Equatable, LocalizedError, Sendable {
 
     var errorDescription: String? {
         switch self {
-        case .samplingUnavailable(let result):
+        case let .samplingUnavailable(result):
             "RSS sampling unavailable: task_info returned \(result)"
         }
     }

@@ -55,9 +55,9 @@ private struct IncrementalHTTP1PrefixInspector {
 
     private mutating func consume(_ byte: UInt8) -> HTTP1PrefixStatus? {
         switch phase {
-        case .method(let hasBytes):
+        case let .method(hasBytes):
             return consumeMethodByte(byte, hasBytes: hasBytes)
-        case .target(let hasBytes):
+        case let .target(hasBytes):
             guard !(33 ... 126).contains(byte) else {
                 phase = .target(hasBytes: true)
                 return nil
@@ -72,7 +72,7 @@ private struct IncrementalHTTP1PrefixInspector {
                 allowsHTTP10: allowsHTTP10,
                 allowsHTTP11: allowsHTTP11
             )
-        case .terminal(let status):
+        case let .terminal(status):
             return status
         }
     }
@@ -210,7 +210,7 @@ final class TransparentApplicationClassifier: ChannelInboundHandler, RemovableCh
         }
 
         switch classify(inspectedBytes) {
-        case .success(let classification?):
+        case let .success(classification?):
             beginTransition(classification, context: context)
         case .success(nil):
             if inspectedCount < buffer.readableBytes || inspectedByteCount == maximumBytes {
@@ -226,7 +226,7 @@ final class TransparentApplicationClassifier: ChannelInboundHandler, RemovableCh
                 pendingStageObserved = true
                 stageObserver?.didEnterTransparentIngressStage(.classificationPending)
             }
-        case .failure(let error):
+        case let .failure(error):
             fail(error, context: context)
         }
     }
@@ -316,9 +316,9 @@ final class TransparentApplicationClassifier: ChannelInboundHandler, RemovableCh
             .whenComplete { result in
                 guard owner.value.state == .transitioning else { return }
                 switch result {
-                case .success(let readMode):
+                case let .success(readMode):
                     owner.value.replayAndRemove(readMode: readMode, context: boundContext.value)
-                case .failure(let error):
+                case let .failure(error):
                     owner.value.fail(error, context: boundContext.value)
                 }
             }

@@ -71,7 +71,7 @@ private final class ProductionLoadSink: CaptureEventSink, @unchecked Sendable {
             case let .responseBodyChunk(_, bytes, byteCount):
                 capturedBytes += bytes.count
                 observedBytes += byteCount
-            case .responseEnd(_, let wasTruncated):
+            case let .responseEnd(_, wasTruncated):
                 responseEnds += 1
                 truncated = truncated || wasTruncated
             case .streamError:

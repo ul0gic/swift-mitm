@@ -75,9 +75,14 @@ final class HTTP1MessageParser {
                     consumeMethod: consumeMethod,
                     emit: emit
                 )
-            case .bodyLength(let remaining):
+            case let .bodyLength(remaining):
                 index = consumeCountedBody(
-                    bytes, from: index, end: end, remaining: remaining, emit: emit, bodyBytes: bodyBytes
+                    bytes,
+                    from: index,
+                    end: end,
+                    remaining: remaining,
+                    emit: emit,
+                    bodyBytes: bodyBytes
                 )
             case .bodyUntilClose:
                 emit(.bodyChunk(byteCount: end - index))
@@ -85,11 +90,16 @@ final class HTTP1MessageParser {
                 index = end
             case .bodyChunkSize:
                 index = consumeChunkSize(bytes, from: index, end: end, emit: emit)
-            case .bodyChunkData(let remaining):
+            case let .bodyChunkData(remaining):
                 index = consumeChunkData(
-                    bytes, from: index, end: end, remaining: remaining, emit: emit, bodyBytes: bodyBytes
+                    bytes,
+                    from: index,
+                    end: end,
+                    remaining: remaining,
+                    emit: emit,
+                    bodyBytes: bodyBytes
                 )
-            case .bodyChunkDataTerminator(let matched):
+            case let .bodyChunkDataTerminator(matched):
                 index = consumeChunkTerminator(bytes, from: index, end: end, matched: matched, emit: emit)
             case .bodyChunkTrailer:
                 index = consumeChunkTrailer(bytes, from: index, end: end, emit: emit)
@@ -292,10 +302,10 @@ extension HTTP1MessageParser {
         case .none:
             emit(.messageComplete)
             resetForNextMessage()
-        case .length(let count) where count <= 0:
+        case let .length(count) where count <= 0:
             emit(.messageComplete)
             resetForNextMessage()
-        case .length(let count):
+        case let .length(count):
             phase = .bodyLength(remaining: count)
         case .chunked:
             phase = .bodyChunkSize
@@ -311,7 +321,7 @@ extension HTTP1MessageParser {
             return nil
         case .none:
             return chunked ? .chunked : BodyFraming.none
-        case .value(let length):
+        case let .value(length):
             return chunked ? .chunked : .length(length)
         }
     }
@@ -329,7 +339,7 @@ extension HTTP1MessageParser {
             return nil
         case .none:
             return chunked ? .chunked : .untilClose
-        case .value(let length):
+        case let .value(length):
             return chunked ? .chunked : .length(length)
         }
     }

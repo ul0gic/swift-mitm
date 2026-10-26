@@ -99,7 +99,8 @@ struct ProtobufSchemaBuilder {
     }
 
     private mutating func addService(
-        _ service: Google_Protobuf_ServiceDescriptorProto, prefix: String
+        _ service: Google_Protobuf_ServiceDescriptorProto,
+        prefix: String
     ) throws {
         let serviceName = try symbol(service.name, prefix: prefix)
         guard service.unknownFields.data.isEmpty, service.options.unknownFields.data.isEmpty,
@@ -238,7 +239,10 @@ private extension ProtobufSchemaBuilder {
     }
 
     mutating func addMessage(
-        _ descriptor: Google_Protobuf_DescriptorProto, prefix: String, depth: Int, proto3: Bool
+        _ descriptor: Google_Protobuf_DescriptorProto,
+        prefix: String,
+        depth: Int,
+        proto3: Bool
     ) throws {
         guard depth <= limits.depth else { throw ProtobufInspectionError.limitExceeded }
         let name = try symbol(descriptor.name, prefix: prefix)
@@ -262,7 +266,11 @@ private extension ProtobufSchemaBuilder {
         var fields: [Int: ProtobufField] = [:]
         for field in descriptor.field {
             fields[Int(field.number)] = try makeField(
-                field, descriptor: descriptor, name: name, proto3: proto3, existing: fields
+                field,
+                descriptor: descriptor,
+                name: name,
+                proto3: proto3,
+                existing: fields
             )
         }
         messages[name] = ProtobufMessageSchema(fields: fields, mapEntry: descriptor.options.mapEntry)

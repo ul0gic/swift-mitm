@@ -19,7 +19,7 @@ final class ProxyV2ParserTests: XCTestCase {
         var input = ByteBuffer(bytes: header)
         var parser = ProxyV2Parser()
 
-        guard case .complete(let metadata) = try parser.parse(&input) else {
+        guard case let .complete(metadata) = try parser.parse(&input) else {
             return XCTFail("expected complete metadata")
         }
 
@@ -43,7 +43,7 @@ final class ProxyV2ParserTests: XCTestCase {
         ))
         var parser = ProxyV2Parser()
 
-        guard case .complete(let metadata) = try parser.parse(&input) else {
+        guard case let .complete(metadata) = try parser.parse(&input) else {
             return XCTFail("expected complete metadata")
         }
 
@@ -91,7 +91,7 @@ final class ProxyV2ParserTests: XCTestCase {
         var input = ByteBuffer(bytes: makeIPv4Header(tlvs: [tlv]))
         var parser = ProxyV2Parser()
 
-        guard case .complete(let metadata) = try parser.parse(&input) else {
+        guard case let .complete(metadata) = try parser.parse(&input) else {
             return XCTFail("expected complete metadata")
         }
         XCTAssertEqual(metadata.tlvCount, 1)

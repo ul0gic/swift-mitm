@@ -206,7 +206,8 @@ final class ProxyTestClient {
         let multiplexer = configuresHTTP2
             ? ProxyClientPromise<NIOHTTP2Handler.StreamMultiplexer?>(eventLoop: channel.eventLoop)
             : nil
-        let installFuture = channel.eventLoop.submit {
+        let installFuture = channel.eventLoop
+.submit {
             try channel.pipeline.syncOperations.addHandler(
                 NIOSSLClientHandler(context: sslContext, serverHostname: serverHostname),
                 position: .first
@@ -291,14 +292,14 @@ private final class H2ConsumingClient: ChannelDuplexHandler {
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         switch unwrapInboundIn(data) {
-        case .data(let frame):
+        case let .data(frame):
             let count = frame.data.readableBytes
             bytes += count
             completion.addReceivedBytes(count)
             if frame.endStream {
                 complete()
             }
-        case .headers(let frame):
+        case let .headers(frame):
             completion.advance(to: .response)
             if frame.endStream {
                 complete()
@@ -367,7 +368,7 @@ private final class H1ConsumingClient: ChannelInboundHandler {
         switch unwrapInboundIn(data) {
         case .head:
             completion.advance(to: .response)
-        case .body(let buffer):
+        case let .body(buffer):
             bytes += buffer.readableBytes
             completion.addReceivedBytes(buffer.readableBytes)
         case .end:

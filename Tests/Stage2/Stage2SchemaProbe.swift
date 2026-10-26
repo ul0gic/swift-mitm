@@ -21,7 +21,9 @@ struct Stage2SchemaProbe {
         let maximumDescriptorBytes = max(originalDescriptor.count, renamedDescriptor.count)
         let budget = try InspectionMemoryBudget()
         let registry = ProtobufSchemaRegistry(budget: budget, limits: try ProtobufSchemaLimits(
-            descriptorBytes: maximumDescriptorBytes, files: 1, fields: 1
+            descriptorBytes: maximumDescriptorBytes,
+            files: 1,
+            fields: 1
         ))
         let original = try await registry.load(descriptorBytes: originalDescriptor)
         self.renamedDescriptor = renamedDescriptor
@@ -32,11 +34,17 @@ struct Stage2SchemaProbe {
     }
 
     func exercise(
-        upstream: Release022H2Stream, downstream: Release022H2Stream,
-        events: Stage2InspectionEvents, raw: Release022Events
+        upstream: Release022H2Stream,
+        downstream: Release022H2Stream,
+        events: Stage2InspectionEvents,
+        raw: Release022Events
     ) async throws {
         try upstream.wait { !$0.isEmpty }
-        try upstream.write(.headers(.init(headers: HPACKHeaders([(":status", "200"), ("content-type", "application/grpc"), ("grpc-encoding", "gzip")]))))
+        try upstream.write(.headers(.init(headers: HPACKHeaders([
+            (":status", "200"),
+            ("content-type", "application/grpc"),
+            ("grpc-encoding", "gzip")
+        ]))))
         let envelope: [UInt8] = [0, 0, 0, 0, 5, 8, 42, 0x98, 6, 7]
         for slice in [Array(envelope.prefix(2)), Array(envelope[2..<7]), Array(envelope.dropFirst(7))] {
             try upstream.write(.data(.init(data: .byteBuffer(ByteBuffer(bytes: slice)))))
@@ -55,13 +63,14 @@ struct Stage2SchemaProbe {
         try await replaceRegistry()
         try upstream.write(.data(.init(data: .byteBuffer(ByteBuffer(bytes: envelope)))))
         let vectorPath = try XCTUnwrap(ProcessInfo.processInfo.environment["STAGE2_COMPRESSION_VECTORS"])
-        let compressedFrames = [UInt8](try Data(contentsOf: URL(fileURLWithPath: vectorPath).appendingPathComponent("grpc-gzip.bin")))
+        let compressedFrames =
+            [UInt8](try Data(contentsOf: URL(fileURLWithPath: vectorPath).appendingPathComponent("grpc-gzip.bin")))
         try upstream.write(.data(.init(data: .byteBuffer(ByteBuffer(bytes: compressedFrames)))))
         try upstream.write(.headers(.init(headers: HPACKHeaders([("grpc-status", "0")]), endStream: true)))
         try downstream.wait(until: stage2H2Ended)
         let completed = try await events.wait { events in
             events.contains {
-                if case .grpc(.status(let status)) = $0.payload {
+                if case let .grpc(.status(status)) = $0.payload {
                     status.code == 0
                 } else {
                     false
@@ -81,23 +90,23 @@ struct Stage2SchemaProbe {
 
     private func assertInitialEvents(_ first: [InspectionEvent]) throws {
         let decoded = try XCTUnwrap(first.compactMap { event -> DecodedFields? in
-            if case .protobuf(let name, let digest, let fields) = event.payload {
+            if case let .protobuf(name, digest, fields) = event.payload {
                 DecodedFields(name: name, digest: digest, fields: fields)
             } else {
                 nil
             }
-        }.first)
+        }
+.first)
         XCTAssertEqual(decoded.name, "stage2.Envelope")
         XCTAssertEqual(decoded.digest, original.digest)
         XCTAssertEqual(decoded.fields.map(\.number), [1, 99])
         XCTAssertEqual(decoded.fields.first?.name, "value")
-        if let field = decoded.fields.first, case .signed(let value) = field.value {
+        if let field = decoded.fields.first, case let .signed(value) = field.value {
             XCTAssertEqual(value, 42)
-        }
-        else {
+        } else {
             XCTFail("Schema scalar value was not interpreted as int32")
         }
-        if let field = decoded.fields.last, case .unknown(let wireType, let bytes) = field.value {
+        if let field = decoded.fields.last, case let .unknown(wireType, bytes) = field.value {
             XCTAssertEqual(wireType, 0)
             XCTAssertEqual(bytes, [0x98, 6, 7])
         } else {
@@ -127,7 +136,7 @@ struct Stage2SchemaProbe {
 
     private func assertCompletedEvents(_ completed: [InspectionEvent]) {
         let names = completed.compactMap { event -> String? in
-            if case .protobuf(_, _, let fields) = event.payload {
+            if case let .protobuf(_, _, fields) = event.payload {
                 fields.first?.name
             } else {
                 nil
@@ -135,7 +144,7 @@ struct Stage2SchemaProbe {
         }
         XCTAssertEqual(names, ["value", "value", "value", "value"])
         let messages = completed.compactMap { event -> GRPCMessage? in
-            if case .grpc(.message(let message)) = event.payload, event.direction == .response {
+            if case let .grpc(.message(message)) = event.payload, event.direction == .response {
                 message
             } else {
                 nil

@@ -76,26 +76,39 @@ final class ObservationCaptureSink: CaptureEventSink {
 
 extension ObservationCaptureSink: WebSocketObservationSink {
     func webSocketFrameStarted(
-        connectionID: UUID, direction: WebSocketDirection, opcode: WebSocketOpcode,
-        fin: Bool, compressed: Bool, byteCount: Int
+        connectionID: UUID,
+        direction: WebSocketDirection,
+        opcode: WebSocketOpcode,
+        fin: Bool,
+        compressed: Bool,
+        byteCount: Int
     ) {
         (observation as? any WebSocketObservationSink)?.webSocketFrameStarted(
-            connectionID: connectionID, direction: direction, opcode: opcode,
-            fin: fin, compressed: compressed, byteCount: byteCount
+            connectionID: connectionID,
+            direction: direction,
+            opcode: opcode,
+            fin: fin,
+            compressed: compressed,
+            byteCount: byteCount
         )
     }
 
     func webSocketFrameBytes(
-        connectionID: UUID, direction: WebSocketDirection, bytes: UnsafeRawBufferPointer
+        connectionID: UUID,
+        direction: WebSocketDirection,
+        bytes: UnsafeRawBufferPointer
     ) {
         (observation as? any WebSocketObservationSink)?.webSocketFrameBytes(
-            connectionID: connectionID, direction: direction, bytes: bytes
+            connectionID: connectionID,
+            direction: direction,
+            bytes: bytes
         )
     }
 
     func webSocketFrameEnded(connectionID: UUID, direction: WebSocketDirection) {
         (observation as? any WebSocketObservationSink)?.webSocketFrameEnded(
-            connectionID: connectionID, direction: direction
+            connectionID: connectionID,
+            direction: direction
         )
     }
 }

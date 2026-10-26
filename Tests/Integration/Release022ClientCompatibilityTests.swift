@@ -15,9 +15,12 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         let authority = try CertificateAuthority.generate().authority
         let sink = Release022Events()
         let proxy = ProxyServer(
-            certificateAuthority: authority, sink: sink, group: group,
+            certificateAuthority: authority,
+            sink: sink,
+            group: group,
             upstreamPolicy: .init(additionalTrustRootsPEM: [secure.caCertificatePEM]),
-            egressPolicy: .init(allowInternal: true), ingress: .explicitHTTP
+            egressPolicy: .init(allowInternal: true),
+            ingress: .explicitHTTP
         )
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -29,11 +32,27 @@ final class Release022ClientCompatibilityTests: XCTestCase {
             try secure.start()
             let port = try await proxy.start(port: 0)
             let version = try curl(["--version"])
-            FileHandle.standardError.write(Data("CLIENT-MATRIX curl=\(version.output) os=\(ProcessInfo.processInfo.operatingSystemVersionString)\n".utf8))
+            FileHandle.standardError
+                .write(
+                    Data(
+                        "CLIENT-MATRIX curl=\(version.output) os=\(ProcessInfo.processInfo.operatingSystemVersionString)\n"
+                .utf8
+                    )
+                )
             for url in ["http://localhost:\(clear.localPort)/", "https://localhost:\(secure.localPort)/"] {
                 let result = try curl([
-                    "--silent", "--show-error", "--fail", "--max-time", "10", "--noproxy", "",
-                    "--proxy", "http://127.0.0.1:\(port)", "--cacert", certificate.path, url
+                    "--silent",
+                    "--show-error",
+                    "--fail",
+                    "--max-time",
+                    "10",
+                    "--noproxy",
+                    "",
+                    "--proxy",
+                    "http://127.0.0.1:\(port)",
+                    "--cacert",
+                    certificate.path,
+                    url
                 ])
                 XCTAssertEqual(result.status, 0, result.error)
                 XCTAssertEqual(result.output, String(repeating: "A", count: 32))
@@ -44,9 +63,11 @@ final class Release022ClientCompatibilityTests: XCTestCase {
                 } else {
                     false
                 }
-            }.count == 2 }
+            }
+.count == 2
+            }
             let schemes = events.compactMap { event -> String? in
-                if case .requestHead(let head) = event {
+                if case let .requestHead(head) = event {
                     head.scheme
                 } else {
                     nil
@@ -80,9 +101,12 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         let authority = try CertificateAuthority.generate().authority
         let sink = Release022Events()
         let proxy = ProxyServer(
-            certificateAuthority: authority, sink: sink, group: group,
+            certificateAuthority: authority,
+            sink: sink,
+            group: group,
             upstreamPolicy: .init(additionalTrustRootsPEM: [origin.caCertificatePEM]),
-            egressPolicy: .init(allowInternal: true), ingress: .explicitHTTP
+            egressPolicy: .init(allowInternal: true),
+            ingress: .explicitHTTP
         )
         var session: URLSession?
         do {
@@ -112,7 +136,7 @@ final class Release022ClientCompatibilityTests: XCTestCase {
                 }
             } }
             let heads = events.compactMap { event -> CapturedRequestHead? in
-                if case .requestHead(let head) = event {
+                if case let .requestHead(head) = event {
                     head
                 } else {
                     nil
@@ -120,7 +144,13 @@ final class Release022ClientCompatibilityTests: XCTestCase {
             }
             XCTAssertEqual(heads.count, 1)
             XCTAssertEqual(heads.first?.version, version)
-            FileHandle.standardError.write(Data("CLIENT-MATRIX URLSession protocol=\(protocolName) os=\(ProcessInfo.processInfo.operatingSystemVersionString) trusted=true\n".utf8))
+            FileHandle.standardError
+                .write(
+                    Data(
+                        "CLIENT-MATRIX URLSession protocol=\(protocolName) os=\(ProcessInfo.processInfo.operatingSystemVersionString) trusted=true\n"
+                .utf8
+                    )
+                )
             client.invalidateAndCancel()
             try await proxy.stop()
             origin.stop()

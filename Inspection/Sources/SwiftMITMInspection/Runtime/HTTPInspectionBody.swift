@@ -6,7 +6,11 @@ final class HTTPInspectionBody {
     let codingChain: [ContentCoding]
     private let configuration: InspectionConfiguration
     private let deliver: (
-        HTTPBodyObservation, Range<UInt64>, Range<UInt64>, [ContentCoding], InspectionEvent.Payload
+        HTTPBodyObservation,
+        Range<UInt64>,
+        Range<UInt64>,
+        [ContentCoding],
+        InspectionEvent.Payload
     ) -> Void
     private var metadataReservation = 0
     private let decoders: [ContentDecoder]
@@ -35,7 +39,11 @@ final class HTTPInspectionBody {
         status: Int?,
         configuration: InspectionConfiguration,
         deliver: @escaping (
-            HTTPBodyObservation, Range<UInt64>, Range<UInt64>, [ContentCoding], InspectionEvent.Payload
+            HTTPBodyObservation,
+            Range<UInt64>,
+            Range<UInt64>,
+            [ContentCoding],
+            InspectionEvent.Payload
         ) -> Void
     ) throws {
         self.context = context
@@ -75,9 +83,12 @@ final class HTTPInspectionBody {
     }
 
     private func configureMedia(headers: [HTTPHeaderField], path: String, status: Int?) throws {
-        let media = headers.first { $0.name.lowercased() == "content-type" }?.value
-            .split(separator: ";", maxSplits: 1).first?
-            .trimmingCharacters(in: .whitespaces).lowercased() ?? ""
+        let media = headers.first { $0.name.lowercased() == "content-type" }?
+.value
+            .split(separator: ";", maxSplits: 1)
+.first?
+            .trimmingCharacters(in: .whitespaces)
+.lowercased() ?? ""
         if media == "text/event-stream" {
             sse = try SSEParser(
                 maximumLineBytes: configuration.maximumLineBytes,
@@ -98,7 +109,7 @@ final class HTTPInspectionBody {
                 emit: { [weak self] event in
                     guard let self else { return }
                     self.output(.grpc(event))
-                    if case .message(let message) = event,
+                    if case let .message(message) = event,
                         media == "application/grpc" || media.hasSuffix("+proto") {
                         self.inspectProtobuf(message.bytes, path: path)
                     }
@@ -212,8 +223,7 @@ final class HTTPInspectionBody {
         positions[stage] += progress.consumedBytes
         if case .outputLimit = progress.state {
             drainNeeded[stage] = true
-        }
-        else {
+        } else {
             drainNeeded[stage] = false
         }
         if positions[stage] == pending[stage].count {
@@ -249,8 +259,7 @@ private extension HTTPInspectionBody {
     func produced(_ bytes: UnsafeRawBufferPointer, stage: Int) throws {
         if stage + 1 == decoders.count {
             try consume(bytes)
-        }
-        else {
+        } else {
             let charge = bytes.count * 2
             guard configuration.budget.reserve(charge) else { throw InspectionBudgetError.capacityExceeded }
             pending[stage + 1].append(contentsOf: bytes)

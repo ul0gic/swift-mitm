@@ -106,7 +106,7 @@ final class OpaqueCaptureSessionTests: XCTestCase {
 
     private func closeReasons(_ events: [CaptureEvent]) -> [OpaqueFlowCloseReason] {
         events.compactMap { event in
-            guard case .opaqueClose(_, _, let reason) = event else { return nil }
+            guard case let .opaqueClose(_, _, reason) = event else { return nil }
             return reason
         }
     }

@@ -13,7 +13,9 @@ final class HTTPControlBudget: Sendable {
 
     func charge(_ bytes: Int) throws {
         try state.withLockedValue { value in
-            guard bytes >= 0, bytes <= value.configuration.limits.maximumRetainedBytes - value.bytes else { throw HTTPControlError.capacityExceeded }
+            guard bytes >= 0,
+                  bytes <= value.configuration.limits.maximumRetainedBytes - value.bytes
+                  else { throw HTTPControlError.capacityExceeded }
             value.bytes += bytes
         }
     }

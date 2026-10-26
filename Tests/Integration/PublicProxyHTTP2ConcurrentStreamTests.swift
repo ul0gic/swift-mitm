@@ -63,20 +63,20 @@ final class PublicProxyHTTP2ConcurrentStreamTests: XCTestCase {
 
     private func assertCaptureIsolation(_ events: [CaptureEvent]) {
         let requests = events.compactMap { event -> CapturedRequestHead? in
-            guard case .requestHead(let head) = event else { return nil }
+            guard case let .requestHead(head) = event else { return nil }
             return head
         }
         XCTAssertEqual(Set(requests.map(\.path)), Set(["/ordinary", "/socket/a", "/socket/b"]))
         XCTAssertEqual(Set(requests.map(\.id)).count, 3)
         let ids = Dictionary(uniqueKeysWithValues: requests.map { ($0.path, $0.id) })
         let openIDs = events.compactMap { event -> UUID? in
-            guard case .webSocketOpen(let connectionID, _, _) = event else { return nil }
+            guard case let .webSocketOpen(connectionID, _, _) = event else { return nil }
             return connectionID
         }
         XCTAssertEqual(Set(openIDs), Set([ids["/socket/a"], ids["/socket/b"]].compactMap(\.self)))
         assertFrameIsolation(events, ids: ids)
         let errorIDs = events.compactMap { event -> UUID? in
-            guard case .streamError(let requestID, _) = event else { return nil }
+            guard case let .streamError(requestID, _) = event else { return nil }
             return requestID
         }
         XCTAssertEqual(errorIDs, [ids["/socket/b"]].compactMap(\.self))
@@ -84,7 +84,7 @@ final class PublicProxyHTTP2ConcurrentStreamTests: XCTestCase {
 
     private func assertFrameIsolation(_ events: [CaptureEvent], ids: [String: UUID]) {
         let frames = events.compactMap { event -> CapturedWebSocketFrame? in
-            guard case .webSocketFrame(let frame) = event else { return nil }
+            guard case let .webSocketFrame(frame) = event else { return nil }
             return frame
         }
         XCTAssertEqual(frames.filter { $0.connectionID == ids["/socket/a"] }.map(\.bytes), [

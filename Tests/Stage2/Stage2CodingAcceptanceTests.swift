@@ -13,7 +13,9 @@ final class Stage2CodingAcceptanceTests: XCTestCase {
         for (name, coding) in [("gzip.bin", "gzip"), ("deflate.bin", "deflate"), ("double-gzip.bin", "gzip, gzip")] {
             let encoded = [UInt8](try Data(contentsOf: root.appendingPathComponent(name)))
             let budget = try InspectionMemoryBudget()
-            try await stage2WithInspectionWire(inspectionConfiguration: InspectionConfiguration(budget: budget)) { peer in
+            try await stage2WithInspectionWire(inspectionConfiguration: InspectionConfiguration(
+                budget: budget
+            )) { peer in
                 try phase4BoundedWait(peer.client.writeAndFlush(ByteBuffer(string:
                     "GET http://127.0.0.1:\(peer.origin.port)/coding HTTP/1.1\r\nHost: localhost\r\n\r\n")))
                 _ = try peer.origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
@@ -27,7 +29,7 @@ final class Stage2CodingAcceptanceTests: XCTestCase {
                 let drained = await peer.inspector.drain()
                 XCTAssertTrue(drained.drained)
                 let decoded = peer.inspected.events.flatMap { event -> [UInt8] in
-                    if case .decodedBody(let bytes) = event.payload, event.direction == .response {
+                    if case let .decodedBody(bytes) = event.payload, event.direction == .response {
                         bytes
                     } else {
                         []
@@ -35,7 +37,7 @@ final class Stage2CodingAcceptanceTests: XCTestCase {
                 }
                 XCTAssertEqual(decoded, expected)
                 let messages = peer.inspected.events.compactMap { event -> String? in
-                    if case .sse(let message) = event.payload {
+                    if case let .sse(message) = event.payload {
                         message.data
                     } else {
                         nil
@@ -75,7 +77,7 @@ final class Stage2CodingAcceptanceTests: XCTestCase {
                 let drained = await peer.inspector.drain()
                 XCTAssertTrue(drained.drained)
                 let messages = peer.inspected.events.compactMap { event -> String? in
-                    if case .sse(let message) = event.payload {
+                    if case let .sse(message) = event.payload {
                         message.data
                     } else {
                         nil
@@ -85,13 +87,19 @@ final class Stage2CodingAcceptanceTests: XCTestCase {
                     XCTAssertEqual(messages, ["xxxx"])
                 } else {
                     XCTAssertTrue(messages.isEmpty)
-                    XCTAssertEqual(peer.inspected.events.filter { event in
+                    XCTAssertEqual(
+                        peer.inspected
+.events
+.filter { event in
                         if case .diagnostic(.malformedSSE(.eventLimitExceeded)) = event.payload {
                             true
                         } else {
                             false
                         }
-                    }.count, 1)
+                    }
+.count,
+                        1
+                    )
                 }
                 XCTAssertTrue(release022Errors(peer.raw.events).isEmpty)
             }

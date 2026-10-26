@@ -21,8 +21,10 @@ final class Release022ExternalPeer: @unchecked Sendable {
     private let readyURL: URL
 
     static var clientsDirectory: URL {
-        URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-            .deletingLastPathComponent().appendingPathComponent("Clients")
+        URL(fileURLWithPath: #filePath)
+.deletingLastPathComponent()
+            .deletingLastPathComponent()
+.appendingPathComponent("Clients")
     }
 
     init() throws {

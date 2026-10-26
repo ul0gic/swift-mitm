@@ -60,10 +60,15 @@ public struct ReplayRequest: Sendable {
     public let useControls: Bool
 
     public init(
-        source: ReplaySource, destination: URL, method: String,
-        headers: [HTTPHeaderField], body: [UInt8],
-        bodyIsComplete: Bool, credentialPolicy: ReplayCredentialPolicy = .strip,
-        sensitiveHeaderNames: Set<String> = [], useControls: Bool = false
+        source: ReplaySource,
+        destination: URL,
+        method: String,
+        headers: [HTTPHeaderField],
+        body: [UInt8],
+        bodyIsComplete: Bool,
+        credentialPolicy: ReplayCredentialPolicy = .strip,
+        sensitiveHeaderNames: Set<String> = [],
+        useControls: Bool = false
     ) {
         self.source = source
         self.destination = destination
@@ -97,8 +102,10 @@ public enum ReplayTimingUnavailable: Sendable {
 
 public enum ReplayResponseEvent: Sendable {
     case started(
-        attemptID: UUID, requestID: UUID,
-        sourceRequestID: UUID, sourceRepresentation: HTTPRepresentationKind
+        attemptID: UUID,
+        requestID: UUID,
+        sourceRequestID: UUID,
+        sourceRepresentation: HTTPRepresentationKind
     )
     case head(attemptID: UUID, head: CapturedResponseHead)
     case body(attemptID: UUID, requestID: UUID, bytes: [UInt8])

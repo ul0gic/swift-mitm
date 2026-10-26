@@ -32,8 +32,10 @@ enum HTTPControlTransport {
         )
         let policy = snapshot ?? runtime.configurationSnapshot
         let handle = try await runtime.pause(
-            original: message, proposed: proposed,
-            deadlineSeconds: policy.breakpointDeadlineSeconds, expiry: policy.breakpointExpiry
+            original: message,
+            proposed: proposed,
+            deadlineSeconds: policy.breakpointDeadlineSeconds,
+            expiry: policy.breakpointExpiry
         )
         guard let sink else {
             _ = await handle.resolve(.reject)
@@ -59,7 +61,7 @@ enum HTTPControlTransport {
             case .forwardOriginal:
                 let original = try HTTPControlConfiguration(rules: [], limits: runtime.configurationSnapshot.limits)
                 return try original.evaluate(message)
-            case .decision(let edited): return edited
+            case let .decision(edited): return edited
             case .reject: throw HTTPControlError.deadlineExceeded
             case .cancelled: throw HTTPControlError.cancelled
             }

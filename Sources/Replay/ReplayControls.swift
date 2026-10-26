@@ -10,8 +10,11 @@ final class ReplayControls: Sendable {
     private let reservation: HTTPControlByteReservation
 
     init(
-        runtime: HTTPControlRuntime, sink: any HTTPControlEventSink?, requestID: UUID,
-        request: ReplayRequest, target: HTTPForwardTarget
+        runtime: HTTPControlRuntime,
+        sink: any HTTPControlEventSink?,
+        requestID: UUID,
+        request: ReplayRequest,
+        target: HTTPForwardTarget
     ) throws {
         self.runtime = runtime
         let snapshot = runtime.configurationSnapshot
@@ -23,19 +26,24 @@ final class ReplayControls: Sendable {
             + snapshot.limits.maximumBodyBytes + 65_536
         reservation = try runtime.reserveTransportBytes(retained)
         let context = HTTPControlContext(
-            requestID: requestID, authority: target.authority,
-            method: request.method, path: target.requestTarget
+            requestID: requestID,
+            authority: target.authority,
+            method: request.method,
+            path: target.requestTarget
         )
         original = HTTPControlMessage(
-            context: context, phase: .request, headers: request.headers, body: Data(request.body)
+            context: context,
+            phase: .request,
+            headers: request.headers,
+            body: Data(request.body)
         )
     }
 
     func requestDecision() async throws -> HTTPControlDecision {
         let decision: HTTPControlDecision
         switch try snapshot.evaluateHead(original) {
-        case .decision(let value): decision = value
-        case .needsBody(let maximum):
+        case let .decision(value): decision = value
+        case let .needsBody(maximum):
             guard (original.body?.count ?? 0) <= maximum else { throw HTTPControlError.bodyLimitExceeded }
             decision = try snapshot.evaluate(original)
         }
@@ -44,16 +52,24 @@ final class ReplayControls: Sendable {
 
     func resolve(_ decision: HTTPControlDecision, message: HTTPControlMessage) async throws -> HTTPControlDecision {
         let result = try await HTTPControlTransport.resolve(
-            decision, message: message, runtime: runtime, sink: sink, snapshot: snapshot
+            decision,
+            message: message,
+            runtime: runtime,
+            sink: sink,
+            snapshot: snapshot
         )
         try validate(result, message: message)
         sink?.receive(.effectiveHead(
-            requestID: requestID, phase: message.phase,
-            headers: result.headers, appliedRuleIDs: result.appliedRuleIDs
+            requestID: requestID,
+            phase: message.phase,
+            headers: result.headers,
+            appliedRuleIDs: result.appliedRuleIDs
         ))
         if result.overridesNoTransform {
             sink?.receive(.noTransformOverride(
-                requestID: requestID, phase: message.phase, appliedRuleIDs: result.appliedRuleIDs
+                requestID: requestID,
+                phase: message.phase,
+                appliedRuleIDs: result.appliedRuleIDs
             ))
         }
         return result
@@ -66,9 +82,9 @@ final class ReplayControls: Sendable {
         }
         for fault in decision.faults { try fault.validate() }
         switch decision.action {
-        case .replaceBody(let body, let maximum, _, let override):
+        case let .replaceBody(body, maximum, _, override):
             try validateReplacement(body, maximum: maximum, override: override, message: message)
-        case .respond(let status, _, let body):
+        case let .respond(status, _, body):
             guard (200...599).contains(status), body.count <= snapshot.limits.maximumBodyBytes,
                 ![204, 205, 304].contains(status) || body.isEmpty,
                 message.method != "HEAD" || body.isEmpty else { throw HTTPControlError.unsupportedEdit }
@@ -77,7 +93,10 @@ final class ReplayControls: Sendable {
     }
 
     private func validateReplacement(
-        _ body: Data, maximum: Int, override: Bool, message: HTTPControlMessage
+        _ body: Data,
+        maximum: Int,
+        override: Bool,
+        message: HTTPControlMessage
     ) throws {
         guard !HTTPControlConfiguration.unsupported(message),
             (1...snapshot.limits.maximumBodyBytes).contains(maximum),
@@ -95,8 +114,11 @@ final class ReplayControls: Sendable {
 
     func responseMessage(_ head: CapturedResponseHead, body: Data? = nil) -> HTTPControlMessage {
         HTTPControlMessage(
-            context: original.context, phase: .response,
-            status: head.status, headers: head.headers, body: body
+            context: original.context,
+            phase: .response,
+            status: head.status,
+            headers: head.headers,
+            body: body
         )
     }
 }
@@ -177,8 +199,11 @@ struct ReplayResponseControls: Sendable {
     }
 
     init(
-        controls: ReplayControls?, inheritedFaults: [HTTPFault], attemptID: UUID,
-        responseSink: any ReplayResponseSink, observation: ObservationCaptureSink? = nil
+        controls: ReplayControls?,
+        inheritedFaults: [HTTPFault],
+        attemptID: UUID,
+        responseSink: any ReplayResponseSink,
+        observation: ObservationCaptureSink? = nil
     ) {
         self.controls = controls
         self.inheritedFaults = inheritedFaults
@@ -201,11 +226,11 @@ struct ReplayResponseControls: Sendable {
         }
         let message = controls.responseMessage(head)
         switch try controls.snapshot.evaluateHead(message) {
-        case .needsBody(let maximum):
+        case let .needsBody(maximum):
             try collect(maximum: maximum, decision: nil, controls: controls)
-        case .decision(let decision):
+        case let .decision(decision):
             let resolved = try await controls.resolve(decision, message: message)
-            if case .replaceBody(_, let maximum, _, _) = resolved.action {
+            if case let .replaceBody(_, maximum, _, _) = resolved.action {
                 try collect(maximum: maximum, decision: resolved, controls: controls)
             } else {
                 try await apply(resolved, head: head)
@@ -214,7 +239,9 @@ struct ReplayResponseControls: Sendable {
     }
 
     private mutating func collect(
-        maximum: Int, decision: HTTPControlDecision?, controls: ReplayControls
+        maximum: Int,
+        decision: HTTPControlDecision?,
+        controls: ReplayControls
     ) throws {
         self.maximum = maximum
         reservation = try controls.runtime.reserveTransportBytes(maximum + controls.snapshot.limits.maximumBodyBytes)
@@ -275,10 +302,10 @@ struct ReplayResponseControls: Sendable {
         var status = head.status
         let replacement: Data?
         switch decision.action {
-        case .respond(let code, _, let body):
+        case let .respond(code, _, body):
             status = code
             replacement = body
-        case .replaceBody(let body, _, _, _): replacement = body
+        case let .replaceBody(body, _, _, _): replacement = body
         case .abort: throw HTTPControlError.cancelled
         case .route, .breakpoint: throw HTTPControlError.unsupportedEdit
         case .forward, .editHeaders, .fault: replacement = nil
@@ -286,8 +313,11 @@ struct ReplayResponseControls: Sendable {
         effectiveStatus = status
         effectiveHeaders = decision.headers
         let effective = CapturedResponseHead(
-            requestID: head.requestID, timestamp: head.timestamp,
-            status: status, version: head.version, headers: decision.headers
+            requestID: head.requestID,
+            timestamp: head.timestamp,
+            status: status,
+            version: head.version,
+            headers: decision.headers
         )
         observation?.receiveEffective(.responseHead(effective))
         try await responseSink.receive(.head(attemptID: attemptID, head: effective))
@@ -306,7 +336,10 @@ struct ReplayResponseControls: Sendable {
             let end = min(offset + 65_536, replacement.count)
             try await pacer.send(Array(replacement[offset..<end])) {
                 observer?.receiveBody(
-                    requestID: requestID, direction: .response, representation: .effective, bytes: $0
+                    requestID: requestID,
+                    direction: .response,
+                    representation: .effective,
+                    bytes: $0
                 )
                 try await sink.receive(.body(attemptID: id, requestID: requestID, bytes: $0))
             }

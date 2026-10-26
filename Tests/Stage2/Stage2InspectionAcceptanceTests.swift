@@ -52,14 +52,21 @@ func stage2WithInspectionWire(
     let raw = Release022Events()
     let inspected = Stage2InspectionEvents()
     let inspector = try HTTPInspector(
-        configuration: try inspectionConfiguration ?? InspectionConfiguration(budget: InspectionMemoryBudget()), sink: inspected
+        configuration: try inspectionConfiguration ?? InspectionConfiguration(budget: InspectionMemoryBudget()),
+        sink: inspected
     )
     let proxy = ProxyServer(
         certificateAuthority: try CertificateAuthority.generate().authority,
-        sink: raw, group: group, egressPolicy: .init(allowInternal: true),
-        ingress: .explicitHTTP, captureBodyLimit: 0, observationSink: inspector,
-        controlRuntime: controlRuntime, controlEventSink: controlEventSink,
-        admission: admission, http1ReusePolicy: reusePolicy
+        sink: raw,
+        group: group,
+        egressPolicy: .init(allowInternal: true),
+        ingress: .explicitHTTP,
+        captureBodyLimit: 0,
+        observationSink: inspector,
+        controlRuntime: controlRuntime,
+        controlEventSink: controlEventSink,
+        admission: admission,
+        http1ReusePolicy: reusePolicy
     )
     var client: Channel?
     do {
@@ -69,8 +76,14 @@ func stage2WithInspectionWire(
         let channel = try release022WireClient(group: group, port: port, observation: received)
         client = channel
         try await body(Stage2WireContext(
-            proxy: proxy, group: group, origin: origin, client: channel, received: received,
-            raw: raw, inspected: inspected, inspector: inspector
+            proxy: proxy,
+            group: group,
+            origin: origin,
+            client: channel,
+            received: received,
+            raw: raw,
+            inspected: inspected,
+            inspector: inspector
         ))
         if channel.isActive {
             try await channel.close().get()
@@ -103,7 +116,7 @@ func stage2WriteChunk(_ bytes: [UInt8], origin: Release022WireOrigin) throws {
 
 func stage2ResponseCount(_ events: [CaptureEvent]) -> Int {
     events.reduce(0) { count, event in
-        if case .responseBodyChunk(_, _, let byteCount) = event {
+        if case let .responseBodyChunk(_, _, byteCount) = event {
             count + byteCount
         } else {
             count
@@ -122,9 +135,11 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
 .utf8
             ))
             let pieces: [[UInt8]] = [
-                [0xEF], [0xBB, 0xBF] + Array("id: evt-1\r".utf8),
+                [0xEF],
+                [0xBB, 0xBF] + Array("id: evt-1\r".utf8),
                 Array("\nevent: update\r\ndata: ".utf8) + [0xE2],
-                [0x82], [0xAC] + Array("\r\ndata: second\r\n\r\n".utf8)
+                [0x82],
+                [0xAC] + Array("\r\ndata: second\r\n\r\n".utf8)
             ]
             var total = 0
             for piece in pieces {
@@ -142,7 +157,7 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
                 }
             }
             let messages = events.compactMap { event -> SSEEvent? in
-                if case .sse(let message) = event.payload {
+                if case let .sse(message) = event.payload {
                     message
                 } else {
                     nil
@@ -159,13 +174,19 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
             _ = try peer.raw.wait { release022ResponseEnds($0).count == 1 }
             let drain = await peer.inspector.drain()
             XCTAssertTrue(drain.drained)
-            XCTAssertEqual(peer.inspected.events.filter {
+            XCTAssertEqual(
+                peer.inspected
+.events
+.filter {
                 if case .sse = $0.payload {
                     true
                 } else {
                     false
                 }
-            }.count, 1)
+            }
+.count,
+                1
+            )
         }
     }
 
@@ -191,13 +212,17 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
                     }
                 }
             }
-            XCTAssertEqual(events.filter { event in
+            XCTAssertEqual(
+                events.filter { event in
                 if case .diagnostic(.malformedCoding) = event.payload {
                     true
                 } else {
                     false
                 }
-            }.count, 1)
+            }
+.count,
+                1
+            )
             XCTAssertTrue(release022Errors(peer.raw.events).isEmpty)
             XCTAssertEqual(stage2ResponseCount(peer.raw.events), body.count)
         }
@@ -228,7 +253,7 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
                 }
             }
             let messages = early.compactMap { event -> GRPCMessage? in
-                if case .grpc(.message(let message)) = event.payload, event.direction == .response {
+                if case let .grpc(.message(message)) = event.payload, event.direction == .response {
                     message
                 } else {
                     nil
@@ -242,7 +267,7 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
             try peer.origin.write(Array("0\r\n\r\n".utf8))
             let finished = try await peer.inspected.wait { events in
                 events.contains { event in
-                    if case .grpc(.status(let status)) = event.payload, event.direction == .response {
+                    if case let .grpc(.status(status)) = event.payload, event.direction == .response {
                         status.code == 0
                     } else {
                         false
@@ -250,13 +275,17 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
                 }
             }
             XCTAssertTrue(release022ResponseBodyBytes(peer.raw.events).isEmpty)
-            XCTAssertEqual(finished.filter { event in
+            XCTAssertEqual(
+                finished.filter { event in
                 if case .grpc(.message) = event.payload, event.direction == .response {
                     true
                 } else {
                     false
                 }
-            }.count, 1)
+            }
+.count,
+                1
+            )
         }
     }
 
@@ -295,7 +324,7 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
                 }
             }
             let bytes = events.flatMap { event -> [UInt8] in
-                if case .webSocketChunk(let bytes) = event.payload {
+                if case let .webSocketChunk(bytes) = event.payload {
                     bytes
                 } else {
                     []
@@ -303,17 +332,18 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
             }
             XCTAssertEqual(bytes, Array("Hello".utf8))
             let summary = try XCTUnwrap(events.compactMap { event -> WebSocketMessageSummary? in
-                if case .webSocketMessage(let summary) = event.payload {
+                if case let .webSocketMessage(summary) = event.payload {
                     summary
                 } else {
                     nil
                 }
-            }.first)
+            }
+.first)
             XCTAssertTrue(summary.compressed)
             XCTAssertEqual(summary.encodedBytes, 7)
             XCTAssertEqual(summary.decodedBytes, 5)
             let framesCaptured = peer.raw.events.compactMap { event -> CapturedWebSocketFrame? in
-                if case .webSocketFrame(let frame) = event {
+                if case let .webSocketFrame(frame) = event {
                     frame
                 } else {
                     nil
@@ -357,10 +387,11 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
                     } else {
                         false
                     }
-                }.count == 2
+                }
+.count == 2
             }
             let bytes = observed.flatMap { event -> [UInt8] in
-                if case .webSocketChunk(let bytes) = event.payload {
+                if case let .webSocketChunk(bytes) = event.payload {
                     bytes
                 } else {
                     []

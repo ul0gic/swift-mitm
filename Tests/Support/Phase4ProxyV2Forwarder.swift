@@ -86,7 +86,7 @@ final class Phase4ProxyV2Forwarder {
         switch delivery {
         case .coalesced:
             try phase4BoundedWait(channel.writeAndFlush(ByteBuffer(bytes: bytes)))
-        case .fragmented(let fragmentSizes):
+        case let .fragmented(fragmentSizes):
             try writeFragments(bytes, sizes: fragmentSizes, channel: channel)
         }
     }

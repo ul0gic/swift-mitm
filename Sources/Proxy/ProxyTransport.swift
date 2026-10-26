@@ -19,7 +19,7 @@ extension ProxyServer {
         switch offer {
         case .absent:
             return [.http11]
-        case .protocols(let protocols):
+        case let .protocols(protocols):
             guard !protocols.isEmpty else { throw ProxyALPNError.noSupportedClientProtocol }
             return protocols
         }
@@ -68,7 +68,7 @@ extension ProxyServer {
             failureHandler?.value.updateStage(.negotiation)
             let downstreamProtocol: ALPNProtocol
             switch result {
-            case .negotiated(let proto):
+            case let .negotiated(proto):
                 guard let negotiated = ALPNProtocol(rawValue: proto) else {
                     return channel.eventLoop.makeFailedFuture(ProxyALPNError.unsupportedProtocol(proto))
                 }
@@ -163,10 +163,16 @@ extension ProxyServer {
             }
             .flatMap { upstreamMux, extendedConnectEnabled in
                 self.configureHTTP2Downstream(
-                    inbound: inbound, upstreamMux: upstreamMux, validateAuthority: validateAuthority,
+                    inbound: inbound,
+                    upstreamMux: upstreamMux,
+                    validateAuthority: validateAuthority,
                     configuration: .init(
-                        authority: authority, target: target, sink: sink, captureBodyLimit: captureBodyLimit,
-                        extendedConnectEnabled: extendedConnectEnabled, controlServer: self
+                        authority: authority,
+                        target: target,
+                        sink: sink,
+                        captureBodyLimit: captureBodyLimit,
+                        extendedConnectEnabled: extendedConnectEnabled,
+                        controlServer: self
                     )
                 )
             }
@@ -174,8 +180,10 @@ extension ProxyServer {
     }
 
     private func configureHTTP2Downstream(
-        inbound: Channel, upstreamMux: NIOHTTP2Handler.StreamMultiplexer,
-        validateAuthority: Bool, configuration: H2StreamGlue.Configuration
+        inbound: Channel,
+        upstreamMux: NIOHTTP2Handler.StreamMultiplexer,
+        validateAuthority: Bool,
+        configuration: H2StreamGlue.Configuration
     ) -> EventLoopFuture<Void> {
         let initialize: NIOChannelInitializer = { inboundStream in
             let validation = inboundStream.eventLoop.makeCompletedFuture {
@@ -187,7 +195,9 @@ extension ProxyServer {
             }
             return validation.flatMap {
                 H2StreamGlue.glue(
-                    inboundStream: inboundStream, upstreamMux: upstreamMux, configuration: configuration
+                    inboundStream: inboundStream,
+                    upstreamMux: upstreamMux,
+                    configuration: configuration
                 )
             }
         }
@@ -196,14 +206,20 @@ extension ProxyServer {
         )
         if controlRuntime != nil {
             return HTTP2ControlPipeline.configure(
-                channel: inbound, mode: .server, configuration: connectionConfiguration,
+                channel: inbound,
+                mode: .server,
+                configuration: connectionConfiguration,
                 initializer: initialize
-            ).map { _ in () }
+            )
+.map { _ in () }
         }
         return inbound.configureHTTP2Pipeline(
-            mode: .server, connectionConfiguration: connectionConfiguration,
-            streamConfiguration: streamConfiguration, inboundStreamInitializer: initialize
-        ).map { _ in () }
+            mode: .server,
+            connectionConfiguration: connectionConfiguration,
+            streamConfiguration: streamConfiguration,
+            inboundStreamInitializer: initialize
+        )
+.map { _ in () }
     }
 
     private func bridgeHTTP1(
@@ -215,8 +231,13 @@ extension ProxyServer {
         connectionID: UUID
     ) -> EventLoopFuture<Void> {
         if let controlRuntime, !controlRuntime.configurationSnapshot.rules.isEmpty {
-            return bridgeControlledHTTP1(inbound: inbound, upstream: upstream, authority: authority,
-                                         target: target, connectionID: connectionID)
+            return bridgeControlledHTTP1(
+                inbound: inbound,
+                upstream: upstream,
+                authority: authority,
+                target: target,
+                connectionID: connectionID
+            )
         }
         if controlRuntime != nil {
             upstream.channel.closeFuture.whenComplete { _ in inbound.close(promise: nil) }
@@ -270,15 +291,24 @@ extension ProxyServer {
         .flatMap { upstream.releaseBufferedReads() }
     }
 
-    private func bridgeControlledHTTP1(inbound: Channel, upstream: NegotiatedUpstreamConnection,
-                                       authority: String, target: CapturedTarget, connectionID: UUID) -> EventLoopFuture<Void> {
+    private func bridgeControlledHTTP1(
+        inbound: Channel,
+        upstream: NegotiatedUpstreamConnection,
+        authority: String,
+        target: CapturedTarget,
+        connectionID: UUID
+    ) -> EventLoopFuture<Void> {
         inbound.eventLoop.makeCompletedFuture {
-            guard let destination = HTTPForwardTarget(scheme: "https", authority: authority, requestTarget: "/") else { throw HTTPControlError.invalidConfiguration }
+            guard let destination = HTTPForwardTarget(scheme: "https", authority: authority, requestTarget: "/")
+                else { throw HTTPControlError.invalidConfiguration }
             var configuration = BytePreservingHTTPResponseEncoder.Configuration()
             configuration.automaticallySetFramingHeaders = false
             let encoder = BytePreservingHTTPResponseEncoder(configuration: configuration)
             try inbound.pipeline.syncOperations.addHandler(encoder)
-            try inbound.pipeline.syncOperations.addHandler(ByteToMessageHandler(BytePreservingHTTPRequestDecoder(leftOverBytesStrategy: .forwardBytes, responseEncoder: encoder)))
+            try inbound.pipeline.syncOperations.addHandler(ByteToMessageHandler(BytePreservingHTTPRequestDecoder(
+                leftOverBytesStrategy: .forwardBytes,
+                responseEncoder: encoder
+            )))
             var options = HTTPForwardOptions()
             options.correlationPolicy = correlationPolicy
             options.controlRuntime = controlRuntime
@@ -286,7 +316,8 @@ extension ProxyServer {
             options.admission = admission
             options.fixedDestination = destination
             try inbound.pipeline.syncOperations.addHandler(ExplicitHTTPProxyHandler(
-                sink: sink, captureBodyLimit: captureBodyLimit,
+                sink: sink,
+                captureBodyLimit: captureBodyLimit,
                 connectionID: connectionID,
                 connect: { [self] target, loop in connectControlledHTTP(target: target, on: loop) },
                 onCONNECT: { channel, _ in channel.close(promise: nil) },

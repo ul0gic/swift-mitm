@@ -8,12 +8,12 @@ struct ConsoleCaptureSink: CaptureEventSink {
 
     func receive(_ event: CaptureEvent) {
         switch event {
-        case .requestHead(let head):
+        case let .requestHead(head):
             output.emit("request \(head.method.prefix(256)) \(head.authority.prefix(256))")
-        case .responseHead(let head):
+        case let .responseHead(head):
             output.emit("response \(head.status) requestID=\(head.requestID)")
-        case .streamError(let id, _): output.emit("streamError requestID=\(id)")
-        case .connectionFailure(let failure):
+        case let .streamError(id, _): output.emit("streamError requestID=\(id)")
+        case let .connectionFailure(failure):
             output.emit(
                 "connectionFailure reason=\(failure.reason.rawValue) "
                     + "stage=\(failure.stage?.rawValue ?? "unknown")"
@@ -32,13 +32,13 @@ struct ConsoleInspectionSink: InspectionEventSink {
         switch event.payload {
         case .head: summary = "head"
         case .trailers: summary = "trailers"
-        case .decodedBody(let bytes): summary = "decodedBody bytes=\(bytes.count)"
-        case .sse(let value): summary = "sse dataBytes=\(value.data.utf8.count)"
+        case let .decodedBody(bytes): summary = "decodedBody bytes=\(bytes.count)"
+        case let .sse(value): summary = "sse dataBytes=\(value.data.utf8.count)"
         case .grpc: summary = "grpc event"
-        case .protobuf(let name, let digest, let fields):
+        case let .protobuf(name, digest, fields):
             summary = "protobuf message=\(name) schema=\(digest) fields=\(fields.count)"
-        case .webSocketChunk(let bytes): summary = "webSocketChunk bytes=\(bytes.count)"
-        case .webSocketMessage(let message): summary = "webSocketMessage bytes=\(message.byteCount)"
+        case let .webSocketChunk(bytes): summary = "webSocketChunk bytes=\(bytes.count)"
+        case let .webSocketMessage(message): summary = "webSocketMessage bytes=\(message.byteCount)"
         case .diagnostic: summary = "diagnostic"
         case .end: summary = "end"
         }
@@ -62,7 +62,7 @@ struct ConsoleBreakpointSink: HTTPControlEventSink {
     }
 
     func receive(_ event: HTTPControlEvent) {
-        if case .breakpoint(let handle) = event {
+        if case let .breakpoint(handle) = event {
             continuation.yield(handle)
             output.emit("breakpoint queued requestID=\(handle.requestID)")
         }
@@ -79,19 +79,19 @@ actor ReplayConsoleSink: ReplayResponseSink {
 
     func receive(_ event: ReplayResponseEvent) async throws {
         switch event {
-        case .started(_, let requestID, let sourceRequestID, let representation):
+        case let .started(_, requestID, sourceRequestID, representation):
             output.emit(
                 "replay started requestID=\(requestID) sourceID=\(sourceRequestID) "
                     + "representation=\(representation)"
             )
-        case .head(_, let head):
+        case let .head(_, head):
             responseHead = head
             output.emit("replay response head status=\(head.status)")
-        case .body(_, let id, let bytes):
+        case let .body(_, id, bytes):
             output.emit("replay response body requestID=\(id) bytes=\(bytes.count)")
-        case .trailers(_, let id, let headers):
+        case let .trailers(_, id, headers):
             output.emit("replay response trailers requestID=\(id) count=\(headers.count)")
-        case .end(let result):
+        case let .end(result):
             output.emit("replay complete status=\(result.status) bytes=\(result.responseBodyBytes)")
         }
     }
@@ -122,7 +122,7 @@ final class ReplayCaptureSink: CaptureEventSink {
     var requestHead: CapturedRequestHead? { captured.withLock { $0 } }
 
     func receive(_ event: CaptureEvent) {
-        if case .requestHead(let head) = event {
+        if case let .requestHead(head) = event {
             captured.withLock { $0 = head }
         }
         console.receive(event)

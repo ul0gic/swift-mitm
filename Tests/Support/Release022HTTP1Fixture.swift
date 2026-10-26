@@ -19,8 +19,11 @@ func release022WithWire(
         ? .trustedProxyV2(try XCTUnwrap(TrustedProxyV2Ingress(trustedPeers: .loopback))) : .explicitHTTP
     let proxy = ProxyServer(
         certificateAuthority: try CertificateAuthority.generate().authority,
-        sink: sink, group: group, egressPolicy: egressPolicy,
-        ingress: ingress, captureBodyLimit: captureLimit
+        sink: sink,
+        group: group,
+        egressPolicy: egressPolicy,
+        ingress: ingress,
+        captureBodyLimit: captureLimit
     )
     var client: Channel?
     do {
@@ -33,11 +36,18 @@ func release022WithWire(
             let header: Phase4ProxyV2Header
             if ipv6 {
                 let loopback = [UInt8](repeating: 0, count: 15) + [1]
-                header = .ipv6(source: loopback, destination: loopback, sourcePort: 50_000, destinationPort: origin.port)
+                header = .ipv6(
+                    source: loopback,
+                    destination: loopback,
+                    sourcePort: 50_000,
+                    destinationPort: origin.port
+                )
             } else {
                 header = .ipv4(
-                    source: [192, 0, 2, 1], destination: [127, 0, 0, 1],
-                    sourcePort: 50_000, destinationPort: origin.port
+                    source: [192, 0, 2, 1],
+                    destination: [127, 0, 0, 1],
+                    sourcePort: 50_000,
+                    destinationPort: origin.port
                 )
             }
             try phase4BoundedWait(connection.writeAndFlush(ByteBuffer(bytes: header.bytes)))
@@ -62,7 +72,7 @@ func release022WithWire(
 
 func release022Requests(_ events: [CaptureEvent]) -> [CapturedRequestHead] {
     events.compactMap {
-        if case .requestHead(let head) = $0 {
+        if case let .requestHead(head) = $0 {
             head
         } else {
             nil
@@ -72,7 +82,7 @@ func release022Requests(_ events: [CaptureEvent]) -> [CapturedRequestHead] {
 
 func release022Errors(_ events: [CaptureEvent]) -> [UUID] {
     events.compactMap {
-        if case .streamError(let id, _) = $0 {
+        if case let .streamError(id, _) = $0 {
             id
         } else {
             nil
@@ -82,7 +92,7 @@ func release022Errors(_ events: [CaptureEvent]) -> [UUID] {
 
 func release022ResponseEnds(_ events: [CaptureEvent]) -> [UUID] {
     events.compactMap {
-        if case .responseEnd(let id, _) = $0 {
+        if case let .responseEnd(id, _) = $0 {
             id
         } else {
             nil
@@ -92,7 +102,7 @@ func release022ResponseEnds(_ events: [CaptureEvent]) -> [UUID] {
 
 func release022ResponseBodyBytes(_ events: [CaptureEvent]) -> [UInt8] {
     events.flatMap {
-        if case .responseBodyChunk(_, let bytes, _) = $0 {
+        if case let .responseBodyChunk(_, bytes, _) = $0 {
             bytes
         } else {
             []

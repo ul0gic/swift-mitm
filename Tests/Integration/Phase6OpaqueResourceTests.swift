@@ -366,7 +366,7 @@ private final class Phase6BidirectionalLoadHandler: ChannelDuplexHandler {
                 } else {
                     handler.value.pump(context: boundContext.value)
                 }
-            case .failure(let error):
+            case let .failure(error):
                 handler.value.sentCompletion.complete(.failure(error))
                 boundContext.value.close(promise: nil)
             }

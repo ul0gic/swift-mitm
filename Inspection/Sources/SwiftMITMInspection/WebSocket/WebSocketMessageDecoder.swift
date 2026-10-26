@@ -63,7 +63,8 @@ public final class WebSocketMessageDecoder {
     }
 
     private static func negotiate(
-        _ headers: [String], prefix: String
+        _ headers: [String],
+        prefix: String
     ) throws -> (window: Int32?, noContext: Bool) {
         var selectedWindow: Int32?
         var selectedNoContext = false
@@ -165,7 +166,10 @@ public final class WebSocketMessageDecoder {
             if control {
                 remaining -= bytes.count
                 return WebSocketMessageProgress(
-                    consumedBytes: bytes.count, producedBytes: 0, outputLimit: false, message: nil
+                    consumedBytes: bytes.count,
+                    producedBytes: 0,
+                    outputLimit: false,
+                    message: nil
                 )
             }
             if compressed {
@@ -185,7 +189,10 @@ public final class WebSocketMessageDecoder {
             try output(UnsafeRawBufferPointer(rebasing: bytes[..<count]), emit: emit)
             remaining -= count
             return WebSocketMessageProgress(
-                consumedBytes: count, producedBytes: count, outputLimit: count == maximumOutputBytes, message: nil
+                consumedBytes: count,
+                producedBytes: count,
+                outputLimit: count == maximumOutputBytes,
+                message: nil
             )
         } catch {
             terminate()
@@ -217,7 +224,10 @@ public final class WebSocketMessageDecoder {
                 produced = progress.produced
                 if progress.outputLimit {
                     return WebSocketMessageProgress(
-                        consumedBytes: 0, producedBytes: produced, outputLimit: true, message: nil
+                        consumedBytes: 0,
+                        producedBytes: produced,
+                        outputLimit: true,
+                        message: nil
                     )
                 }
                 guard inflater.atBoundary else { throw WebSocketMessageError.malformedCompression }
@@ -227,12 +237,18 @@ public final class WebSocketMessageDecoder {
             }
             guard utf8Remaining == 0, let opcode else { throw WebSocketMessageError.invalidUTF8 }
             let result = WebSocketMessageSummary(
-                opcode: opcode, compressed: compressed, encodedBytes: encoded, decodedBytes: decoded
+                opcode: opcode,
+                compressed: compressed,
+                encodedBytes: encoded,
+                decodedBytes: decoded
             )
             self.opcode = nil
             frameOpen = false
             return WebSocketMessageProgress(
-                consumedBytes: 0, producedBytes: produced, outputLimit: false, message: result
+                consumedBytes: 0,
+                producedBytes: produced,
+                outputLimit: false,
+                message: result
             )
         } catch {
             terminate()

@@ -156,7 +156,7 @@ final class Phase6ResourceSink: CaptureEventSink, @unchecked Sendable {
 
     private func recordHTTP(_ event: CaptureEvent) {
         switch event {
-        case .requestHead(let head):
+        case let .requestHead(head):
             storage.requestHeads.append(head)
         case .responseHead:
             storage.responseHeads += 1
@@ -174,7 +174,7 @@ final class Phase6ResourceSink: CaptureEventSink, @unchecked Sendable {
 
     private func recordOpaque(_ event: CaptureEvent) {
         switch event {
-        case .opaqueOpen(let flow):
+        case let .opaqueOpen(flow):
             storage.opaqueFlow = flow
         case let .opaqueData(_, _, direction, bytes, byteCount):
             recordOpaqueData(direction: direction, bytes: bytes, byteCount: byteCount)
@@ -322,12 +322,12 @@ private final class Phase6StalledHTTPClientHandler: ChannelInboundHandler {
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         switch unwrapInboundIn(data) {
-        case .head(let head) where head.status != .ok:
+        case let .head(head) where head.status != .ok:
             completion.complete(.failure(Phase2FixtureError.unexpectedBytes))
             context.close(promise: nil)
         case .head:
             break
-        case .body(let buffer):
+        case let .body(buffer):
             do {
                 result = try accumulator.append(buffer) ?? result
                 fetch.addReceivedBytes(buffer.readableBytes)

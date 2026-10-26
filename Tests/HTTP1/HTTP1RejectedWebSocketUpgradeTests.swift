@@ -32,15 +32,15 @@ final class HTTP1RejectedWebSocketUpgradeTests: XCTestCase {
         try fixture.responseChannel.writeInbound(buffer("HTTP/1.1 204 No Content\r\n\r\n"))
 
         let requestHeads = fixture.sink.events.compactMap { event -> CapturedRequestHead? in
-            guard case .requestHead(let head) = event else { return nil }
+            guard case let .requestHead(head) = event else { return nil }
             return head
         }
         let responseHeads = fixture.sink.events.compactMap { event -> CapturedResponseHead? in
-            guard case .responseHead(let head) = event else { return nil }
+            guard case let .responseHead(head) = event else { return nil }
             return head
         }
         let requestEnds = fixture.sink.events.compactMap { event -> UUID? in
-            guard case .requestEnd(let requestID, _) = event else { return nil }
+            guard case let .requestEnd(requestID, _) = event else { return nil }
             return requestID
         }
         let webSocketEvents = fixture.sink.events.filter { event in
@@ -117,7 +117,7 @@ final class HTTP1RejectedWebSocketUpgradeTests: XCTestCase {
                     "responseHead"
                 case .webSocketOpen:
                     "webSocketOpen"
-                case .webSocketFrame(let frame):
+                case let .webSocketFrame(frame):
                     frame.direction == .clientToServer ? "clientFrame" : "serverFrame"
                 default:
                     nil

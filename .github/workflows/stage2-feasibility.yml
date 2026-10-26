@@ -55,13 +55,6 @@ jobs:
           cp Package.resolved "$GITHUB_WORKSPACE/evidence/combined-Package.resolved"
           swift build --product HTTP3DependencyProbe --force-resolved-versions -Xswiftc -warnings-as-errors
           swift run --skip-build HTTP3DependencyProbe | tee "$GITHUB_WORKSPACE/evidence/combined-probe.txt"
-      - name: Check core with the proposed graph
-        run: |
-          cp Packages/SwiftMITMHTTP3/Package.resolved Package.resolved
-          swift build --build-tests -Xswiftc -warnings-as-errors
-          cp Package.resolved evidence/core-Package.resolved
-          swift test --skip-build --filter 'Release022PublicTrustTests|Release022PublicHTTP1OctetTests' \
-            --xunit-output evidence/core-results.xml 2>&1 | tee evidence/core-tests.log
       - name: Prepare Crypto5 core consumer for macOS26
         run: |
           swift build --package-path Examples/FirstCapture -c release -Xswiftc -warnings-as-errors
@@ -95,6 +88,46 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: stage2-feasibility-${{ github.sha }}
+          path: evidence/
+          if-no-files-found: error
+
+  core-compatibility:
+    name: Crypto5 core trust and octet compatibility
+    needs: combined-graph
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: stage2-feasibility-${{ github.sha }}
+          path: graph-evidence/
+      - name: Check core with the proposed graph
+        run: |
+          mkdir -p evidence
+          test "$(cat graph-evidence/candidate-sha.txt)" = "$GITHUB_SHA"
+          cp graph-evidence/candidate-sha.txt evidence/
+          python3 - <<'PY_MANIFEST'
+          from pathlib import Path
+          manifest = Path('Package.swift')
+          source = manifest.read_text()
+          old = '.package(url: "https://github.com/apple/swift-crypto.git", from: "4.0.0")'
+          new = '.package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.0")'
+          assert source.count(old) == 1
+          manifest.write_text(source.replace(old, new))
+          PY_MANIFEST
+          cp graph-evidence/combined-Package.resolved Package.resolved
+          swift build --build-tests -Xswiftc -warnings-as-errors 2>&1 | tee evidence/core-build.log
+          cp Package.resolved evidence/core-Package.resolved
+          swift test --skip-build --filter 'Release022PublicTrustTests|Release022PublicHTTP1OctetTests' \
+            --xunit-output evidence/core-results.xml 2>&1 | tee evidence/core-tests.log
+      - name: Retain core compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: stage2-core-compatibility-${{ github.sha }}
           path: evidence/
           if-no-files-found: error
 

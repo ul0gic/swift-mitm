@@ -34,8 +34,11 @@ private final class Stage2BlockedControlSink: HTTPControlEventSink {
 final class Stage2CancellationAcceptanceTests: XCTestCase {
     func testStopReportsNoncooperativeCallbackUntilItsTaskAndBytesActuallyExit() async throws {
         let runtime = HTTPControlRuntime(configuration: try HTTPControlConfiguration(rules: [
-            HTTPRule(id: "orphan", match: HTTPRuleMatch(phase: .request, path: "/blocked"),
-                     action: .breakpoint)
+            HTTPRule(
+                id: "orphan",
+                match: HTTPRuleMatch(phase: .request, path: "/blocked"),
+                action: .breakpoint
+            )
         ], limits: HTTPControlLimits(maximumTasks: 2)))
         let blocked = Stage2BlockedControlSink()
         let admission = ResourceAdmissionController(configuration: try ResourceAdmissionConfiguration())
@@ -91,7 +94,9 @@ final class Stage2CancellationAcceptanceTests: XCTestCase {
         defer { blocked.release() }
         try await stage2WithHTTPOrigin(runtime: runtime, controlSink: blocked, admission: admission) { peer in
             let first = try release022WireClient(
-                group: peer.group, port: peer.proxyPort, observation: Release022WireObservation()
+                group: peer.group,
+                port: peer.proxyPort,
+                observation: Release022WireObservation()
             )
             try phase4BoundedWait(first.writeAndFlush(ByteBuffer(string:
                 "GET http://127.0.0.1:\(peer.origin.port)/blocked HTTP/1.1\r\nHost: localhost\r\n\r\n")))

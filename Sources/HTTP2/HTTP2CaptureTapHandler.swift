@@ -80,9 +80,9 @@ final class HTTP2CaptureTapHandler: ChannelInboundHandler {
         switch payload {
         case .windowUpdate:
             disposition = .consume
-        case .headers(let frame):
+        case let .headers(frame):
             disposition = processHeaders(frame.headers, endStream: frame.endStream) ? .forward : .terminate
-        case .data(let frame):
+        case let .data(frame):
             disposition = processData(frame.data, endStream: frame.endStream) ? .forward : .terminate
         case .rstStream:
             if streamContext?.value.isWebSocketCaptureClosed != true {
@@ -313,7 +313,7 @@ final class HTTP2CaptureTapHandler: ChannelInboundHandler {
         let fullSize = data.readableBytes
         let bytes: [UInt8]
         switch data {
-        case .byteBuffer(let buffer):
+        case let .byteBuffer(buffer):
             (sink as? ObservationCaptureSink)?.receiveBody(
                 requestID: requestID,
                 direction: direction == .request ? .request : .response,

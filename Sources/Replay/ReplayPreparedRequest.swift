@@ -15,8 +15,10 @@ struct ReplayPreparedRequest: Sendable {
         headers.replaceOrAdd(name: "connection", value: "close")
         self.target = target
         head = HTTPRequestHead(
-            version: .http1_1, method: HTTPMethod(rawValue: request.method),
-            uri: target.requestTarget, headers: headers
+            version: .http1_1,
+            method: HTTPMethod(rawValue: request.method),
+            uri: target.requestTarget,
+            headers: headers
         )
     }
 
@@ -29,10 +31,12 @@ struct ReplayPreparedRequest: Sendable {
         switch decision.action {
         case .abort: throw HTTPControlError.cancelled
         case .breakpoint: throw HTTPControlError.unsupportedEdit
-        case .replaceBody(let replacement, _, _, _): body = Array(replacement)
-        case .route(let authority, let names):
+        case let .replaceBody(replacement, _, _, _): body = Array(replacement)
+        case let .route(authority, names):
             guard let mapped = HTTPForwardTarget(
-                scheme: target.scheme, authority: authority, requestTarget: target.requestTarget
+                scheme: target.scheme,
+                authority: authority,
+                requestTarget: target.requestTarget
             ), let url = URL(string: mapped.scheme + "://" + mapped.authority + mapped.requestTarget)
             else { throw ReplayError.invalidRequest }
             destination = url
@@ -43,9 +47,15 @@ struct ReplayPreparedRequest: Sendable {
         case .forward, .editHeaders, .respond, .fault: break
         }
         return ReplayRequest(
-            source: request.source, destination: destination, method: request.method,
-            headers: decision.headers, body: body, bodyIsComplete: true,
-            credentialPolicy: policy, sensitiveHeaderNames: sensitive, useControls: false
+            source: request.source,
+            destination: destination,
+            method: request.method,
+            headers: decision.headers,
+            body: body,
+            bodyIsComplete: true,
+            credentialPolicy: policy,
+            sensitiveHeaderNames: sensitive,
+            useControls: false
         )
     }
 
@@ -72,7 +82,7 @@ struct ReplayPreparedRequest: Sendable {
     }
 
     private static func preserveCredentials(_ request: ReplayRequest, target: HTTPForwardTarget) throws -> Bool {
-        guard case .preserveForSameOrigin(let source) = request.credentialPolicy else { return false }
+        guard case let .preserveForSameOrigin(source) = request.credentialPolicy else { return false }
         guard let source = URLComponents(url: source, resolvingAgainstBaseURL: false),
             source.scheme?.lowercased() == target.scheme, let host = source.host
         else { throw ReplayError.credentialScopeMismatch }

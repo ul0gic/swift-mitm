@@ -94,7 +94,8 @@ final class Phase3ProxyHTTP2WebSocketClient: Sendable {
         let completion = Phase2FixtureCompletion<Phase3ProxyHTTP2WebSocketClientResult>(
             eventLoop: channel.eventLoop
         )
-        let stream = try setup.multiplexer.createStreamChannel { stream in
+        let stream = try setup.multiplexer
+.createStreamChannel { stream in
             stream.eventLoop.makeCompletedFuture {
                 try stream.pipeline.syncOperations.addHandler(Phase3ProxyHTTP2WebSocketClientStreamHandler(
                     capability: capability,
@@ -161,7 +162,8 @@ final class Phase3ProxyHTTP2WebSocketClient: Sendable {
             eventLoop: channel.eventLoop
         )
 
-        let configured = channel.eventLoop.submit {
+        let configured = channel.eventLoop
+.submit {
             try channel.pipeline.syncOperations.addHandlers([
                 NIOSSLClientHandler(context: sslContext, serverHostname: originHost),
                 Phase3TLSHandshakeHandler(completion: handshake),
@@ -247,7 +249,7 @@ private final class Phase3TLSHandshakeHandler: ChannelInboundHandler {
     }
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
-        if case TLSUserEvent.handshakeCompleted(let protocolName) = event {
+        if case let TLSUserEvent.handshakeCompleted(protocolName) = event {
             completion.complete(.success(protocolName))
         }
         context.fireUserInboundEventTriggered(event)
@@ -300,9 +302,9 @@ private final class Phase3ProxyHTTP2WebSocketClientStreamHandler: ChannelDuplexH
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         switch unwrapInboundIn(data) {
-        case .headers(let frame):
+        case let .headers(frame):
             receive(headers: frame, context: context)
-        case .data(let frame):
+        case let .data(frame):
             receive(data: frame.data, endStream: frame.endStream, context: context)
         default:
             break
@@ -341,7 +343,7 @@ private final class Phase3ProxyHTTP2WebSocketClientStreamHandler: ChannelDuplexH
     }
 
     private func receive(data: IOData, endStream: Bool, context: ChannelHandlerContext) {
-        guard status.map({ (200 ... 299).contains($0) }) == true, case .byteBuffer(let buffer) = data else {
+        guard status.map({ (200 ... 299).contains($0) }) == true, case let .byteBuffer(buffer) = data else {
             completion.complete(.failure(Phase2FixtureError.unexpectedBytes))
             context.close(promise: nil)
             return

@@ -109,17 +109,23 @@ final class WebSocketInflater {
             if before == stream.pointee.avail_in, written == 0 {
                 guard stream.pointee.avail_in == 0 else { throw WebSocketMessageError.malformedCompression }
                 return WebSocketInflationProgress(
-                    consumed: bytes.count - Int(stream.pointee.avail_in), produced: produced, outputLimit: false
+                    consumed: bytes.count - Int(stream.pointee.avail_in),
+                    produced: produced,
+                    outputLimit: false
                 )
             }
             if produced == maximumOutputBytes {
                 return WebSocketInflationProgress(
-                    consumed: bytes.count - Int(stream.pointee.avail_in), produced: produced, outputLimit: true
+                    consumed: bytes.count - Int(stream.pointee.avail_in),
+                    produced: produced,
+                    outputLimit: true
                 )
             }
         } while stream.pointee.avail_in > 0 || stream.pointee.avail_out == 0
         return WebSocketInflationProgress(
-            consumed: bytes.count - Int(stream.pointee.avail_in), produced: produced, outputLimit: false
+            consumed: bytes.count - Int(stream.pointee.avail_in),
+            produced: produced,
+            outputLimit: false
         )
     }
 }

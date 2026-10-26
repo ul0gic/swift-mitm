@@ -62,7 +62,8 @@ struct HTTP2InitialSettingsProbe {
 
     private mutating func copyRequiredBytes(from input: inout ByteBuffer, targetByteCount: Int) {
         let missingByteCount = targetByteCount - bytes.readableBytes
-        guard missingByteCount > 0, var slice = input.readSlice(length: min(missingByteCount, input.readableBytes)) else { return }
+        guard missingByteCount > 0,
+              var slice = input.readSlice(length: min(missingByteCount, input.readableBytes)) else { return }
         bytes.writeBuffer(&slice)
     }
 
@@ -188,7 +189,7 @@ final class HTTP2InitialSettingsProbeHandler: ChannelInboundHandler, RemovableCh
             switch try probe.receive(&input) {
             case .incomplete:
                 return
-            case .complete(let result):
+            case let .complete(result):
                 complete(result, remainingInput: input, context: context)
             }
         } catch {

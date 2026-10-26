@@ -19,7 +19,12 @@ struct Stage2OriginReply: Sendable {
     let body: [UInt8]
     let beforeRequestEnd: Bool
 
-    init(status: HTTPResponseStatus = .ok, headers: HTTPHeaders = [:], body: [UInt8] = [], beforeRequestEnd: Bool = false) {
+    init(
+        status: HTTPResponseStatus = .ok,
+        headers: HTTPHeaders = [:],
+        body: [UInt8] = [],
+        beforeRequestEnd: Bool = false
+    ) {
         self.status = status
         self.headers = headers
         self.body = body
@@ -39,7 +44,10 @@ final class Stage2HTTPOrigin: Sendable {
     private let state = NIOLockedValueBox(State())
     private let reply: @Sendable (HTTPRequestHead) -> Stage2OriginReply
 
-    init(group: EventLoopGroup, reply: @escaping @Sendable (HTTPRequestHead) -> Stage2OriginReply = { _ in Stage2OriginReply() }) {
+    init(
+        group: EventLoopGroup,
+        reply: @escaping @Sendable (HTTPRequestHead) -> Stage2OriginReply = { _ in Stage2OriginReply() }
+    ) {
         self.group = group
         self.reply = reply
     }
@@ -64,7 +72,8 @@ final class Stage2HTTPOrigin: Sendable {
                     }
                 }
             }
-            .bind(host: "127.0.0.1", port: 0).get()
+            .bind(host: "127.0.0.1", port: 0)
+.get()
         state.withLockedValue { $0.listener = listener }
     }
 
@@ -89,15 +98,17 @@ private final class Stage2HTTPOriginHandler: ChannelInboundHandler {
     private var bytes: [UInt8] = []
     private var replied = false
 
-    init(reply: @escaping @Sendable (HTTPRequestHead) -> Stage2OriginReply,
-         record: @escaping @Sendable (Stage2OriginRequest) -> Void) {
+    init(
+        reply: @escaping @Sendable (HTTPRequestHead) -> Stage2OriginReply,
+        record: @escaping @Sendable (Stage2OriginRequest) -> Void
+    ) {
         self.reply = reply
         self.record = record
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         switch unwrapInboundIn(data) {
-        case .head(let head):
+        case let .head(head):
             self.head = head
             bytes.removeAll()
             replied = false
@@ -106,7 +117,7 @@ private final class Stage2HTTPOriginHandler: ChannelInboundHandler {
                 record(Stage2OriginRequest(head: head, body: []))
                 emit(response, context: context)
             }
-        case .body(let buffer):
+        case let .body(buffer):
             guard bytes.count <= 4_194_304 - buffer.readableBytes else {
                 context.close(promise: nil)
                 return
@@ -127,7 +138,10 @@ private final class Stage2HTTPOriginHandler: ChannelInboundHandler {
         replied = true
         var headers = response.headers
         headers.replaceOrAdd(name: "Content-Length", value: String(response.body.count))
-        context.write(wrapOutboundOut(.head(HTTPResponseHead(version: .http1_1, status: response.status, headers: headers))), promise: nil)
+        context.write(
+            wrapOutboundOut(.head(HTTPResponseHead(version: .http1_1, status: response.status, headers: headers))),
+            promise: nil
+        )
         if !response.body.isEmpty {
             context.write(wrapOutboundOut(.body(.byteBuffer(ByteBuffer(bytes: response.body)))), promise: nil)
         }
@@ -162,19 +176,34 @@ func stage2WithHTTPOrigin(
     let raw = Release022Events()
     let inspected = Stage2InspectionEvents()
     let inspector = try HTTPInspector(
-        configuration: try inspectorConfiguration ?? InspectionConfiguration(budget: InspectionMemoryBudget()), sink: inspected
+        configuration: try inspectorConfiguration ?? InspectionConfiguration(budget: InspectionMemoryBudget()),
+        sink: inspected
     )
     let proxy = ProxyServer(
         certificateAuthority: try CertificateAuthority.generate().authority,
-        sink: raw, group: group, egressPolicy: egressPolicy, ingress: .explicitHTTP,
-        captureBodyLimit: 0, observationSink: inspector, controlRuntime: runtime,
-        controlEventSink: controlSink, admission: admission, http1ReusePolicy: reuse
+        sink: raw,
+        group: group,
+        egressPolicy: egressPolicy,
+        ingress: .explicitHTTP,
+        captureBodyLimit: 0,
+        observationSink: inspector,
+        controlRuntime: runtime,
+        controlEventSink: controlSink,
+        admission: admission,
+        http1ReusePolicy: reuse
     )
     do {
         try await origin.start()
         let port = try await proxy.start(port: 0)
-        try await body(Stage2HTTPContext(origin: origin, proxy: proxy, proxyPort: port, group: group,
-                                         raw: raw, inspected: inspected, inspector: inspector))
+        try await body(Stage2HTTPContext(
+            origin: origin,
+            proxy: proxy,
+            proxyPort: port,
+            group: group,
+            raw: raw,
+            inspected: inspected,
+            inspector: inspector
+        ))
         try await proxy.stop()
         try await origin.stop()
         let shutdown = await inspector.shutdown()

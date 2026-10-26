@@ -5,18 +5,28 @@ import XCTest
 import SwiftMITM
 
 func release022AssertIdentity(
-    originName: String, serverName: String?, succeeds: Bool, ingress: ProxyIngress = .explicitConnect
+    originName: String,
+    serverName: String?,
+    succeeds: Bool,
+    ingress: ProxyIngress = .explicitConnect
 ) async throws {
     let group = MultiThreadedEventLoopGroup(numberOfThreads: 2)
     let origin = try TLSOriginServer(
-        group: group, bodySize: 4, applicationProtocols: ["http/1.1"], hostname: originName
+        group: group,
+        bodySize: 4,
+        applicationProtocols: ["http/1.1"],
+        hostname: originName
     )
     let authority = try CertificateAuthority.generate().authority
     let sink = Release022Events()
     let proxy = ProxyServer(
-        certificateAuthority: authority, sink: sink, group: group,
+        certificateAuthority: authority,
+        sink: sink,
+        group: group,
         upstreamPolicy: .init(additionalTrustRootsPEM: [origin.caCertificatePEM]),
-        egressPolicy: .init(allowInternal: true), ingress: ingress, captureBodyLimit: 4
+        egressPolicy: .init(allowInternal: true),
+        ingress: ingress,
+        captureBodyLimit: 4
     )
     var client: Channel?
     do {
@@ -26,7 +36,9 @@ func release022AssertIdentity(
         let channel = try peer.openTunnel(proxyPort: port, originHost: "127.0.0.1", originPort: origin.localPort)
         client = channel
         let tls = try peer.installTLS(
-            on: channel, serverHostname: serverName, mitmCACertificatePEM: authority.caCertificatePEM,
+            on: channel,
+            serverHostname: serverName,
+            mitmCACertificatePEM: authority.caCertificatePEM,
             applicationProtocols: ["http/1.1"]
         )
         try phase4BoundedWait(tls.installed)
@@ -36,7 +48,8 @@ func release022AssertIdentity(
             try phase4BoundedWait(channel.eventLoop.submit {
                 try channel.pipeline.syncOperations.addHandler(Release022WireHandler(received))
             })
-            try phase4BoundedWait(channel.writeAndFlush(ByteBuffer(string: "GET /identity HTTP/1.1\r\nHost: localhost\r\n\r\n")))
+            try phase4BoundedWait(channel
+                .writeAndFlush(ByteBuffer(string: "GET /identity HTTP/1.1\r\nHost: localhost\r\n\r\n")))
             _ = try sink.wait { $0.contains {
                 if case .responseEnd = $0 {
                     true
@@ -44,13 +57,15 @@ func release022AssertIdentity(
                     false
                 }
             } }
-            let request = try XCTUnwrap(sink.events.compactMap { event -> CapturedRequestHead? in
-                if case .requestHead(let head) = event {
+            let request = try XCTUnwrap(sink.events
+.compactMap { event -> CapturedRequestHead? in
+                if case let .requestHead(head) = event {
                     head
                 } else {
                     nil
                 }
-            }.first)
+            }
+.first)
             XCTAssertEqual(request.target?.destination.address, "127.0.0.1")
             XCTAssertEqual(request.target?.destination.port, origin.localPort)
             XCTAssertEqual(request.target?.tlsServerName, serverName)
@@ -81,13 +96,18 @@ func release022AssertIdentity(
         }
         try await proxy.stop()
         if !succeeds {
-            XCTAssertEqual(sink.events.filter {
+            XCTAssertEqual(
+                sink.events
+.filter {
                 if case .connectionFailure = $0 {
                     true
                 } else {
                     false
                 }
-            }.count, 1)
+            }
+.count,
+                1
+            )
             XCTAssertFalse(sink.events.contains {
                 if case .opaqueOpen = $0 {
                     true

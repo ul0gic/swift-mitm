@@ -48,34 +48,34 @@ struct OutputRecord: Encodable, Sendable {
         self.init(type: summary.0)
         id = summary.1
         switch event {
-        case .requestHead(let head):
+        case let .requestHead(head):
             method = String(head.method.prefix(256))
             authority = String(head.authority.prefix(256))
-        case .responseHead(let head):
+        case let .responseHead(head):
             status = head.status
-        case .requestBodyChunk(_, let bytes, let count), .responseBodyChunk(_, let bytes, let count):
+        case let .requestBodyChunk(_, bytes, count), let .responseBodyChunk(_, bytes, count):
             payload(bytes, count: count)
-        case .requestEnd(_, let isTruncated), .responseEnd(_, let isTruncated):
+        case let .requestEnd(_, isTruncated), let .responseEnd(_, isTruncated):
             truncated = isTruncated
-        case .webSocketFrame(let frame):
+        case let .webSocketFrame(frame):
             direction = frame.direction.rawValue
             payload(frame.bytes, count: frame.byteCount)
             truncated = frame.truncated
-        case .opaqueOpen(let flow):
+        case let .opaqueOpen(flow):
             authority = String(flow.target.logicalAuthority.prefix(256))
             reason = flow.reason.rawValue
-        case .opaqueData(_, _, let flowDirection, let bytes, let count):
+        case let .opaqueData(_, _, flowDirection, bytes, count):
             direction = flowDirection.rawValue
             payload(bytes, count: count)
-        case .opaqueDirectionEnd(_, _, let flowDirection, let count, let isTruncated):
+        case let .opaqueDirectionEnd(_, _, flowDirection, count, isTruncated):
             direction = flowDirection.rawValue
             byteCount = count
             truncated = isTruncated
-        case .opaqueClose(_, _, let closeReason):
+        case let .opaqueClose(_, _, closeReason):
             reason = closeReason.rawValue
-        case .opaqueError(_, _, let failureReason):
+        case let .opaqueError(_, _, failureReason):
             reason = failureReason.rawValue
-        case .connectionFailure(let failure):
+        case let .connectionFailure(failure):
             reason = failure.reason.rawValue
             stage = failure.stage?.rawValue
             code = failure.code?.rawValue
@@ -96,24 +96,24 @@ struct OutputRecord: Encodable, Sendable {
 private extension CaptureEvent {
     var outputSummary: (String, UUID) {
         switch self {
-        case .requestHead(let head): ("requestHead", head.id)
-        case .requestBodyChunk(let id, _, _): ("requestBodyChunk", id)
-        case .requestTrailers(let id, _): ("requestTrailers", id)
-        case .requestEnd(let id, _): ("requestEnd", id)
-        case .responseHead(let head): ("responseHead", head.requestID)
-        case .responseBodyChunk(let id, _, _): ("responseBodyChunk", id)
-        case .responseTrailers(let id, _): ("responseTrailers", id)
-        case .responseEnd(let id, _): ("responseEnd", id)
-        case .streamError(let id, _): ("streamError", id)
-        case .webSocketOpen(let id, _, _): ("webSocketOpen", id)
-        case .webSocketFrame(let frame): ("webSocketFrame", frame.connectionID)
-        case .webSocketClose(let id, _, _, _): ("webSocketClose", id)
-        case .opaqueOpen(let flow): ("opaqueOpen", flow.id)
-        case .opaqueData(let id, _, _, _, _): ("opaqueData", id)
-        case .opaqueDirectionEnd(let id, _, _, _, _): ("opaqueDirectionEnd", id)
-        case .opaqueClose(let id, _, _): ("opaqueClose", id)
-        case .opaqueError(let id, _, _): ("opaqueError", id)
-        case .connectionFailure(let failure): ("connectionFailure", failure.id)
+        case let .requestHead(head): ("requestHead", head.id)
+        case let .requestBodyChunk(id, _, _): ("requestBodyChunk", id)
+        case let .requestTrailers(id, _): ("requestTrailers", id)
+        case let .requestEnd(id, _): ("requestEnd", id)
+        case let .responseHead(head): ("responseHead", head.requestID)
+        case let .responseBodyChunk(id, _, _): ("responseBodyChunk", id)
+        case let .responseTrailers(id, _): ("responseTrailers", id)
+        case let .responseEnd(id, _): ("responseEnd", id)
+        case let .streamError(id, _): ("streamError", id)
+        case let .webSocketOpen(id, _, _): ("webSocketOpen", id)
+        case let .webSocketFrame(frame): ("webSocketFrame", frame.connectionID)
+        case let .webSocketClose(id, _, _, _): ("webSocketClose", id)
+        case let .opaqueOpen(flow): ("opaqueOpen", flow.id)
+        case let .opaqueData(id, _, _, _, _): ("opaqueData", id)
+        case let .opaqueDirectionEnd(id, _, _, _, _): ("opaqueDirectionEnd", id)
+        case let .opaqueClose(id, _, _): ("opaqueClose", id)
+        case let .opaqueError(id, _, _): ("opaqueError", id)
+        case let .connectionFailure(failure): ("connectionFailure", failure.id)
         }
     }
 }
@@ -224,11 +224,11 @@ final class CaptureOutput: CaptureEventSink {
 
     private static func payloadSize(_ event: CaptureEvent) -> Int {
         switch event {
-        case .requestBodyChunk(_, let bytes, _), .responseBodyChunk(_, let bytes, _):
+        case let .requestBodyChunk(_, bytes, _), let .responseBodyChunk(_, bytes, _):
             return bytes.count
-        case .opaqueData(_, _, _, let bytes, _):
+        case let .opaqueData(_, _, _, bytes, _):
             return bytes.count
-        case .webSocketFrame(let frame):
+        case let .webSocketFrame(frame):
             return frame.bytes.count
         default:
             return 0

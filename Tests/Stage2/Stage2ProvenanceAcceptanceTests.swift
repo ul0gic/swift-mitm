@@ -8,13 +8,18 @@ final class Stage2ProvenanceAcceptanceTests: XCTestCase {
     func testSyntheticResponseKeepsEditedRequestAndResponseHeadersInTheirOwnRepresentations() async throws {
         let runtime = HTTPControlRuntime(configuration: try HTTPControlConfiguration(rules: [
             HTTPRule(
-                id: "request-edit", match: HTTPRuleMatch(phase: .request, path: "/synthetic"),
+                id: "request-edit",
+                match: HTTPRuleMatch(phase: .request, path: "/synthetic"),
                 action: .editHeaders(remove: ["X-Probe"], append: [HTTPHeaderField(name: "X-Probe", value: "edited")])
             ),
             HTTPRule(
-                id: "local-response", match: HTTPRuleMatch(phase: .request, path: "/synthetic"),
-                action: .respond(status: 202, headers: [HTTPHeaderField(name: "X-Response", value: "generated")],
-                                 body: Data("synthetic-body".utf8))
+                id: "local-response",
+                match: HTTPRuleMatch(phase: .request, path: "/synthetic"),
+                action: .respond(
+                    status: 202,
+                    headers: [HTTPHeaderField(name: "X-Response", value: "generated")],
+                    body: Data("synthetic-body".utf8)
+                )
             )
         ], limits: HTTPControlLimits()))
         let controls = Stage2ControlEvents()
@@ -36,7 +41,7 @@ final class Stage2ProvenanceAcceptanceTests: XCTestCase {
             XCTAssertNil(original.headers.first { $0.name.lowercased() == "x-response" })
             try await stage2Await {
                 controls.events.contains {
-                    if case .effectiveHead(let id, .request, _, _) = $0 {
+                    if case let .effectiveHead(id, .request, _, _) = $0 {
                         id == original.id
                     } else {
                         false
@@ -44,7 +49,7 @@ final class Stage2ProvenanceAcceptanceTests: XCTestCase {
                 }
             }
             let requests = controls.events.compactMap { event -> [HTTPHeaderField]? in
-                if case .effectiveHead(let id, .request, let headers, _) = event, id == original.id {
+                if case let .effectiveHead(id, .request, headers, _) = event, id == original.id {
                     headers
                 } else {
                     nil

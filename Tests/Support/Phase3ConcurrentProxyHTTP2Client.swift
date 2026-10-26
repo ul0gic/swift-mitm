@@ -140,9 +140,9 @@ private final class Phase3OrdinaryHTTP2ClientHandler: ChannelDuplexHandler {
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         switch unwrapInboundIn(data) {
-        case .headers(let frame):
+        case let .headers(frame):
             accepted = frame.headers.first(name: ":status") == "200"
-        case .data(let frame):
+        case let .data(frame):
             receive(data: frame.data, endStream: frame.endStream, context: context)
         default:
             break
@@ -160,7 +160,7 @@ private final class Phase3OrdinaryHTTP2ClientHandler: ChannelDuplexHandler {
     }
 
     private func receive(data: IOData, endStream: Bool, context: ChannelHandlerContext) {
-        guard accepted, case .byteBuffer(let buffer) = data else {
+        guard accepted, case let .byteBuffer(buffer) = data else {
             completion.complete(.failure(Phase2FixtureError.unexpectedBytes))
             context.close(promise: nil)
             return
@@ -196,12 +196,12 @@ private final class Phase3IsolatedWebSocketClientHandler: ChannelDuplexHandler {
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         switch unwrapInboundIn(data) {
-        case .headers(let frame):
+        case let .headers(frame):
             accepted = frame.headers.first(name: ":status") == "200"
             if accepted {
                 send(WebSocketWire.clientTextFrame, context: context)
             }
-        case .data(let frame):
+        case let .data(frame):
             receive(data: frame.data, context: context)
         default:
             break
@@ -219,7 +219,7 @@ private final class Phase3IsolatedWebSocketClientHandler: ChannelDuplexHandler {
     }
 
     private func receive(data: IOData, context: ChannelHandlerContext) {
-        guard accepted, case .byteBuffer(let buffer) = data else {
+        guard accepted, case let .byteBuffer(buffer) = data else {
             completion.complete(.failure(Phase2FixtureError.unexpectedBytes))
             context.close(promise: nil)
             return
@@ -269,7 +269,7 @@ private final class Phase3FailingWebSocketClientHandler: ChannelDuplexHandler {
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-        guard case .headers(let frame) = unwrapInboundIn(data) else { return }
+        guard case let .headers(frame) = unwrapInboundIn(data) else { return }
         accepted = frame.headers.first(name: ":status") == "200"
         if accepted {
             sentText = true

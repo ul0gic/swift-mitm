@@ -17,7 +17,8 @@ struct ReplayExecution: Sendable {
             }
         } catch {
             let failure = CaptureEvent.streamError(
-                requestID: invocation.identity.requestID, message: "Replay exchange did not complete"
+                requestID: invocation.identity.requestID,
+                message: "Replay exchange did not complete"
             )
             server.sink.receive(failure)
             if invocation.controls != nil {
@@ -38,7 +39,7 @@ struct ReplayExecution: Sendable {
             var reader = ReplayResponseReader(execution: self, timing: timing)
             for try await part in inbound {
                 try Task.checkCancellation()
-                if case .head(let head) = part, head.status.code >= 200 {
+                if case let .head(head) = part, head.status.code >= 200 {
                     uploads.cancelAll()
                 }
                 if let result = try await reader.receive(part) {
@@ -57,10 +58,15 @@ struct ReplayExecution: Sendable {
         let requestID = invocation.identity.requestID
         let original = invocation.original
         server.sink.receive(.requestHead(CapturedRequestHead(
-            id: requestID, timestamp: Date(), scheme: original.target.scheme,
-            authority: original.target.authority, method: original.head.method.rawValue,
-            path: original.head.uri, version: .http11,
-            headers: ExplicitHTTPProxyHandler.fields(original.head.headers), target: connection.target
+            id: requestID,
+            timestamp: Date(),
+            scheme: original.target.scheme,
+            authority: original.target.authority,
+            method: original.head.method.rawValue,
+            path: original.head.uri,
+            version: .http11,
+            headers: ExplicitHTTPProxyHandler.fields(original.head.headers),
+            target: connection.target
         )))
         var capture = CaptureBodyBuffer(limit: server.captureBodyLimit)
         var offset = 0
@@ -69,7 +75,9 @@ struct ReplayExecution: Sendable {
             let bytes = invocation.source.body[offset..<end]
             observation?.receiveBody(requestID: requestID, direction: .request, bytes: bytes)
             server.sink.receive(.requestBodyChunk(
-                requestID: requestID, bytes: capture.take(bytes), byteCount: bytes.count
+                requestID: requestID,
+                bytes: capture.take(bytes),
+                byteCount: bytes.count
             ))
             offset = end
         }
@@ -109,15 +117,21 @@ struct ReplayExecution: Sendable {
     private func captureEffectiveHead() {
         let prepared = invocation.prepared
         observation?.receiveEffective(.requestHead(CapturedRequestHead(
-            id: invocation.identity.requestID, timestamp: Date(), scheme: prepared.target.scheme,
-            authority: prepared.target.authority, method: prepared.head.method.rawValue,
-            path: prepared.head.uri, version: .http11,
-            headers: ExplicitHTTPProxyHandler.fields(prepared.head.headers), target: connection.target
+            id: invocation.identity.requestID,
+            timestamp: Date(),
+            scheme: prepared.target.scheme,
+            authority: prepared.target.authority,
+            method: prepared.head.method.rawValue,
+            path: prepared.head.uri,
+            version: .http11,
+            headers: ExplicitHTTPProxyHandler.fields(prepared.head.headers),
+            target: connection.target
         )))
     }
 
     private func uploadBody(
-        _ outbound: NIOAsyncChannelOutboundWriter<HTTPClientRequestPart>, pacer: inout ReplayFaultPacer
+        _ outbound: NIOAsyncChannelOutboundWriter<HTTPClientRequestPart>,
+        pacer: inout ReplayFaultPacer
     ) async throws {
         var offset = 0
         while offset < invocation.effective.body.count {
@@ -127,8 +141,10 @@ struct ReplayExecution: Sendable {
             try await pacer.send(bytes) {
                 if invocation.controls != nil {
                     observation?.receiveBody(
-                        requestID: invocation.identity.requestID, direction: .request,
-                        representation: .effective, bytes: $0
+                        requestID: invocation.identity.requestID,
+                        direction: .request,
+                        representation: .effective,
+                        bytes: $0
                     )
                 }
                 try await outbound.write(.body(.byteBuffer(ByteBuffer(bytes: $0))))

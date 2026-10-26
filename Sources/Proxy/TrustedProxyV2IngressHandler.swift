@@ -70,7 +70,7 @@ final class TrustedProxyV2IngressHandler: ChannelInboundHandler, RemovableChanne
                     stageObserver?.didEnterTransparentIngressStage(.proxyHeaderPending)
                 }
                 return
-            case .complete(let metadata):
+            case let .complete(metadata):
                 try accept(metadata, remainingInput: input, context: context)
             }
         } catch {

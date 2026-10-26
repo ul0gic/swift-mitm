@@ -27,7 +27,7 @@ final class ProxyIngressPublicAPITests: XCTestCase {
         XCTAssertEqual(timeouts.upstreamConnectDeadline, .seconds(8))
         XCTAssertEqual(timeouts.tlsHandshakeDeadline, .seconds(9))
         XCTAssertEqual(timeouts.http2InitialSettingsDeadline, .seconds(4))
-        guard case .trustedProxyV2(let selected) = ingress else {
+        guard case let .trustedProxyV2(selected) = ingress else {
             return XCTFail("expected trusted PROXY v2 ingress")
         }
         XCTAssertEqual(selected.trustedPeers.addressesAndCIDRs, peers.addressesAndCIDRs)

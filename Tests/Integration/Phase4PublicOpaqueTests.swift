@@ -66,7 +66,8 @@ final class Phase4PublicOpaqueTests: XCTestCase {
             let flowID = try XCTUnwrap(snapshot.opaqueFlows.first?.id)
             XCTAssertEqual(snapshot.opaqueDirectionEnds.map(\.flowID), [flowID, flowID])
             XCTAssertEqual(Set(snapshot.opaqueDirectionEnds.map(\.direction)), [
-                .clientToServer, .serverToClient
+                .clientToServer,
+                .serverToClient
             ])
             XCTAssertEqual(snapshot.opaqueCloses, [.init(flowID: flowID, reason: .completed)])
             XCTAssertTrue(snapshot.opaqueErrors.isEmpty)

@@ -105,7 +105,7 @@ final class HTTP2WebSocketStreamContext {
         let webSocketDirection: WebSocketDirection = direction == .request ? .clientToServer : .serverToClient
         let valid: Bool
         switch data {
-        case .byteBuffer(let buffer):
+        case let .byteBuffer(buffer):
             valid = session.capture(buffer.readableBytesView, direction: webSocketDirection)
         case .fileRegion:
             valid = false

@@ -9,7 +9,10 @@ public struct ProtobufSchemaLimits: Sendable {
     public let depth: Int
 
     public init(
-        descriptorBytes: Int = 4 * 1024 * 1024, files: Int = 128, fields: Int = 10_000, depth: Int = 32
+        descriptorBytes: Int = 4 * 1024 * 1024,
+        files: Int = 128,
+        fields: Int = 10_000,
+        depth: Int = 32
     ) throws {
         guard (1...(16 * 1024 * 1024)).contains(descriptorBytes), (1...512).contains(files),
               (1...50_000).contains(fields), (1...64).contains(depth) else {
@@ -59,7 +62,10 @@ public final class ProtobufSchemaSnapshot: Sendable {
     }
 
     public func decode(
-        _ bytes: [UInt8], messageName: String, maximumNodes: Int = 20_000, maximumDepth: Int = 32
+        _ bytes: [UInt8],
+        messageName: String,
+        maximumNodes: Int = 20_000,
+        maximumDepth: Int = 32
     ) throws -> [ProtobufFieldOccurrence] {
         guard (1...80_000).contains(maximumNodes), (1...64).contains(maximumDepth),
               bytes.count <= 16 * 1024 * 1024 else { throw ProtobufInspectionError.limitExceeded }

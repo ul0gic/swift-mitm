@@ -58,7 +58,7 @@ final class TrustedPeerPolicyTests: XCTestCase {
         let configuration = try XCTUnwrap(TrustedProxyV2Ingress(trustedPeers: .loopback))
         let ingress = ProxyIngress.trustedProxyV2(configuration)
 
-        guard case .trustedProxyV2(let selected) = ingress else {
+        guard case let .trustedProxyV2(selected) = ingress else {
             return XCTFail("expected trusted PROXY v2 ingress")
         }
         XCTAssertEqual(selected.proxyHeaderMaximumBytes, 4_096)

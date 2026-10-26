@@ -23,7 +23,7 @@ extension ProxyServer {
         future.whenComplete { result in
             deadlineTask.cancel()
             if setupToken.isCancelled {
-                if case .success(let value) = result {
+                if case let .success(value) = result {
                     cleanup(value).whenComplete { _ in setupToken.releaseOperation() }
                 } else {
                     setupToken.releaseOperation()
@@ -160,7 +160,8 @@ extension ProxyServer {
         let negotiatedProtocol = channel.eventLoop.makePromise(of: ALPNProtocol.self)
         let alpnHandler = UpstreamALPNHandler(negotiatedProtocol: negotiatedProtocol)
         let loopBoundALPNHandler = NIOLoopBound(alpnHandler, eventLoop: channel.eventLoop)
-        return channel.eventLoop.makeCompletedFuture {
+        return channel.eventLoop
+.makeCompletedFuture {
             try channel.pipeline.syncOperations.addHandler(
                 NIOSSLClientHandler(context: context, serverHostname: target.tlsServerName)
             )

@@ -62,8 +62,7 @@ extension HTTPInspector {
         for (key, diagnostic) in losses {
             if let body = state.bodies.removeValue(forKey: key) {
                 body.fail(diagnostic)
-            }
-            else {
+            } else {
                 emit(key.context, wire: 0..<0, decoded: 0..<0, chain: [], payload: .diagnostic(diagnostic))
             }
             state.sockets.removeValue(forKey: key)?.terminate()
@@ -76,7 +75,7 @@ extension HTTPInspector {
                 state.wsConsumed = 0
             }
             if !ingress.withLock({ $0.active.contains(key.id) }) {
-                sequences.withLock { $0.removeValue(forKey: key.id) }
+                sequences.withLock { _ = $0.removeValue(forKey: key.id) }
             }
         }
     }
@@ -119,7 +118,9 @@ extension HTTPInspector {
                     value.ended.contains(self.makeKey(id, .response)) else { return false }
                 return state.exchanges.keys.filter { $0.id == id }.allSatisfy { key in
                     let response = Key(HTTPBodyObservation(
-                        requestID: id, direction: .response, representation: key.representation
+                        requestID: id,
+                        direction: .response,
+                        representation: key.representation
                     ))
                     return value.ended.contains(key) && value.ended.contains(response)
                 }
@@ -169,29 +170,28 @@ extension HTTPInspector {
         case let value as ContentDecoderError: diagnostic = .malformedCoding(value)
         case let value as SSEParserError: diagnostic = .malformedSSE(value)
         case let value as WebSocketMessageError: diagnostic = .malformedWebSocket(value)
-        case BodyFailure.unsupportedCoding(let value): diagnostic = .unsupportedCoding(value)
+        case let BodyFailure.unsupportedCoding(value): diagnostic = .unsupportedCoding(value)
         case is InspectionBudgetError: diagnostic = .capacityExceeded
         default: diagnostic = .incompleteTransport
         }
         if let body = state.bodies.removeValue(forKey: key) {
             body.fail(diagnostic)
-        }
-        else {
+        } else {
             emit(key.context, wire: 0..<0, decoded: 0..<0, chain: [], payload: .diagnostic(diagnostic))
         }
         state.sockets.removeValue(forKey: key)?.terminate()
-        ingress.withLock { $0.failed.insert(key) }
+        ingress.withLock { _ = $0.failed.insert(key) }
     }
 
     func process(_ item: Item, state: inout Worker) throws -> Bool {
         switch item.input {
-        case .body(_, let bytes):
+        case let .body(_, bytes):
             return try processBody(bytes, key: item.key, state: &state)
         case .unavailable:
             unavailable(item.key, state: &state)
             return true
-        case .capture(let event): return try processCapture(event, key: item.key, state: &state)
-        case .wsStart(let frame):
+        case let .capture(event): return try processCapture(event, key: item.key, state: &state)
+        case let .wsStart(frame):
             if state.sockets[item.key] == nil {
                 state.sockets[item.key] = try WebSocketMessageDecoder(
                     direction: frame.direction,
@@ -207,7 +207,7 @@ extension HTTPInspector {
                 byteCount: frame.byteCount
             )
             return true
-        case .wsBytes(_, _, let bytes):
+        case let .wsBytes(_, _, bytes):
             return try socketBytes(bytes, key: item.key, state: &state)
         case .wsEnd:
             return try endSocketFrame(item.key, state: &state)
@@ -218,7 +218,7 @@ extension HTTPInspector {
         guard let body = state.bodies[key] else {
             if key.representation == .effective {
                 emit(key.context, wire: 0..<0, decoded: 0..<0, chain: [], payload: .diagnostic(.unavailableInput))
-                ingress.withLock { $0.failed.insert(key) }
+                ingress.withLock { _ = $0.failed.insert(key) }
             }
             return true
         }
@@ -232,11 +232,10 @@ extension HTTPInspector {
     private func unavailable(_ key: Key, state: inout Worker) {
         if let body = state.bodies.removeValue(forKey: key) {
             body.fail(.unavailableInput)
-        }
-        else {
+        } else {
             emit(key.context, wire: 0..<0, decoded: 0..<0, chain: [], payload: .diagnostic(.unavailableInput))
         }
-        ingress.withLock { $0.failed.insert(key) }
+        ingress.withLock { _ = $0.failed.insert(key) }
     }
 
     private func socketBytes(_ bytes: [UInt8], key: Key, state: inout Worker) throws -> Bool {
@@ -245,7 +244,10 @@ extension HTTPInspector {
         let progress = try bytes.withUnsafeBytes { input in
             try decoder.feed(UnsafeRawBufferPointer(rebasing: input[state.wsConsumed...])) { output in
                 try self.socketOutput(
-                    output, key: key, wireEnd: offsets.wire + UInt64(bytes.count), offsets: &offsets
+                    output,
+                    key: key,
+                    wireEnd: offsets.wire + UInt64(bytes.count),
+                    offsets: &offsets
                 )
             }
         }

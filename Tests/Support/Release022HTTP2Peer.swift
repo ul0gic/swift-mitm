@@ -70,17 +70,26 @@ final class Release022HTTP2Origin: @unchecked Sendable {
 
     func start() throws {
         let leaf = try authority.leaf(forHost: "localhost")
-        var tls = TLSConfiguration.makeServerConfiguration(certificateChain: leaf.certificateChain, privateKey: leaf.privateKey)
+        var tls = TLSConfiguration.makeServerConfiguration(
+            certificateChain: leaf.certificateChain,
+            privateKey: leaf.privateKey
+        )
         tls.applicationProtocols = ["h2"]
         let ssl = try NIOSSLContext(configuration: tls)
         let children = children
         listener = try phase4BoundedWait(ServerBootstrap(group: group)
             .childChannelInitializer { channel in
                 children.withLockedValue { $0.append(channel) }
-                return channel.eventLoop.makeCompletedFuture {
+                return channel.eventLoop
+.makeCompletedFuture {
                     try channel.pipeline.syncOperations.addHandler(NIOSSLServerHandler(context: ssl))
-                }.flatMap {
-                    channel.configureHTTP2Pipeline(mode: .server, connectionConfiguration: .init(), streamConfiguration: .init()) { stream in
+                }
+.flatMap {
+                    channel.configureHTTP2Pipeline(
+                        mode: .server,
+                        connectionConfiguration: .init(),
+                        streamConfiguration: .init()
+                    ) { stream in
                         let observation = Release022H2Stream()
                         return stream.eventLoop.makeCompletedFuture {
                             try stream.pipeline.syncOperations.addHandler(observation)

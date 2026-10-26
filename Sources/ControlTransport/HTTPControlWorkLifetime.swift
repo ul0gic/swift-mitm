@@ -13,15 +13,14 @@ struct HTTPControlWorkLifetime: Sendable {
         admission: ResourceAdmissionController?
     ) throws {
         var bytes = decision.retainedBytes
-        if case .replaceBody(_, let maximum, _, _) = decision.action {
+        if case let .replaceBody(_, maximum, _, _) = decision.action {
             bytes += maximum
         }
         if bytes > 0 {
             controls = [try runtime.reserveTransportBytes(bytes)]
             if let admission {
                 global = [try admission.acquire(.retainedBytes(bytes))]
-            }
-            else {
+            } else {
                 global = []
             }
         } else {

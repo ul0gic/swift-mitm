@@ -64,7 +64,8 @@ public final class GRPCStreamDecoder {
     }
 
     public func feedResumable(
-        _ bytes: UnsafeRawBufferPointer, maximumOutputBytes: Int = 1_048_576
+        _ bytes: UnsafeRawBufferPointer,
+        maximumOutputBytes: Int = 1_048_576
     ) -> GRPCDecoderProgress {
         guard (1...1_048_576).contains(maximumOutputBytes) else {
             fail(.limitExceeded)
@@ -138,7 +139,8 @@ public final class GRPCStreamDecoder {
 
 private extension GRPCStreamDecoder {
     func resumeCompression(
-        _ session: GRPCMessageDecompressionSession, maximumOutputBytes: Int
+        _ session: GRPCMessageDecompressionSession,
+        maximumOutputBytes: Int
     ) -> Int {
         do {
             let result = try session.turn(maximumOutputBytes: maximumOutputBytes)
@@ -224,7 +226,10 @@ private extension GRPCStreamDecoder {
         if compressed && decoded == nil, let compressionEncoding {
             do {
                 compressedSession = try GRPCMessageDecompressionSession(
-                    payload, encoding: compressionEncoding, maximum: maximumMessageBytes, budget: budget
+                    payload,
+                    encoding: compressionEncoding,
+                    maximum: maximumMessageBytes,
+                    budget: budget
                 )
             } catch let diagnostic as GRPCDiagnostic { fail(diagnostic) }
             catch { fail(.malformedEnvelope) }

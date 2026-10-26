@@ -149,7 +149,7 @@ final class HTTP2CaptureTapHandlerTests: XCTestCase {
         events.compactMap { event in
             switch event {
             case .requestHead: return "request"
-            case .responseHead(let head): return "response:\(head.status)"
+            case let .responseHead(head): return "response:\(head.status)"
             case .requestBodyChunk, .responseBodyChunk: return "body"
             case .requestTrailers, .responseTrailers: return "trailers"
             case .requestEnd, .responseEnd: return "end"
@@ -164,7 +164,7 @@ final class HTTP2CaptureTapHandlerTests: XCTestCase {
 
     private func streamErrorMessages(_ events: [CaptureEvent]) -> [String] {
         events.compactMap { event in
-            if case .streamError(_, let message) = event {
+            if case let .streamError(_, message) = event {
                 return message
             }
             return nil

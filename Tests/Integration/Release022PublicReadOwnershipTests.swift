@@ -8,7 +8,10 @@ import SwiftMITM
 final class Release022PublicReadOwnershipTests: XCTestCase {
     func testExplicitHTTPReadsClientHelloSentAfterCONNECTResponse() async throws {
         try await release022AssertIdentity(
-            originName: "localhost", serverName: "localhost", succeeds: true, ingress: .explicitHTTP
+            originName: "localhost",
+            serverName: "localhost",
+            succeeds: true,
+            ingress: .explicitHTTP
         )
     }
 
@@ -34,7 +37,8 @@ final class Release022PublicReadOwnershipTests: XCTestCase {
                     upstreamHead.count + count * WebSocketWire.clientTextFrame.count
                 )
                 XCTAssertEqual(
-                    Array(bytes.suffix(WebSocketWire.clientTextFrame.count)), WebSocketWire.clientTextFrame
+                    Array(bytes.suffix(WebSocketWire.clientTextFrame.count)),
+                    WebSocketWire.clientTextFrame
                 )
                 _ = try sink.wait { self.frames($0).count == count }
             }
@@ -44,7 +48,8 @@ final class Release022PublicReadOwnershipTests: XCTestCase {
                     downstreamHead.count + count * WebSocketWire.serverBinaryFrame.count
                 )
                 XCTAssertEqual(
-                    Array(bytes.suffix(WebSocketWire.serverBinaryFrame.count)), WebSocketWire.serverBinaryFrame
+                    Array(bytes.suffix(WebSocketWire.serverBinaryFrame.count)),
+                    WebSocketWire.serverBinaryFrame
                 )
                 _ = try sink.wait { self.frames($0).count == 2 + count }
             }
@@ -66,15 +71,24 @@ final class Release022PublicReadOwnershipTests: XCTestCase {
                 }
             } }
             XCTAssertEqual(self.frames(events).map(\.direction), [
-                .clientToServer, .clientToServer, .serverToClient, .serverToClient, .clientToServer, .serverToClient
+                .clientToServer,
+                .clientToServer,
+                .serverToClient,
+                .serverToClient,
+                .clientToServer,
+                .serverToClient
             ])
-            XCTAssertEqual(events.filter {
+            XCTAssertEqual(
+                events.filter {
                 if case .webSocketClose = $0 {
                     true
                 } else {
                     false
                 }
-            }.count, 1)
+            }
+.count,
+                1
+            )
             XCTAssertTrue(release022Errors(events).isEmpty)
         }
     }
@@ -86,8 +100,11 @@ final class Release022PublicReadOwnershipTests: XCTestCase {
         let ingress = try XCTUnwrap(TrustedProxyV2Ingress(trustedPeers: .loopback))
         let proxy = ProxyServer(
             certificateAuthority: try CertificateAuthority.generate().authority,
-            sink: sink, group: group, egressPolicy: .init(allowInternal: true),
-            ingress: .trustedProxyV2(ingress), captureBodyLimit: 8
+            sink: sink,
+            group: group,
+            egressPolicy: .init(allowInternal: true),
+            ingress: .trustedProxyV2(ingress),
+            captureBodyLimit: 8
         )
         var client: Channel?
         do {
@@ -97,8 +114,10 @@ final class Release022PublicReadOwnershipTests: XCTestCase {
             let channel = try release022WireClient(group: group, port: port, observation: received)
             client = channel
             let header = Phase4ProxyV2Header.ipv4(
-                source: [192, 0, 2, 1], destination: [127, 0, 0, 1],
-                sourcePort: 50_002, destinationPort: origin.port
+                source: [192, 0, 2, 1],
+                destination: [127, 0, 0, 1],
+                sourcePort: 50_002,
+                destinationPort: origin.port
             )
             let request = Array("GET /held HTTP/1.1\r\nHost: localhost\r\n\r\n".utf8)
             try phase4BoundedWait(channel.writeAndFlush(ByteBuffer(bytes: header.bytes + request)))
@@ -114,7 +133,7 @@ final class Release022PublicReadOwnershipTests: XCTestCase {
             let events = sink.events
             XCTAssertEqual(release022Requests(events).map(\.path), ["/held"])
             let requestEnds = events.compactMap { event -> UUID? in
-                if case .requestEnd(let id, _) = event {
+                if case let .requestEnd(id, _) = event {
                     id
                 } else {
                     nil
@@ -141,7 +160,7 @@ final class Release022PublicReadOwnershipTests: XCTestCase {
 
     private func frames(_ events: [CaptureEvent]) -> [CapturedWebSocketFrame] {
         events.compactMap {
-            if case .webSocketFrame(let frame) = $0 {
+            if case let .webSocketFrame(frame) = $0 {
                 frame
             } else {
                 nil

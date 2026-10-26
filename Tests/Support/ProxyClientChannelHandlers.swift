@@ -37,7 +37,7 @@ final class TLSHandshakeProbe: ChannelInboundHandler {
     }
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
-        if case TLSUserEvent.handshakeCompleted(let negotiatedProtocol) = event {
+        if case let TLSUserEvent.handshakeCompleted(negotiatedProtocol) = event {
             complete(.success(negotiatedProtocol))
         }
         context.fireUserInboundEventTriggered(event)

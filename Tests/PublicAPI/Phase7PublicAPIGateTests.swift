@@ -80,11 +80,24 @@ final class Phase7PublicAPIGateTests: XCTestCase {
             + [failure]
 
         XCTAssertEqual(events.map(handleEveryCaptureEventCase), [
-            "requestHead:trustedProxyV2", "requestBodyChunk", "requestTrailers", "requestEnd",
-            "responseHead", "responseBodyChunk", "responseTrailers", "responseEnd", "streamError",
-            "webSocketOpen", "webSocketFrame", "webSocketClose", "opaqueOpen:trustedProxyV2",
-            "opaqueData:clientToServer", "opaqueDirectionEnd:serverToClient", "opaqueClose:completed",
-            "opaqueError:transportFailure", "connectionFailure:timedOut"
+            "requestHead:trustedProxyV2",
+            "requestBodyChunk",
+            "requestTrailers",
+            "requestEnd",
+            "responseHead",
+            "responseBodyChunk",
+            "responseTrailers",
+            "responseEnd",
+            "streamError",
+            "webSocketOpen",
+            "webSocketFrame",
+            "webSocketClose",
+            "opaqueOpen:trustedProxyV2",
+            "opaqueData:clientToServer",
+            "opaqueDirectionEnd:serverToClient",
+            "opaqueClose:completed",
+            "opaqueError:transportFailure",
+            "connectionFailure:timedOut"
         ])
         let targets = [
             makeTarget(provenance: .explicitConnect),
@@ -92,9 +105,16 @@ final class Phase7PublicAPIGateTests: XCTestCase {
         ]
         XCTAssertEqual(targets.map(targetProvenance), ["explicitConnect", "trustedProxyV2"])
         XCTAssertEqual(allFailureReasons().map(handleEveryFailureReason), [
-            "untrustedPeer", "malformedProxyMetadata", "unsupportedProxyTransport", "classificationFailed",
-            "destinationUnavailable", "upstreamConnectionFailed", "tlsHandshakeFailed", "transportFailure",
-            "timedOut", "cancelled"
+            "untrustedPeer",
+            "malformedProxyMetadata",
+            "unsupportedProxyTransport",
+            "classificationFailed",
+            "destinationUnavailable",
+            "upstreamConnectionFailed",
+            "tlsHandshakeFailed",
+            "transportFailure",
+            "timedOut",
+            "cancelled"
         ])
     }
 
@@ -122,13 +142,21 @@ final class Phase7PublicAPIGateTests: XCTestCase {
             target: target
         )
         let response = CapturedResponseHead(
-            requestID: id, timestamp: timestamp, status: 200, version: .http2, headers: headers
+            requestID: id,
+            timestamp: timestamp,
+            status: 200,
+            version: .http2,
+            headers: headers
         )
         return [
-            .requestHead(request), .requestBodyChunk(requestID: id, bytes: [1], byteCount: 1),
-            .requestTrailers(requestID: id, headers: headers), .requestEnd(requestID: id, truncated: false),
-            .responseHead(response), .responseBodyChunk(requestID: id, bytes: [2], byteCount: 1),
-            .responseTrailers(requestID: id, headers: headers), .responseEnd(requestID: id, truncated: false),
+            .requestHead(request),
+            .requestBodyChunk(requestID: id, bytes: [1], byteCount: 1),
+            .requestTrailers(requestID: id, headers: headers),
+            .requestEnd(requestID: id, truncated: false),
+            .responseHead(response),
+            .responseBodyChunk(requestID: id, bytes: [2], byteCount: 1),
+            .responseTrailers(requestID: id, headers: headers),
+            .responseEnd(requestID: id, truncated: false),
             .streamError(requestID: id, message: "closed")
         ]
     }
@@ -157,7 +185,11 @@ final class Phase7PublicAPIGateTests: XCTestCase {
             .opaqueOpen(CapturedOpaqueFlow(id: id, timestamp: timestamp, target: target)),
             .opaqueData(flowID: id, timestamp: timestamp, direction: .clientToServer, bytes: [4], byteCount: 1),
             .opaqueDirectionEnd(
-                flowID: id, timestamp: timestamp, direction: .serverToClient, byteCount: 1, truncated: false
+                flowID: id,
+                timestamp: timestamp,
+                direction: .serverToClient,
+                byteCount: 1,
+                truncated: false
             ),
             .opaqueClose(flowID: id, timestamp: timestamp, reason: .completed),
             .opaqueError(flowID: id, timestamp: timestamp, reason: .transportFailure)
@@ -167,7 +199,7 @@ final class Phase7PublicAPIGateTests: XCTestCase {
     // swiftlint:disable:next cyclomatic_complexity
     private func handleEveryCaptureEventCase(_ event: CaptureEvent) -> String {
         switch event {
-        case .requestHead(let head): "requestHead:\(targetProvenance(head.target))"
+        case let .requestHead(head): "requestHead:\(targetProvenance(head.target))"
         case .requestBodyChunk: "requestBodyChunk"
         case .requestTrailers: "requestTrailers"
         case .requestEnd: "requestEnd"
@@ -179,12 +211,12 @@ final class Phase7PublicAPIGateTests: XCTestCase {
         case .webSocketOpen: "webSocketOpen"
         case .webSocketFrame: "webSocketFrame"
         case .webSocketClose: "webSocketClose"
-        case .opaqueOpen(let flow): "opaqueOpen:\(targetProvenance(flow.target))"
-        case .opaqueData(_, _, let direction, _, _): "opaqueData:\(opaqueDirection(direction))"
-        case .opaqueDirectionEnd(_, _, let direction, _, _): "opaqueDirectionEnd:\(opaqueDirection(direction))"
-        case .opaqueClose(_, _, let reason): "opaqueClose:\(opaqueCloseReason(reason))"
-        case .opaqueError(_, _, let reason): "opaqueError:\(handleEveryFailureReason(reason))"
-        case .connectionFailure(let failure): "connectionFailure:\(handleEveryFailureReason(failure.reason))"
+        case let .opaqueOpen(flow): "opaqueOpen:\(targetProvenance(flow.target))"
+        case let .opaqueData(_, _, direction, _, _): "opaqueData:\(opaqueDirection(direction))"
+        case let .opaqueDirectionEnd(_, _, direction, _, _): "opaqueDirectionEnd:\(opaqueDirection(direction))"
+        case let .opaqueClose(_, _, reason): "opaqueClose:\(opaqueCloseReason(reason))"
+        case let .opaqueError(_, _, reason): "opaqueError:\(handleEveryFailureReason(reason))"
+        case let .connectionFailure(failure): "connectionFailure:\(handleEveryFailureReason(failure.reason))"
         @unknown default: "unknown"
         }
     }
@@ -237,9 +269,16 @@ final class Phase7PublicAPIGateTests: XCTestCase {
 
     private func allFailureReasons() -> [CapturedConnectionFailureReason] {
         [
-            .untrustedPeer, .malformedProxyMetadata, .unsupportedProxyTransport, .classificationFailed,
-            .destinationUnavailable, .upstreamConnectionFailed, .tlsHandshakeFailed, .transportFailure,
-            .timedOut, .cancelled
+            .untrustedPeer,
+            .malformedProxyMetadata,
+            .unsupportedProxyTransport,
+            .classificationFailed,
+            .destinationUnavailable,
+            .upstreamConnectionFailed,
+            .tlsHandshakeFailed,
+            .transportFailure,
+            .timedOut,
+            .cancelled
         ]
     }
 }

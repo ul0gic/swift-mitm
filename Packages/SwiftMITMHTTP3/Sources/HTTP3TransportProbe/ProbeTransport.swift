@@ -34,13 +34,15 @@ final class ProbeTransport {
             configuration = .forServer(
                 serverName: server.hostname,
                 authenticationConfiguration: .x509Certificates(
-                    certificateChainFilePath: server.certificatePath, privateKeyFilePath: server.keyPath
+                    certificateChainFilePath: server.certificatePath,
+                    privateKeyFilePath: server.keyPath
                 ),
                 applicationProtocols: ["h3"]
             )
         } else {
             configuration = .forClient(
-                verificationConfiguration: .x509Certificates(trustRootsFilePath: nil), applicationProtocols: ["h3"]
+                verificationConfiguration: .x509Certificates(trustRootsFilePath: nil),
+                applicationProtocols: ["h3"]
             )
         }
         configuration.initialMaxStreamsBidi = 128
@@ -65,14 +67,19 @@ final class ProbeTransport {
     }
 
     static func startClient(
-        state: NIOLoopBound<ProbeTransport>, loop: EventLoop, verifier: AsyncVerifier
+        state: NIOLoopBound<ProbeTransport>,
+        loop: EventLoop,
+        verifier: AsyncVerifier
     ) -> EventLoopFuture<Channel> {
         DatagramBootstrap(group: loop)
             .channelInitializer { channel in
                 channel.eventLoop.makeCompletedFuture {
                     let handler = ProbeQUICHandler(
-                        channel: channel, quicConfiguration: configuration(),
-                        asyncVerifier: verifier, authenticator: nil, logger: state.value.logger,
+                        channel: channel,
+                        quicConfiguration: configuration(),
+                        asyncVerifier: verifier,
+                        authenticator: nil,
+                        logger: state.value.logger,
                         inboundConnectionInitializer: { channel, _ in channel.close() },
                         inboundStreamInitializer: receiveStream,
                         noMoreConnections: { state.value.clientHandler = nil }
@@ -85,7 +92,9 @@ final class ProbeTransport {
     }
 
     static func startServer(
-        state: NIOLoopBound<ProbeTransport>, loop: EventLoop, authenticator: Authenticator
+        state: NIOLoopBound<ProbeTransport>,
+        loop: EventLoop,
+        authenticator: Authenticator
     ) -> EventLoopFuture<Channel> {
         DatagramBootstrap(group: loop)
             .channelInitializer { channel in
@@ -93,8 +102,14 @@ final class ProbeTransport {
                     let handler = ProbeQUICHandler(
                         channel: channel,
                         quicConfiguration: configuration(server: state.value.arguments),
-                        connectionLimits: .perHandler(activeLimit: 128, handshakeLimit: 64, newConnectionRateLimit: nil),
-                        asyncVerifier: nil, authenticator: authenticator, logger: state.value.logger,
+                        connectionLimits: .perHandler(
+                            activeLimit: 128,
+                            handshakeLimit: 64,
+                            newConnectionRateLimit: nil
+                        ),
+                        asyncVerifier: nil,
+                        authenticator: authenticator,
+                        logger: state.value.logger,
                         inboundConnectionInitializer: { connection, creator in
                             configureServerConnection(connection, creator: creator, state: state)
                         },
@@ -109,19 +124,28 @@ final class ProbeTransport {
     }
 
     private static func configureServerConnection(
-        _ channel: Channel, creator: NIOQUIC.QUICStreamCreator, state: NIOLoopBound<ProbeTransport>
+        _ channel: Channel,
+        creator: NIOQUIC.QUICStreamCreator,
+        state: NIOLoopBound<ProbeTransport>
     ) -> EventLoopFuture<Void> {
         channel.eventLoop.makeCompletedFuture {
             let handler = ProbeHTTP3Handler.server(
-                eventLoop: channel.eventLoop, configuration: .defaults,
-                settings: .init(qpackMaximumTableCapacity: 0, qpackBlockedStreams: 0,
-                                maximumFieldSectionSize: 32_768, h3Datagram: false),
-                streamCreator: creator, logger: state.value.logger,
+                eventLoop: channel.eventLoop,
+                configuration: .defaults,
+                settings: .init(
+                    qpackMaximumTableCapacity: 0,
+                    qpackBlockedStreams: 0,
+                    maximumFieldSectionSize: 32_768,
+                    h3Datagram: false
+                ),
+                streamCreator: creator,
+                logger: state.value.logger,
                 inboundRequestStreamInitializer: { parameters in
                     let stream = parameters.channel
                     return stream.setOption(ChannelOptions.autoRead, value: false).flatMap {
                         stream.eventLoop.makeCompletedFuture {
-                            let relay = ProbeRelay<HTTPRequestPart>(admission: state.value.admission) { part, source, relay in
+                            let relay = ProbeRelay<HTTPRequestPart>(admission: state.value
+                                .admission) { part, source, relay in
                                 state.value.connect(part: part, downstream: source, requestRelay: relay)
                             }
                             try stream.pipeline.syncOperations.addHandler(relay)

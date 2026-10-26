@@ -30,7 +30,9 @@ final class Release022PublicHTTP2MalformedTests: XCTestCase {
         let authority = try CertificateAuthority.generate().authority
         let sink = Release022Events()
         let proxy = ProxyServer(
-            certificateAuthority: authority, sink: sink, group: group,
+            certificateAuthority: authority,
+            sink: sink,
+            group: group,
             upstreamPolicy: .init(additionalTrustRootsPEM: [origin.authority.caCertificatePEM]),
             egressPolicy: .init(allowInternal: true)
         )
@@ -46,7 +48,9 @@ final class Release022PublicHTTP2MalformedTests: XCTestCase {
                 try channel.pipeline.syncOperations.addHandler(Release022WireHandler(received))
             })
             let tls = try peer.installTLS(
-                on: channel, serverHostname: "localhost", mitmCACertificatePEM: authority.caCertificatePEM,
+                on: channel,
+                serverHostname: "localhost",
+                mitmCACertificatePEM: authority.caCertificatePEM,
                 applicationProtocols: ["h2"]
             )
             try phase4BoundedWait(tls.installed)
@@ -71,12 +75,13 @@ final class Release022PublicHTTP2MalformedTests: XCTestCase {
         }
     }
 
-
     private func assertMalformedStreamIsolation(
-        control: Release022H2Stream, received: Release022WireObservation, sink: Release022Events
+        control: Release022H2Stream,
+        received: Release022WireObservation,
+        sink: Release022Events
     ) throws {
         let paths = control.frames.compactMap { frame -> String? in
-            if case .headers(let headers) = frame {
+            if case let .headers(headers) = frame {
                 headers.headers.first(name: ":path")
             } else {
                 nil
@@ -97,7 +102,7 @@ final class Release022PublicHTTP2MalformedTests: XCTestCase {
             }
         } }
         let requests = events.compactMap { event -> CapturedRequestHead? in
-            if case .requestHead(let head) = event {
+            if case let .requestHead(head) = event {
                 head
             } else {
                 nil
@@ -108,14 +113,23 @@ final class Release022PublicHTTP2MalformedTests: XCTestCase {
     }
 
     private func malformedAndControlBytes(
-        port: Int, transform: ([(String, String)]) -> [(String, String)]
+        port: Int,
+        transform: ([(String, String)]) -> [(String, String)]
     ) throws -> [UInt8] {
         let base = [(":method", "GET"), (":scheme", "https"), (":authority", "localhost:\(port)"), (":path", "/bad")]
         var encoder = HPACKEncoder(allocator: ByteBufferAllocator(), useHuffmanEncoding: false)
         var bad = ByteBufferAllocator().buffer(capacity: 256)
         try encoder.encode(headers: HPACKHeaders(transform(base)), to: &bad)
         var good = ByteBufferAllocator().buffer(capacity: 256)
-        try encoder.encode(headers: HPACKHeaders([(":method", "GET"), (":scheme", "https"), (":authority", "localhost:\(port)"), (":path", "/control")]), to: &good)
+        try encoder.encode(
+            headers: HPACKHeaders([
+                (":method", "GET"),
+                (":scheme", "https"),
+                (":authority", "localhost:\(port)"),
+                (":path", "/control")
+            ]),
+            to: &good
+        )
         let preface = Array("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".utf8)
         return preface + frame(type: 4, flags: 0, stream: 0, payload: [])
             + frame(type: 1, flags: 5, stream: 1, payload: Array(bad.readableBytesView))
@@ -123,7 +137,17 @@ final class Release022PublicHTTP2MalformedTests: XCTestCase {
     }
 
     private func frame(type: UInt8, flags: UInt8, stream: UInt8, payload: [UInt8]) -> [UInt8] {
-        [UInt8((payload.count >> 16) & 255), UInt8((payload.count >> 8) & 255), UInt8(payload.count & 255), type, flags, 0, 0, 0, stream] + payload
+        [
+            UInt8((payload.count >> 16) & 255),
+            UInt8((payload.count >> 8) & 255),
+            UInt8(payload.count & 255),
+            type,
+            flags,
+            0,
+            0,
+            0,
+            stream
+        ] + payload
     }
 
     private struct FrameHeader {

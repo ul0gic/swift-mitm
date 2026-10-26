@@ -95,7 +95,11 @@ final class Phase4PublicClearHTTPTests: XCTestCase {
         let capturedByteCount = snapshot.responseBodies.reduce(0) { $0 + $1.byteCount }
         XCTAssertEqual(capturedByteCount, Phase4ClearHTTPOrigin.responseBody.count)
         XCTAssertEqual(snapshot.eventKinds, [
-            .requestHead, .requestEnd, .responseHead, .responseBody, .responseEnd
+            .requestHead,
+            .requestEnd,
+            .responseHead,
+            .responseBody,
+            .responseEnd
         ])
     }
 
@@ -208,7 +212,7 @@ private final class Phase4TransparentClearClient {
         switch delivery {
         case .coalesced:
             try phase4BoundedWait(channel.writeAndFlush(ByteBuffer(bytes: bytes)))
-        case .fragmented(let sizes):
+        case let .fragmented(sizes):
             guard sizes.reduce(0, +) == bytes.count else { throw Phase2FixtureError.unexpectedBytes }
             var offset = 0
             for size in sizes {

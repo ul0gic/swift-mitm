@@ -13,8 +13,13 @@ final class Stage2ConsumerCompatibilityTests: XCTestCase {
         let output = try release022RunProcess(executable: python, arguments: [script.path, "--binary", binary])
         let report = try JSONDecoder().decode([String: Bool].self, from: Data(output.utf8))
         XCTAssertEqual(report, [
-            "sse": true, "grpc": true, "websocket": true, "pausedEdit": true,
-            "replay": true, "redactedHAR": true, "gracefulStop": true
+            "sse": true,
+            "grpc": true,
+            "websocket": true,
+            "pausedEdit": true,
+            "replay": true,
+            "redactedHAR": true,
+            "gracefulStop": true
         ])
     }
 }

@@ -28,8 +28,11 @@ final class Release022PublicTrustTests: XCTestCase {
         let sink = Release022Events()
         let policy = try XCTUnwrap(ProxyTimeoutPolicy(tlsHandshakeDeadline: .milliseconds(250)))
         let proxy = ProxyServer(
-            certificateAuthority: try CertificateAuthority.generate().authority, sink: sink, group: group,
-            egressPolicy: .init(allowInternal: true), timeoutPolicy: policy
+            certificateAuthority: try CertificateAuthority.generate().authority,
+            sink: sink,
+            group: group,
+            egressPolicy: .init(allowInternal: true),
+            timeoutPolicy: policy
         )
         var client: Channel?
         do {
@@ -38,14 +41,16 @@ final class Release022PublicTrustTests: XCTestCase {
             let clock = ContinuousClock()
             let start = clock.now
             let channel = try ProxyTestClient(group: group).openTunnel(
-                proxyPort: port, originHost: "127.0.0.1", originPort: origin.port
+                proxyPort: port,
+                originHost: "127.0.0.1",
+                originPort: origin.port
             )
             client = channel
             try phase4BoundedWait(channel.closeFuture, timeout: .milliseconds(2250))
             XCTAssertLessThan(start.duration(to: clock.now), .milliseconds(2250))
             try await proxy.stop()
             let failures = sink.events.compactMap { event -> CapturedConnectionFailure? in
-                if case .connectionFailure(let failure) = event {
+                if case let .connectionFailure(failure) = event {
                     failure
                 } else {
                     nil
@@ -75,21 +80,28 @@ final class Release022PublicTrustTests: XCTestCase {
         var proxy: ProxyServer?
         do {
             try origin.start()
-            let policy = try XCTUnwrap(ProxyInterceptionPolicy(passThroughAuthorities: ["localhost:\(origin.localPort)"]))
+            let policy =
+                try XCTUnwrap(ProxyInterceptionPolicy(passThroughAuthorities: ["localhost:\(origin.localPort)"]))
             let server = ProxyServer(
-                certificateAuthority: try CertificateAuthority.generate().authority, sink: sink, group: group,
-                egressPolicy: .init(allowInternal: true), interceptionPolicy: policy
+                certificateAuthority: try CertificateAuthority.generate().authority,
+                sink: sink,
+                group: group,
+                egressPolicy: .init(allowInternal: true),
+                interceptionPolicy: policy
             )
             proxy = server
             let port = try await server.start(port: 0)
             let count = try ProxyTestClient(group: group).fetch(
-                proxyPort: port, originHost: "localhost", originPort: origin.localPort,
-                mitmCACertificatePEM: origin.caCertificatePEM, alpn: "http/1.1"
+                proxyPort: port,
+                originHost: "localhost",
+                originPort: origin.localPort,
+                mitmCACertificatePEM: origin.caCertificatePEM,
+                alpn: "http/1.1"
             )
             XCTAssertEqual(count, 8)
             try await server.stop()
             let flows = sink.events.compactMap { event -> CapturedOpaqueFlow? in
-                if case .opaqueOpen(let flow) = event {
+                if case let .opaqueOpen(flow) = event {
                     flow
                 } else {
                     nil
@@ -128,7 +140,9 @@ final class Release022PublicTrustTests: XCTestCase {
         let origin = Release022WireOrigin(group: group)
         let sink = Release022Events()
         let proxy = ProxyServer(
-            certificateAuthority: try CertificateAuthority.generate().authority, sink: sink, group: group,
+            certificateAuthority: try CertificateAuthority.generate().authority,
+            sink: sink,
+            group: group,
             egressPolicy: .init(allowInternal: true)
         )
         var client: Channel?
@@ -136,7 +150,9 @@ final class Release022PublicTrustTests: XCTestCase {
             try origin.start()
             let port = try await proxy.start(port: 0)
             let channel = try ProxyTestClient(group: group).openTunnel(
-                proxyPort: port, originHost: "127.0.0.1", originPort: origin.port
+                proxyPort: port,
+                originHost: "127.0.0.1",
+                originPort: origin.port
             )
             client = channel
             try phase4BoundedWait(channel.writeAndFlush(ByteBuffer(bytes: Phase2TLSIngressVectors.http11ClientHello)))
@@ -148,7 +164,7 @@ final class Release022PublicTrustTests: XCTestCase {
             try phase4BoundedWait(channel.closeFuture)
             try origin.received.waitForClose()
             let failures = sink.events.compactMap { event -> CapturedConnectionFailure? in
-                if case .connectionFailure(let failure) = event {
+                if case let .connectionFailure(failure) = event {
                     failure
                 } else {
                     nil
@@ -180,7 +196,9 @@ final class Release022PublicTrustTests: XCTestCase {
             let target = "localhost:\(origin.port)"
             let policy = try XCTUnwrap(ProxyInterceptionPolicy(passThroughAuthorities: [target]))
             let server = ProxyServer(
-                certificateAuthority: try CertificateAuthority.generate().authority, sink: sink, group: group,
+                certificateAuthority: try CertificateAuthority.generate().authority,
+                sink: sink,
+                group: group,
                 interceptionPolicy: policy
             )
             proxy = server
@@ -188,11 +206,12 @@ final class Release022PublicTrustTests: XCTestCase {
             let received = Release022WireObservation()
             let channel = try release022WireClient(group: group, port: port, observation: received)
             client = channel
-            try phase4BoundedWait(channel.writeAndFlush(ByteBuffer(string: "CONNECT \(target) HTTP/1.1\r\nHost: \(target)\r\n\r\n")))
+            try phase4BoundedWait(channel
+                .writeAndFlush(ByteBuffer(string: "CONNECT \(target) HTTP/1.1\r\nHost: \(target)\r\n\r\n")))
             try received.waitForClose()
             try await server.stop()
             let failures = sink.events.compactMap { event -> CapturedConnectionFailure? in
-                if case .connectionFailure(let failure) = event {
+                if case let .connectionFailure(failure) = event {
                     failure
                 } else {
                     nil
@@ -240,8 +259,11 @@ final class Release022PublicTrustTests: XCTestCase {
             ))
             let server = ProxyServer(
                 certificateAuthority: try CertificateAuthority.generate().authority,
-                sink: sink, group: group, egressPolicy: .init(allowInternal: true),
-                ingress: .trustedProxyV2(ingress), interceptionPolicy: policy
+                sink: sink,
+                group: group,
+                egressPolicy: .init(allowInternal: true),
+                ingress: .trustedProxyV2(ingress),
+                interceptionPolicy: policy
             )
             proxy = server
             let port = try await server.start(port: 0)
@@ -249,22 +271,27 @@ final class Release022PublicTrustTests: XCTestCase {
             let channel = try release022WireClient(group: group, port: port, observation: received)
             client = channel
             let header = Phase4ProxyV2Header.ipv4(
-                source: [192, 0, 2, 1], destination: [127, 0, 0, 1],
-                sourcePort: 50_001, destinationPort: origin.localPort
+                source: [192, 0, 2, 1],
+                destination: [127, 0, 0, 1],
+                sourcePort: 50_001,
+                destinationPort: origin.localPort
             )
             try phase4BoundedWait(channel.writeAndFlush(ByteBuffer(bytes: header.bytes)))
             let tls = try ProxyTestClient(group: group).installTLS(
-                on: channel, serverHostname: "localhost",
-                mitmCACertificatePEM: origin.caCertificatePEM, applicationProtocols: ["http/1.1"]
+                on: channel,
+                serverHostname: "localhost",
+                mitmCACertificatePEM: origin.caCertificatePEM,
+                applicationProtocols: ["http/1.1"]
             )
             try phase4BoundedWait(tls.installed)
             XCTAssertEqual(try phase4BoundedWait(tls.handshake), "http/1.1")
-            try phase4BoundedWait(channel.writeAndFlush(ByteBuffer(string: "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")))
+            try phase4BoundedWait(channel
+                .writeAndFlush(ByteBuffer(string: "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")))
             _ = try received.wait { String(decoding: $0, as: UTF8.self).hasSuffix("AAAAAAAA") }
             try await channel.close().get()
             try await server.stop()
             let reasons = sink.events.compactMap { event -> OpaqueForwardingReason? in
-                if case .opaqueOpen(let flow) = event {
+                if case let .opaqueOpen(flow) = event {
                     flow.reason
                 } else {
                     nil

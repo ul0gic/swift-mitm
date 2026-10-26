@@ -125,7 +125,8 @@ extension Phase3ProxyHTTP2WebSocketClient {
         if startsStalled {
             try channel.setOption(ChannelOptions.autoRead, value: false).wait()
         }
-        let stream = try setup.multiplexer.createStreamChannel { stream in
+        let stream = try setup.multiplexer
+.createStreamChannel { stream in
             let readsConfigured = startsStalled
                 ? stream.setOption(ChannelOptions.autoRead, value: false)
                 : stream.eventLoop.makeSucceededVoidFuture()
@@ -188,9 +189,9 @@ private final class Phase3StalledWebSocketClientHandler: ChannelDuplexHandler {
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         switch unwrapInboundIn(data) {
-        case .headers(let frame):
+        case let .headers(frame):
             receive(headers: frame, context: context)
-        case .data(let frame):
+        case let .data(frame):
             receive(data: frame.data, endStream: frame.endStream, context: context)
         default:
             break
@@ -222,7 +223,7 @@ private final class Phase3StalledWebSocketClientHandler: ChannelDuplexHandler {
     }
 
     private func receive(data: IOData, endStream: Bool, context: ChannelHandlerContext) {
-        guard accepted, case .byteBuffer(let buffer) = data else {
+        guard accepted, case let .byteBuffer(buffer) = data else {
             completion.complete(.failure(Phase2FixtureError.unexpectedBytes))
             context.close(promise: nil)
             return

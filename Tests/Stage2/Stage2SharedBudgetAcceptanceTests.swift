@@ -12,8 +12,11 @@ final class Stage2SharedBudgetAcceptanceTests: XCTestCase {
         ))
         let budget = try InspectionMemoryBudget(maximumBytes: 1_048_576, admission: admission)
         let configuration = try InspectionConfiguration(
-            budget: budget, maximumQueuedItems: 8, maximumActiveBodies: 2,
-            maximumLineBytes: 262_144, maximumEventBytes: 262_144
+            budget: budget,
+            maximumQueuedItems: 8,
+            maximumActiveBodies: 2,
+            maximumLineBytes: 262_144,
+            maximumEventBytes: 262_144
         )
         try await stage2WithInspectionWire(inspectionConfiguration: configuration, admission: admission) { peer in
             XCTAssertGreaterThanOrEqual(admission.usage.retainedBytes, peer.inspector.reservedStorageBytes)

@@ -30,15 +30,19 @@ struct ProbeMain {
     }
 
     private static func serve(
-        _ arguments: ProbeArguments, state: NIOLoopBound<ProbeTransport>, loop: EventLoop,
-        authenticator: Authenticator, verifier: AsyncVerifier
+        _ arguments: ProbeArguments,
+        state: NIOLoopBound<ProbeTransport>,
+        loop: EventLoop,
+        authenticator: Authenticator,
+        verifier: AsyncVerifier
     ) async throws {
         let client = try await ProbeTransport.startClient(state: state, loop: loop, verifier: verifier).get()
         let server: Channel
         do {
             server = try await loop.flatSubmit {
                 ProbeTransport.startServer(state: state, loop: loop, authenticator: authenticator)
-            }.get()
+            }
+.get()
         } catch {
             try await client.close().get()
             throw error
@@ -70,20 +74,26 @@ struct ProbeMain {
             continuation.finish()
         }
         let data = try JSONSerialization.data(withJSONObject: [
-            "port": port, "hostname": arguments.hostname, "originPort": originPort
+            "port": port,
+            "hostname": arguments.hostname,
+            "originPort": originPort
         ])
         try data.write(to: URL(fileURLWithPath: arguments.readyPath), options: .atomic)
         for await _ in signals { break }
     }
 
     private static func close(
-        state: NIOLoopBound<ProbeTransport>, server: Channel, client: Channel, loop: EventLoop
+        state: NIOLoopBound<ProbeTransport>,
+        server: Channel,
+        client: Channel,
+        loop: EventLoop
     ) async throws {
         let shutdown = loop.flatSubmit {
             let deadline = NIODeadline.now() + .seconds(2)
-            let handlers = [state.value.serverHandler, state.value.clientHandler].compactMap { $0 }
+            let handlers = [state.value.serverHandler, state.value.clientHandler].compactMap(\.self)
             return EventLoopFuture.andAllSucceed(
-                handlers.map { $0.value.shutdownGracefully(deadline: deadline) }, on: loop
+                handlers.map { $0.value.shutdownGracefully(deadline: deadline) },
+                on: loop
             )
         }
         do {

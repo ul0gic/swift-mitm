@@ -2,17 +2,35 @@ import NIOCore
 
 public struct EgressPolicy: Sendable {
     private static let blockedIPv4Prefixes: [([UInt8], Int)] = [
-        ([0], 8), ([10], 8), ([100, 64], 10), ([127], 8), ([169, 254], 16), ([172, 16], 12),
-        ([192, 0, 0], 24), ([192, 0, 2], 24), ([192, 88, 99], 24), ([192, 168], 16),
-        ([198, 18], 15), ([198, 51, 100], 24), ([203, 0, 113], 24), ([224], 3)
+        ([0], 8),
+        ([10], 8),
+        ([100, 64], 10),
+        ([127], 8),
+        ([169, 254], 16),
+        ([172, 16], 12),
+        ([192, 0, 0], 24),
+        ([192, 0, 2], 24),
+        ([192, 88, 99], 24),
+        ([192, 168], 16),
+        ([198, 18], 15),
+        ([198, 51, 100], 24),
+        ([203, 0, 113], 24),
+        ([224], 3)
     ]
     private static let blockedIPv6Prefixes: [([UInt8], Int)] = [
         ([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 128),
         ([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], 128),
-        ([0x00, 0x64, 0xff, 0x9b, 0, 1], 48), ([0x01, 0x00, 0, 0, 0, 0, 0, 0], 64),
-        ([0x01, 0x00, 0, 0, 0, 0, 0, 1], 64), ([0x20, 0x01, 0x0d, 0xb8], 32),
-        ([0x20, 0x02], 16), ([0x3f, 0xff, 0], 20), ([0x5f, 0x00], 16), ([0xfc], 7),
-        ([0xfe, 0x80], 10), ([0xfe, 0xc0], 10), ([0xff], 8)
+        ([0x00, 0x64, 0xff, 0x9b, 0, 1], 48),
+        ([0x01, 0x00, 0, 0, 0, 0, 0, 0], 64),
+        ([0x01, 0x00, 0, 0, 0, 0, 0, 1], 64),
+        ([0x20, 0x01, 0x0d, 0xb8], 32),
+        ([0x20, 0x02], 16),
+        ([0x3f, 0xff, 0], 20),
+        ([0x5f, 0x00], 16),
+        ([0xfc], 7),
+        ([0xfe, 0x80], 10),
+        ([0xfe, 0xc0], 10),
+        ([0xff], 8)
     ]
     public var allowInternal: Bool
 
@@ -34,9 +52,9 @@ public struct EgressPolicy: Sendable {
 
     static func isInternal(_ address: SocketAddress) -> Bool {
         switch address {
-        case .v4(let address):
+        case let .v4(address):
             return isInternalV4(withUnsafeBytes(of: address.address.sin_addr) { Array($0) })
-        case .v6(let address):
+        case let .v6(address):
             return isInternalV6(withUnsafeBytes(of: address.address.sin6_addr) { Array($0) })
         case .unixDomainSocket:
             return true
@@ -45,9 +63,9 @@ public struct EgressPolicy: Sendable {
 
     static func isLoopback(_ address: SocketAddress) -> Bool {
         switch address {
-        case .v4(let address):
+        case let .v4(address):
             return (withUnsafeBytes(of: address.address.sin_addr) { Array($0) }).first == 127
-        case .v6(let address):
+        case let .v6(address):
             let bytes = withUnsafeBytes(of: address.address.sin6_addr) { Array($0) }
             return bytes.dropLast().allSatisfy { $0 == 0 } && bytes.last == 1
         case .unixDomainSocket:

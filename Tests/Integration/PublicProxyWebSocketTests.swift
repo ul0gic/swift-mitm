@@ -79,8 +79,15 @@ final class PublicProxyWebSocketTests: XCTestCase {
         XCTAssertTrue(snapshot.frames.isEmpty)
         XCTAssertTrue(snapshot.closes.isEmpty)
         XCTAssertEqual(snapshot.eventKinds, [
-            .requestHead, .requestEnd, .responseHead, .responseBody, .responseEnd,
-            .requestHead, .requestEnd, .responseHead, .responseEnd
+            .requestHead,
+            .requestEnd,
+            .responseHead,
+            .responseBody,
+            .responseEnd,
+            .requestHead,
+            .requestEnd,
+            .responseHead,
+            .responseEnd
         ])
     }
 
@@ -255,7 +262,7 @@ final class PublicProxyWebSocketTests: XCTestCase {
         let names = try XCTUnwrap(certificate.extensions.subjectAlternativeNames)
         if (try? SocketAddress(ipAddress: targetHost, port: 0)) != nil {
             XCTAssertEqual(names.count, 1)
-            guard case .ipAddress(let address) = names.first else {
+            guard case let .ipAddress(address) = names.first else {
                 return XCTFail("intercepted IPv4 leaf must use an IP-address SAN")
             }
             XCTAssertEqual(Array(address.bytes), [127, 0, 0, 1])

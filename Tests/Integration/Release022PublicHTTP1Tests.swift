@@ -81,7 +81,7 @@ final class Release022PublicHTTP1Tests: XCTestCase {
                 }
                 _ = try sink.wait { events in
                     events.reduce(0) { total, event in
-                        if case .responseBodyChunk(_, _, let count) = event {
+                        if case let .responseBodyChunk(_, _, count) = event {
                             total + count
                         } else {
                             total
@@ -127,7 +127,9 @@ final class Release022PublicHTTP1Tests: XCTestCase {
                 } else {
                     false
                 }
-            }.count == 2 }
+            }
+.count == 2
+            }
             XCTAssertFalse(sink.events.contains {
                 if case .webSocketClose = $0 {
                     true
@@ -146,13 +148,17 @@ final class Release022PublicHTTP1Tests: XCTestCase {
                 }
             } }
             let events = sink.events
-            XCTAssertEqual(events.filter {
+            XCTAssertEqual(
+                events.filter {
                 if case .webSocketClose = $0 {
                     true
                 } else {
                     false
                 }
-            }.count, 1)
+            }
+.count,
+                1
+            )
             let terminal = try XCTUnwrap(events.firstIndex {
                 if case .webSocketClose = $0 {
                     true
@@ -160,13 +166,18 @@ final class Release022PublicHTTP1Tests: XCTestCase {
                     false
                 }
             })
-            XCTAssertEqual(events[..<terminal].filter {
+            XCTAssertEqual(
+                events[..<terminal]
+.filter {
                 if case .webSocketFrame = $0 {
                     true
                 } else {
                     false
                 }
-            }.count, 4)
+            }
+.count,
+                4
+            )
             XCTAssertFalse(events.suffix(from: terminal + 1).contains {
                 if case .webSocketFrame = $0 {
                     true

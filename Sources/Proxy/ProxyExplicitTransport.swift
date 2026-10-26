@@ -8,7 +8,7 @@ extension ProxyServer {
         _ channel: Channel,
         tlsRuntime: ProxyTLSRuntime
     ) -> EventLoopFuture<Void> {
-        if case .priorKnowledgeHTTP2(let configuration) = ingress {
+        if case let .priorKnowledgeHTTP2(configuration) = ingress {
             return configurePriorKnowledgeHTTP2(channel, configuration: configuration)
         }
         return channel.eventLoop.makeCompletedFuture {
@@ -103,18 +103,30 @@ extension ProxyServer {
         )
     }
 
-    func connectControlledHTTP(target: HTTPForwardTarget, tlsRuntime: ProxyTLSRuntime,
-                               on loop: EventLoop, setupToken: ProxyConnectionSetupToken? = nil) -> EventLoopFuture<HTTPForwardConnection> {
-        guard let destination = ConnectionTarget(host: target.host, port: target.port, ingressProvenance: .explicitHTTP) else {
+    func connectControlledHTTP(
+        target: HTTPForwardTarget,
+        tlsRuntime: ProxyTLSRuntime,
+        on loop: EventLoop,
+        setupToken: ProxyConnectionSetupToken? = nil
+    ) -> EventLoopFuture<HTTPForwardConnection> {
+        guard let destination = ConnectionTarget(
+            host: target.host,
+            port: target.port,
+            ingressProvenance: .explicitHTTP
+        ) else {
             return loop.makeFailedFuture(ProxyConnectionError.egressBlocked(target.host))
         }
         if target.scheme == "https" {
             return connectUpstreamTLS(
-                target: destination, applicationProtocols: [.http11], tlsRuntime: tlsRuntime,
-                setupToken: setupToken, on: loop
+                target: destination,
+                applicationProtocols: [.http11],
+                tlsRuntime: tlsRuntime,
+                setupToken: setupToken,
+                on: loop
             ).flatMap { [self] connected in
                 configureControlReads(HTTPForwardConnection(
-                    channel: connected.connection.channel, target: connected.target.capturedTarget,
+                    channel: connected.connection.channel,
+                    target: connected.target.capturedTarget,
                     releaseBufferedReads: { connected.connection.releaseBufferedReads() }
                 ))
             }
@@ -126,17 +138,25 @@ extension ProxyServer {
 
     private func configureControlReads(_ connection: HTTPForwardConnection) -> EventLoopFuture<HTTPForwardConnection> {
         guard controlRuntime != nil else { return connection.channel.eventLoop.makeSucceededFuture(connection) }
-        return connection.channel.setOption(ChannelOptions.maxMessagesPerRead, value: 1)
+        return connection.channel
+.setOption(ChannelOptions.maxMessagesPerRead, value: 1)
             .map { connection }
             .flatMapError { error in
                 connection.channel.close().flatMapThrowing { throw error }
             }
     }
 
-    func connectControlledHTTP(target: HTTPForwardTarget, on loop: EventLoop,
-                               setupToken: ProxyConnectionSetupToken? = nil) -> EventLoopFuture<HTTPForwardConnection> {
-        do { return connectControlledHTTP(target: target, tlsRuntime: try activeTLSRuntime(), on: loop, setupToken: setupToken) }
-        catch { return loop.makeFailedFuture(error) }
+    func connectControlledHTTP(
+        target: HTTPForwardTarget,
+        on loop: EventLoop,
+        setupToken: ProxyConnectionSetupToken? = nil
+    ) -> EventLoopFuture<HTTPForwardConnection> {
+        do { return connectControlledHTTP(
+            target: target,
+            tlsRuntime: try activeTLSRuntime(),
+            on: loop,
+            setupToken: setupToken
+        ) } catch { return loop.makeFailedFuture(error) }
     }
 
     private func onConnectEstablished(

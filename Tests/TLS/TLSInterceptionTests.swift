@@ -68,7 +68,7 @@ final class TLSInterceptionTests: XCTestCase {
 
         XCTAssertEqual(configuration.trustRoots, .default)
         XCTAssertEqual(configuration.additionalTrustRoots.count, 1)
-        guard case .certificates(let certificates) = configuration.additionalTrustRoots[0] else {
+        guard case let .certificates(certificates) = configuration.additionalTrustRoots[0] else {
             return XCTFail("additional PEM roots must remain additional certificates")
         }
         XCTAssertEqual(certificates.count, 1)
@@ -125,7 +125,7 @@ final class TLSInterceptionTests: XCTestCase {
     }
 
     private func certificate(from source: NIOSSLCertificateSource) throws -> Certificate {
-        guard case .certificate(let certificate) = source else {
+        guard case let .certificate(certificate) = source else {
             throw TLSInterceptionTestError.unexpectedCertificateSource
         }
         return try Certificate(derEncoded: certificate.toDERBytes())
@@ -150,7 +150,7 @@ private final class HandshakeProbe: ChannelInboundHandler {
     }
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
-        if case TLSUserEvent.handshakeCompleted(let negotiatedProtocol) = event {
+        if case let TLSUserEvent.handshakeCompleted(negotiatedProtocol) = event {
             promise.succeed(negotiatedProtocol)
         }
         context.fireUserInboundEventTriggered(event)

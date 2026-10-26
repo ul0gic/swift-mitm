@@ -29,9 +29,15 @@ struct ProbeArguments: Sendable {
         var values: [String: String] = [:]
         var allowInternal = false
         var index = 1
-        let names: Set<String> = [
-            "--ca-cert", "--ca-key", "--hostname", "--origin-address",
-            "--origin-port", "--origin-ca", "--port", "--ready-file"
+        let names: Set = [
+            "--ca-cert",
+            "--ca-key",
+            "--hostname",
+            "--origin-address",
+            "--origin-port",
+            "--origin-ca",
+            "--port",
+            "--ready-file"
         ]
         while index < arguments.count {
             let name = arguments[index]

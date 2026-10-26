@@ -11,17 +11,19 @@ extension ExplicitHTTPProxyHandler {
             return
         }
         switch part {
-        case .head(let head):
+        case let .head(head):
             guard let isKeepAlive = exchange.upstreamHTTP2 ? true : pendingResponseKeepAlive else {
                 originFailed()
                 return
             }
             pendingResponseKeepAlive = nil
             receiveHead(head, exchange: exchange, context: context, isKeepAlive: isKeepAlive)
-        case .body(let body):
+        case let .body(body):
             if !externallyCaptured {
             (sink as? ObservationCaptureSink)?.receiveBody(
-                requestID: exchange.id, direction: .response, bytes: body.readableBytesView
+                requestID: exchange.id,
+                direction: .response,
+                bytes: body.readableBytesView
             )
             sink.receive(.responseBodyChunk(
                 requestID: exchange.id,
@@ -38,7 +40,7 @@ extension ExplicitHTTPProxyHandler {
             } else {
                 writeResponseBody(body, exchange: exchange, context: context)
             }
-        case .end(let trailers):
+        case let .end(trailers):
             if exchange.responseControlHead != nil {
                 completeControlledResponse(trailers, exchange: exchange)
                 return
@@ -66,10 +68,16 @@ extension ExplicitHTTPProxyHandler {
         })
         let complete = {
             if exchange.controlSnapshot != nil {
-                if case .end(let fields) = end, let fields, !fields.isEmpty {
-                    (self.sink as? ObservationCaptureSink)?.receiveEffective(.responseTrailers(requestID: exchange.id, headers: Self.fields(fields)))
+                if case let .end(fields) = end, let fields, !fields.isEmpty {
+                    (self.sink as? ObservationCaptureSink)?.receiveEffective(.responseTrailers(
+                        requestID: exchange.id,
+                        headers: Self.fields(fields)
+                    ))
                 }
-                (self.sink as? ObservationCaptureSink)?.receiveEffective(.responseEnd(requestID: exchange.id, truncated: false))
+                (self.sink as? ObservationCaptureSink)?.receiveEffective(.responseEnd(
+                    requestID: exchange.id,
+                    truncated: false
+                ))
             }
             context.writeAndFlush(self.wrapOutboundOut(end)).assumeIsolated().whenComplete { result in
             switch result {
@@ -86,8 +94,7 @@ extension ExplicitHTTPProxyHandler {
         }
         if let writer = exchange.responseFaultWriter {
             writer.finish(complete)
-        }
-        else {
+        } else {
             complete()
         }
     }
@@ -111,11 +118,13 @@ extension ExplicitHTTPProxyHandler {
         if !informational {
             exchange.reusableFraming = exchange.head.method == .HEAD || !receivedHead.status.mayHaveResponseBody
                 || receivedHead.headers.contains(name: "content-length")
-                || HTTP1MessageParser.tokens(Self.fields(receivedHead.headers), named: "transfer-encoding").contains("chunked")
+                || HTTP1MessageParser.tokens(Self.fields(receivedHead.headers), named: "transfer-encoding")
+                    .contains("chunked")
             exchange.responseStarted = true
             exchange.originKeepAlive = isKeepAlive
             exchange.responseConnectionTokens = HTTP1MessageParser.tokens(
-                Self.fields(receivedHead.headers), named: "connection"
+                Self.fields(receivedHead.headers),
+                named: "connection"
             )
             exchange.earlyResponse = !exchange.requestEnded
             exchange.upgrading = upgrade
@@ -161,11 +170,16 @@ extension ExplicitHTTPProxyHandler {
         }
         if exchange.controlSnapshot != nil {
             controlEventSink?.receive(.effectiveHead(
-                requestID: exchange.id, phase: .response,
-                headers: Self.fields(head.headers), appliedRuleIDs: exchange.responseControlRuleIDs
+                requestID: exchange.id,
+                phase: .response,
+                headers: Self.fields(head.headers),
+                appliedRuleIDs: exchange.responseControlRuleIDs
             ))
             (sink as? ObservationCaptureSink)?.receiveEffective(.responseHead(CapturedResponseHead(
-                requestID: exchange.id, timestamp: Date(), status: Int(head.status.code), version: typedHTTP2 ? .http2 : .http11,
+                requestID: exchange.id,
+                timestamp: Date(),
+                status: Int(head.status.code),
+                version: typedHTTP2 ? .http2 : .http11,
                 headers: Self.fields(head.headers)
             )))
         }
@@ -270,7 +284,9 @@ extension ExplicitHTTPProxyHandler {
             return
         }
         let head = HTTPResponseHead(version: .http1_1, status: status, headers: [
-            "content-length": "0", "connection": "close", "via": "1.1 SwiftMITM"
+            "content-length": "0",
+            "connection": "close",
+            "via": "1.1 SwiftMITM"
         ])
         context.write(wrapOutboundOut(.head(head)), promise: nil)
         context.writeAndFlush(wrapOutboundOut(.end(nil))).assumeIsolated().whenComplete { _ in

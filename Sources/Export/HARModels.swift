@@ -19,8 +19,13 @@ public struct HARExchangeTiming: Sendable {
     public let total: Double
 
     public init(
-        send: Double, wait: Double, receive: Double, blocked: Double? = nil,
-        dns: Double? = nil, connect: Double? = nil, ssl: Double? = nil
+        send: Double,
+        wait: Double,
+        receive: Double,
+        blocked: Double? = nil,
+        dns: Double? = nil,
+        connect: Double? = nil,
+        ssl: Double? = nil
     ) throws {
         let phases = [send, wait, receive] + [blocked, dns, connect, ssl].compactMap(\.self)
         let total = send + wait + receive + (blocked ?? 0) + (dns ?? 0) + (connect ?? 0)
@@ -54,7 +59,8 @@ public struct HARExportConfiguration: Sendable {
         representation: HTTPRepresentationKind,
         redactedHeaderNames: Set<String> = [],
         redactedQueryNames: Set<String> = ["access_token", "token", "api_key", "password"],
-        bodyPolicy: HARBodyPolicy = .omit, includeBinaryRequestExtension: Bool = false
+        bodyPolicy: HARBodyPolicy = .omit,
+        includeBinaryRequestExtension: Bool = false
     ) {
         self.representation = representation
         self.redactedHeaderNames = Set(redactedHeaderNames.map { $0.lowercased() })
@@ -73,8 +79,11 @@ public struct HARBody: Sendable {
     public let observedByteCount: Int?
 
     public init(
-        bytes: [UInt8], mimeType: String, isText: Bool,
-        truncated: Bool, observedByteCount: Int? = nil
+        bytes: [UInt8],
+        mimeType: String,
+        isText: Bool,
+        truncated: Bool,
+        observedByteCount: Int? = nil
     ) {
         self.bytes = bytes
         self.mimeType = mimeType
@@ -95,9 +104,13 @@ public struct HARExchange: Sendable {
     public let responseContentBytes: Int?
 
     public init(
-        representation: HTTPRepresentationKind, request: CapturedRequestHead,
-        response: CapturedResponseHead, requestBody: HARBody? = nil,
-        responseBody: HARBody? = nil, completed: Bool, timings: HARExchangeTiming? = nil,
+        representation: HTTPRepresentationKind,
+        request: CapturedRequestHead,
+        response: CapturedResponseHead,
+        requestBody: HARBody? = nil,
+        responseBody: HARBody? = nil,
+        completed: Bool,
+        timings: HARExchangeTiming? = nil,
         responseContentBytes: Int? = nil
     ) {
         self.representation = representation

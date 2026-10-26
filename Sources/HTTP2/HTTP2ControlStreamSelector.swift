@@ -18,8 +18,13 @@ final class HTTP2ControlStreamSelector: ChannelInboundHandler, RemovableChannelH
     private var reservations: [HTTPControlByteReservation] = []
     private var admissionReservations: [ResourceReservation] = []
 
-    init(server: ProxyServer, upstreamMux: NIOHTTP2Handler.StreamMultiplexer,
-         authority: String, target: CapturedTarget?, extendedConnectEnabled: Bool) {
+    init(
+        server: ProxyServer,
+        upstreamMux: NIOHTTP2Handler.StreamMultiplexer,
+        authority: String,
+        target: CapturedTarget?,
+        extendedConnectEnabled: Bool
+    ) {
         self.server = server; self.upstreamMux = upstreamMux; self.authority = authority
         self.target = target; self.sink = server.sink; self.captureBodyLimit = server.captureBodyLimit
         self.extendedConnectEnabled = extendedConnectEnabled
@@ -33,7 +38,7 @@ final class HTTP2ControlStreamSelector: ChannelInboundHandler, RemovableChannelH
             catch { fail(context) }
             return
         }
-        guard case .headers(let frame) = payload else { fail(context); return }
+        guard case let .headers(frame) = payload else { fail(context); return }
         let requestID = UUID()
         do {
             if frame.headers.first(name: ":method") == "CONNECT" {
@@ -45,19 +50,23 @@ final class HTTP2ControlStreamSelector: ChannelInboundHandler, RemovableChannelH
             context.pipeline.syncOperations.removeHandler(self, promise: nil)
         } catch {
             server.controlEventSink?.receive(.failure(
-                requestID: requestID, code: error as? HTTPControlError ?? .unsupportedEdit
+                requestID: requestID,
+                code: error as? HTTPControlError ?? .unsupportedEdit
             ))
             fail(context)
         }
     }
 
     private func validateCONNECT(_ payload: HTTP2Frame.FramePayload, requestID: UUID) throws {
-        guard case .headers(let frame) = payload else { throw HTTPControlError.invalidConfiguration }
+        guard case let .headers(frame) = payload else { throw HTTPControlError.invalidConfiguration }
         if let snapshot = server.controlRuntime?.configurationSnapshot {
             let message = HTTPControlMessage(
                 context: HTTPControlContext(
-                    requestID: requestID, authority: authority, method: "CONNECT",
-                    path: frame.headers.first(name: ":path") ?? "", isHTTP2OrLater: true
+                    requestID: requestID,
+                    authority: authority,
+                    method: "CONNECT",
+                    path: frame.headers.first(name: ":path") ?? "",
+                    isHTTP2OrLater: true
                 ),
                 phase: .request,
                 headers: frame.headers.filter { !$0.name.hasPrefix(":") }.map {
@@ -65,7 +74,7 @@ final class HTTP2ControlStreamSelector: ChannelInboundHandler, RemovableChannelH
                 }
             )
             switch try snapshot.evaluateHead(message) {
-            case .decision(let decision):
+            case let .decision(decision):
                 guard case .forward = decision.action, decision.appliedRuleIDs.isEmpty else {
                     throw HTTPControlError.unsupportedEdit
                 }
@@ -74,19 +83,28 @@ final class HTTP2ControlStreamSelector: ChannelInboundHandler, RemovableChannelH
         }
     }
 
-    private func configureCONNECT(_ payload: HTTP2Frame.FramePayload, requestID: UUID,
-                                  context: ChannelHandlerContext) throws {
+    private func configureCONNECT(
+        _ payload: HTTP2Frame.FramePayload,
+        requestID: UUID,
+        context: ChannelHandlerContext
+    ) throws {
         try retain(payload)
         try validateCONNECT(payload, requestID: requestID)
         configuring = true
         let owner = NIOLoopBound(self, eventLoop: context.eventLoop)
-        H2StreamGlue.glue(inboundStream: context.channel, upstreamMux: upstreamMux,
-                          configuration: .init(
-                              authority: authority, target: target, sink: sink,
-                              captureBodyLimit: captureBodyLimit,
-                              extendedConnectEnabled: extendedConnectEnabled
-                          ))
-            .assumeIsolated().whenComplete { result in
+        H2StreamGlue.glue(
+            inboundStream: context.channel,
+            upstreamMux: upstreamMux,
+            configuration: .init(
+                authority: authority,
+                target: target,
+                sink: sink,
+                captureBodyLimit: captureBodyLimit,
+                extendedConnectEnabled: extendedConnectEnabled
+            )
+        )
+            .assumeIsolated()
+.whenComplete { result in
                 let handler = owner.value
                 guard !handler.stopped else { return }
                 switch result {
@@ -112,9 +130,12 @@ final class HTTP2ControlStreamSelector: ChannelInboundHandler, RemovableChannelH
         context.pipeline.syncOperations.removeHandler(self, promise: nil)
     }
 
-    private func configureHTTP(_ payload: HTTP2Frame.FramePayload, requestID: UUID,
-                               context: ChannelHandlerContext) throws {
-        guard case .headers(let frame) = payload else { throw HTTPControlError.invalidConfiguration }
+    private func configureHTTP(
+        _ payload: HTTP2Frame.FramePayload,
+        requestID: UUID,
+        context: ChannelHandlerContext
+    ) throws {
+        guard case let .headers(frame) = payload else { throw HTTPControlError.invalidConfiguration }
         let scheme = target?.ingressProvenance == .priorKnowledgeHTTP2 ? "http" : "https"
         guard frame.headers.first(name: ":scheme") == scheme,
               let destination = HTTPForwardTarget(scheme: scheme, authority: authority, requestTarget: "/") else {
@@ -126,16 +147,28 @@ final class HTTP2ControlStreamSelector: ChannelInboundHandler, RemovableChannelH
         let sink = sink
         let options = options(destination: destination, requestID: requestID)
         try context.pipeline.syncOperations.addHandlers([
-            HTTP2CaptureTapHandler(direction: .request, requestID: requestID, authority: authority,
-                                   target: target, sink: sink, captureBodyLimit: captureBodyLimit,
-                                   errorState: errorState),
+            HTTP2CaptureTapHandler(
+                direction: .request,
+                requestID: requestID,
+                authority: authority,
+                target: target,
+                sink: sink,
+                captureBodyLimit: captureBodyLimit,
+                errorState: errorState
+            ),
             HTTP2FramePayloadToHTTP1ServerCodec(),
             ExplicitHTTPProxyHandler(
-                sink: sink, captureBodyLimit: captureBodyLimit, connectionID: UUID(),
+                sink: sink,
+                captureBodyLimit: captureBodyLimit,
+                connectionID: UUID(),
                 connect: { target, loop in
-                    server.connectControlledHTTP2(target: target, requestID: requestID,
-                                                  errorState: errorState,
-                                                  downstream: channel, on: loop)
+                    server.connectControlledHTTP2(
+                        target: target,
+                        requestID: requestID,
+                        errorState: errorState,
+                        downstream: channel,
+                        on: loop
+                    )
                 },
                 onCONNECT: { stream, _ in stream.close(promise: nil) },
                 options: options
@@ -158,9 +191,9 @@ final class HTTP2ControlStreamSelector: ChannelInboundHandler, RemovableChannelH
     private func retain(_ payload: HTTP2Frame.FramePayload) throws {
         let size: Int
         switch payload {
-        case .headers(let frame):
+        case let .headers(frame):
             size = frame.headers.reduce(64) { $0 + $1.name.utf8.count + $1.value.utf8.count + 32 }
-        case .data(let frame): size = frame.data.readableBytes + 64
+        case let .data(frame): size = frame.data.readableBytes + 64
         default: size = 64
         }
         guard size <= 65_536 - bytes else { throw HTTPControlError.capacityExceeded }

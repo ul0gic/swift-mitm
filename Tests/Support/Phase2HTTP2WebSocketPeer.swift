@@ -108,9 +108,9 @@ final class Phase2HTTP2WebSocketStreamHandler: ChannelDuplexHandler {
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         switch unwrapInboundIn(data) {
-        case .headers(let frame):
+        case let .headers(frame):
             receive(headers: frame.headers, context: context)
-        case .data(let frame):
+        case let .data(frame):
             receive(data: frame.data, context: context)
         default:
             fail(Phase2FixtureError.unexpectedBytes, context: context)
@@ -149,7 +149,7 @@ final class Phase2HTTP2WebSocketStreamHandler: ChannelDuplexHandler {
 
     private func receive(data buffer: IOData, context: ChannelHandlerContext) {
         switch buffer {
-        case .byteBuffer(let byteBuffer):
+        case let .byteBuffer(byteBuffer):
             data.append(contentsOf: byteBuffer.readableBytesView)
         case .fileRegion:
             fail(Phase2FixtureError.unexpectedBytes, context: context)

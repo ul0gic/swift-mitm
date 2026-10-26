@@ -188,7 +188,7 @@ public final class ProxyServer: Sendable {
 
     func activeTLSRuntime() throws -> ProxyTLSRuntime {
         try lifecycleState.withLockedValue { state in
-            guard case .running(_, let runtime) = state else { throw ProxyConnectionError.serverStopping }
+            guard case let .running(_, runtime) = state else { throw ProxyConnectionError.serverStopping }
             return runtime
         }
     }

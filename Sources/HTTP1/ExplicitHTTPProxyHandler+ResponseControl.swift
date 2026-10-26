@@ -8,7 +8,7 @@ extension ExplicitHTTPProxyHandler {
         let message = controlMessage(exchange, phase: .response, status: Int(head.status.code), headers: head.headers)
         do {
             switch try snapshot.evaluateHead(message) {
-            case .needsBody(let maximum):
+            case let .needsBody(maximum):
                 guard let runtime = controlRuntime else { throw HTTPControlError.cancelled }
                 let bytes = maximum + snapshot.limits.maximumBodyBytes
                     + snapshot.retainedBytes + message.retainedBytes + 65_536
@@ -17,7 +17,7 @@ extension ExplicitHTTPProxyHandler {
                 exchange.responseControlHead = head
                 exchange.responseControlMaximum = maximum
                 exchange.responseControlCollecting = true
-            case .decision(let decision):
+            case let .decision(decision):
                 if decision.faults.contains(where: { $0.direction == .response }), let runtime = controlRuntime {
                     let bytes = 65_536 + message.retainedBytes + snapshot.retainedBytes
                     exchange.responseControlReservation = try runtime.reserveTransportBytes(bytes)
@@ -53,8 +53,13 @@ extension ExplicitHTTPProxyHandler {
         correlator.end(id: exchange.id, request: false)
         guard exchange.responseControlCollecting, let snapshot = exchange.controlSnapshot else { return }
         exchange.responseControlCollecting = false
-        let message = controlMessage(exchange, phase: .response, status: Int(head.status.code),
-                                     headers: head.headers, body: exchange.responseControlBody)
+        let message = controlMessage(
+            exchange,
+            phase: .response,
+            status: Int(head.status.code),
+            headers: head.headers,
+            body: exchange.responseControlBody
+        )
         do {
             guard trailers?.isEmpty ?? true else { throw HTTPControlError.unsupportedEdit }
             let decision = try exchange.pendingResponseBodyDecision ?? snapshot.evaluate(message)
@@ -98,7 +103,7 @@ extension ExplicitHTTPProxyHandler {
             controlFailed(exchange, error: error)
             return
         }
-        if case .replaceBody(_, let maximum, _, _) = decision.action, !exchange.responseControlEnded {
+        if case let .replaceBody(_, maximum, _, _) = decision.action, !exchange.responseControlEnded {
             exchange.pendingResponseBodyDecision = decision
             exchange.responseControlHead = head
             exchange.responseControlCollecting = true
@@ -113,8 +118,8 @@ extension ExplicitHTTPProxyHandler {
         case .abort, .breakpoint, .route:
             controlFailed(exchange, error: HTTPControlError.unsupportedEdit)
             return
-        case .replaceBody(let body, _, _, _): replacement = body
-        case .respond(let status, _, let body):
+        case let .replaceBody(body, _, _, _): replacement = body
+        case let .respond(status, _, body):
             effective.status = HTTPResponseStatus(statusCode: status)
             replacement = body
             markOriginalResponseReplaced(exchange)
@@ -123,11 +128,19 @@ extension ExplicitHTTPProxyHandler {
         exchange.responseControlRuleIDs = decision.appliedRuleIDs
         if decision.overridesNoTransform {
             controlEventSink?.receive(.noTransformOverride(
-                requestID: exchange.id, phase: .response, appliedRuleIDs: decision.appliedRuleIDs
+                requestID: exchange.id,
+                phase: .response,
+                appliedRuleIDs: decision.appliedRuleIDs
             ))
         }
         if let fault = exchange.responseFault {
-            configureResponseFault(fault, head: effective, replacement: replacement, exchange: exchange, context: context)
+            configureResponseFault(
+                fault,
+                head: effective,
+                replacement: replacement,
+                exchange: exchange,
+                context: context
+            )
         } else {
             emitControlledResponse(effective, replacement: replacement, exchange: exchange, context: context)
         }
@@ -137,7 +150,8 @@ extension ExplicitHTTPProxyHandler {
         if !exchange.responseControlEnded {
             if !externallyCaptured {
                 sink.receive(.streamError(
-                    requestID: exchange.id, message: "HTTP control replaced incomplete origin representation"
+                    requestID: exchange.id,
+                    message: "HTTP control replaced incomplete origin representation"
                 ))
             }
             exchange.responseControlEnded = true
@@ -197,13 +211,17 @@ extension ExplicitHTTPProxyHandler {
         exchange.responseControlBody.removeAll(keepingCapacity: false)
         if exchange.responseControlEnded {
             let complete = {
-                (self.sink as? ObservationCaptureSink)?.receiveEffective(.responseEnd(requestID: exchange.id, truncated: false))
-                context.writeAndFlush(self.wrapOutboundOut(.end(exchange.responseControlTrailers))).assumeIsolated().whenComplete { _ in self.finish(exchange) }
+                (self.sink as? ObservationCaptureSink)?.receiveEffective(.responseEnd(
+                    requestID: exchange.id,
+                    truncated: false
+                ))
+                context.writeAndFlush(self.wrapOutboundOut(.end(exchange.responseControlTrailers)))
+.assumeIsolated()
+                    .whenComplete { _ in self.finish(exchange) }
             }
             if let writer = exchange.responseFaultWriter {
                 writer.finish(complete)
-            }
-            else {
+            } else {
                 complete()
             }
         } else if replacement != nil {

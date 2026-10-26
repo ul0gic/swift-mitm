@@ -39,7 +39,8 @@ extension ExplicitHTTPProxyHandler {
                 writeOriginHead(head, exchange: exchange, channel: channel)
             }
             if let release = connection.releaseBufferedReads {
-                release().flatMap { channel.setOption(ChannelOptions.autoRead, value: false) }
+                release()
+.flatMap { channel.setOption(ChannelOptions.autoRead, value: false) }
                     .whenFailure { _ in channel.close(promise: nil) }
             }
             readClientIfNeeded()
@@ -91,7 +92,7 @@ extension ExplicitHTTPProxyHandler {
         if active === exchange, let upstream, !exchange.earlyResponse || typedHTTP2 {
             write(part, exchange: exchange, to: upstream)
         } else {
-            if exchange.controlSnapshot != nil, case .body(let buffer) = part {
+            if exchange.controlSnapshot != nil, case let .body(buffer) = part {
                 guard buffer.readableBytes <= 65_536 - exchange.pendingByteCount else {
                     controlFailed(exchange, error: HTTPControlError.capacityExceeded)
                     return
@@ -106,7 +107,7 @@ extension ExplicitHTTPProxyHandler {
         switch part {
         case .head:
             break
-        case .body(let buffer):
+        case let .body(buffer):
             if let writer = exchange.requestFaultWriter {
                 do {
                     if exchange.requestEnded, exchange.controlSnapshot != nil {
@@ -118,7 +119,7 @@ extension ExplicitHTTPProxyHandler {
             } else {
                 writeRequestBody(buffer, exchange: exchange, to: channel)
             }
-        case .end(let trailers):
+        case let .end(trailers):
             let end = HTTPClientRequestPart.end(trailers.map {
                 Self.hopHeaders(
                     $0,
@@ -129,10 +130,16 @@ extension ExplicitHTTPProxyHandler {
             })
             let complete = {
                 if exchange.controlSnapshot != nil {
-                    if case .end(let fields) = end, let fields, !fields.isEmpty {
-                        (self.sink as? ObservationCaptureSink)?.receiveEffective(.requestTrailers(requestID: exchange.id, headers: Self.fields(fields)))
+                    if case let .end(fields) = end, let fields, !fields.isEmpty {
+                        (self.sink as? ObservationCaptureSink)?.receiveEffective(.requestTrailers(
+                            requestID: exchange.id,
+                            headers: Self.fields(fields)
+                        ))
                     }
-                    (self.sink as? ObservationCaptureSink)?.receiveEffective(.requestEnd(requestID: exchange.id, truncated: false))
+                    (self.sink as? ObservationCaptureSink)?.receiveEffective(.requestEnd(
+                        requestID: exchange.id,
+                        truncated: false
+                    ))
                 }
                 if self.typedHTTP2, exchange.responseEnded {
                     channel.writeAndFlush(end).assumeIsolated().whenComplete { result in

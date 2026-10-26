@@ -20,7 +20,10 @@ final class Release022ExampleProcess: @unchecked Sendable {
     }
 
     func start(
-        root: GeneratedAuthority, originRoot: String, asynchronous: Bool, captureBytes: Int
+        root: GeneratedAuthority,
+        originRoot: String,
+        asynchronous: Bool,
+        captureBytes: Int
     ) throws -> Int {
         guard let executable = ProcessInfo.processInfo.environment["SWIFTMITM_FIRST_CAPTURE"] else {
             throw Release022ClientError.missingEnvironment("SWIFTMITM_FIRST_CAPTURE")
@@ -33,9 +36,19 @@ final class Release022ExampleProcess: @unchecked Sendable {
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: key.path)
         try Data(originRoot.utf8).write(to: upstream)
         process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = ["--ca-cert", certificate.path, "--ca-key", key.path, "--port", "0",
-                             "--allow-internal", "--upstream-ca", upstream.path,
-                             "--capture-bytes", String(captureBytes)] + (asynchronous ? ["--async"] : [])
+        process.arguments = [
+            "--ca-cert",
+            certificate.path,
+            "--ca-key",
+            key.path,
+            "--port",
+            "0",
+            "--allow-internal",
+            "--upstream-ca",
+            upstream.path,
+            "--capture-bytes",
+            String(captureBytes)
+        ] + (asynchronous ? ["--async"] : [])
         process.standardOutput = output
         process.standardError = diagnostic
         diagnostic.fileHandleForReading.readabilityHandler = { [weak self] handle in
@@ -118,7 +131,8 @@ final class Release022ExampleProcess: @unchecked Sendable {
 
     private static func records(_ data: Data, stream: String) throws -> [[String: Any]] {
         try data.split(separator: 10).compactMap { line -> [String: Any]? in
-            guard line.first == 123, line.last == 125, var record = try JSONSerialization.jsonObject(with: Data(line)) as? [String: Any] else { return nil }
+            guard line.first == 123, line.last == 125,
+                  var record = try JSONSerialization.jsonObject(with: Data(line)) as? [String: Any] else { return nil }
             record["_stream"] = stream
             return record
         }

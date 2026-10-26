@@ -16,7 +16,7 @@ extension ConnectionTarget {
         case .priorKnowledgeHTTP2:
             provenance = .priorKnowledgeHTTP2
             originalClient = nil
-        case .trustedProxyV2(let address):
+        case let .trustedProxyV2(address):
             provenance = .trustedProxyV2
             originalClient = address.ipAddress.map {
                 CapturedNetworkEndpoint(address: $0, port: address.port ?? 0)

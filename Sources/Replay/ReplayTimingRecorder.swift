@@ -44,7 +44,8 @@ final class ReplayTimingRecorder: Sendable {
                     send: Double(sendEnd - sendStart) / 1_000_000,
                     wait: Double(responseStart - sendEnd) / 1_000_000,
                     receive: Double(responseEnd - responseStart) / 1_000_000
-                ), unavailable: nil
+                ),
+                unavailable: nil
             )
         }
     }

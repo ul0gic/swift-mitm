@@ -6,13 +6,20 @@ struct ReplayIdentity: Sendable {
     let source: ReplaySource
 
     func result(
-        status: Int, responseBodyBytes: Int, headers: [HTTPHeaderField], measurement: ReplayMeasurement
+        status: Int,
+        responseBodyBytes: Int,
+        headers: [HTTPHeaderField],
+        measurement: ReplayMeasurement
     ) -> ReplayResult {
         ReplayResult(
-            attemptID: attemptID, requestID: requestID,
-            sourceRequestID: source.requestID, sourceRepresentation: source.representation,
-            status: status, responseBodyBytes: responseBodyBytes,
-            timings: measurement.timings, timingUnavailable: measurement.unavailable,
+            attemptID: attemptID,
+            requestID: requestID,
+            sourceRequestID: source.requestID,
+            sourceRepresentation: source.representation,
+            status: status,
+            responseBodyBytes: responseBodyBytes,
+            timings: measurement.timings,
+            timingUnavailable: measurement.unavailable,
             responseContentBytes: Self.identityCoding(headers) ? responseBodyBytes : nil
         )
     }
@@ -42,15 +49,24 @@ struct ReplayInvocation: Sendable {
     let responseSink: any ReplayResponseSink
 
     func respond(
-        status: Int, headers: [HTTPHeaderField], body: Data, server: ProxyServer
+        status: Int,
+        headers: [HTTPHeaderField],
+        body: Data,
+        server: ProxyServer
     ) async throws -> ReplayResult {
         let response = CapturedResponseHead(
-            requestID: identity.requestID, timestamp: Date(), status: status,
-            version: .http11, headers: headers
+            requestID: identity.requestID,
+            timestamp: Date(),
+            status: status,
+            version: .http11,
+            headers: headers
         )
         var processor = ReplayResponseControls(
-            controls: controls, inheritedFaults: faults, attemptID: identity.attemptID,
-            responseSink: responseSink, observation: server.sink as? ObservationCaptureSink
+            controls: controls,
+            inheritedFaults: faults,
+            attemptID: identity.attemptID,
+            responseSink: responseSink,
+            observation: server.sink as? ObservationCaptureSink
         )
         try await processor.head(response)
         var offset = 0
@@ -61,8 +77,10 @@ struct ReplayInvocation: Sendable {
         }
         try await processor.end()
         let result = identity.result(
-            status: processor.effectiveStatus ?? status, responseBodyBytes: processor.effectiveBodyBytes,
-            headers: processor.effectiveHeaders, measurement: .synthetic
+            status: processor.effectiveStatus ?? status,
+            responseBodyBytes: processor.effectiveBodyBytes,
+            headers: processor.effectiveHeaders,
+            measurement: .synthetic
         )
         try await responseSink.receive(.end(result))
         return result

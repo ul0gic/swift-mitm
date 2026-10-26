@@ -25,7 +25,7 @@ final class HTTP2ReadCreditGate: ChannelDuplexHandler {
 
     func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
         let frame = unwrapOutboundIn(data)
-        guard frame.streamID != .rootStream, case .windowUpdate(let increment) = frame.payload,
+        guard frame.streamID != .rootStream, case let .windowUpdate(increment) = frame.payload,
               var credit = streams[frame.streamID], !credit.reading else {
             context.write(data, promise: promise)
             return
@@ -50,7 +50,8 @@ final class HTTP2ReadCreditGate: ChannelDuplexHandler {
         streams[streamID] = credit
         if increment > 0 {
             context.writeAndFlush(NIOAny(HTTP2Frame(
-                streamID: streamID, payload: .windowUpdate(windowSizeIncrement: increment)
+                streamID: streamID,
+                payload: .windowUpdate(windowSizeIncrement: increment)
             )), promise: nil)
         }
     }
@@ -91,11 +92,11 @@ final class HTTP2StreamReadCreditHandler: ChannelDuplexHandler {
         }
         context.channel.getOption(HTTP2StreamChannelOptions.streamID).assumeIsolated().whenComplete { result in
             switch result {
-            case .success(let streamID):
+            case let .success(streamID):
                 self.streamID = streamID
                 self.gate.value.pause(streamID)
                 context.fireChannelRead(data)
-            case .failure(let error): context.fireErrorCaught(error)
+            case let .failure(error): context.fireErrorCaught(error)
             }
         }
     }

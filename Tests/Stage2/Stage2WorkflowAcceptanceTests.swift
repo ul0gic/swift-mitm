@@ -15,12 +15,13 @@ final class Stage2ControlEvents: HTTPControlEventSink {
         let deadline = clock.now.advanced(by: .seconds(5))
         while true {
             if let handle = events.compactMap({ event -> BreakpointHandle? in
-                if case .breakpoint(let handle) = event {
+                if case let .breakpoint(handle) = event {
                     handle
                 } else {
                     nil
                 }
-            }).first {
+            })
+.first {
                 return handle
             }
             guard clock.now < deadline else { throw Phase2FixtureError.deadlineExceeded }
@@ -61,12 +62,19 @@ private struct Stage2HARDocument: Decodable {
 final class Stage2WorkflowAcceptanceTests: XCTestCase {
     func testHeaderEditChangesOriginWithoutOverwritingOriginalEvidence() async throws {
         let configuration = try HTTPControlConfiguration(rules: [
-            HTTPRule(id: "replace-probe", match: HTTPRuleMatch(phase: .request, path: "/controlled"),
-                     action: .editHeaders(remove: ["X-Probe"], append: [HTTPHeaderField(name: "X-Probe", value: "effective")]))
+            HTTPRule(
+                id: "replace-probe",
+                match: HTTPRuleMatch(phase: .request, path: "/controlled"),
+                action: .editHeaders(
+                    remove: ["X-Probe"],
+                    append: [HTTPHeaderField(name: "X-Probe", value: "effective")]
+                )
+            )
         ], limits: HTTPControlLimits())
         let controls = Stage2ControlEvents()
         try await stage2WithInspectionWire(
-            controlRuntime: HTTPControlRuntime(configuration: configuration), controlEventSink: controls
+            controlRuntime: HTTPControlRuntime(configuration: configuration),
+            controlEventSink: controls
         ) { peer in
             let request = "GET http://127.0.0.1:\(peer.origin.port)/controlled HTTP/1.1\r\n"
                 + "Host: localhost\r\nX-Probe: original\r\n\r\n"
@@ -80,7 +88,7 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
             let original = try XCTUnwrap(release022Requests(peer.raw.events).first)
             XCTAssertEqual(original.headers.first { $0.name.lowercased() == "x-probe" }?.value, "original")
             let effective = controls.events.compactMap { event -> (UUID, [HTTPHeaderField], [String])? in
-                if case .effectiveHead(let id, .request, let headers, let rules) = event {
+                if case let .effectiveHead(id, .request, headers, rules) = event {
                     (id, headers, rules)
                 } else {
                     nil
@@ -95,8 +103,11 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
 
     func testBreakpointResumesOnceAndReleasesItsReservation() async throws {
         let configuration = try HTTPControlConfiguration(rules: [
-            HTTPRule(id: "hold", match: HTTPRuleMatch(phase: .request, path: "/pause"),
-                     action: .breakpoint)
+            HTTPRule(
+                id: "hold",
+                match: HTTPRuleMatch(phase: .request, path: "/pause"),
+                action: .breakpoint
+            )
         ], limits: HTTPControlLimits())
         let runtime = HTTPControlRuntime(configuration: configuration)
         let controls = Stage2ControlEvents()
@@ -129,12 +140,16 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
             let destination = try XCTUnwrap(URL(string: "http://127.0.0.1:\(peer.origin.port)/replay"))
             let sourceID = UUID()
             let request = ReplayRequest(
-                source: ReplaySource(requestID: sourceID, representation: .original), destination: destination,
-                method: "POST", headers: [
+                source: ReplaySource(requestID: sourceID, representation: .original),
+                destination: destination,
+                method: "POST",
+                headers: [
                     HTTPHeaderField(name: "Authorization", value: "Bearer synthetic-replay-secret"),
                     HTTPHeaderField(name: "Cookie", value: "session=synthetic-cookie-secret"),
                     HTTPHeaderField(name: "Content-Type", value: "text/plain")
-                ], body: Array("payload".utf8), bodyIsComplete: true
+                ],
+                body: Array("payload".utf8),
+                bodyIsComplete: true
             )
             let proxy = peer.proxy
             let replayEvents = Stage2ReplayEvents()
@@ -151,16 +166,25 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
             XCTAssertEqual(result.status, 200)
             XCTAssertEqual(result.responseBodyBytes, 2)
             XCTAssertEqual(peer.origin.acceptedConnections, 1)
-            XCTAssertEqual(replayEvents.events.filter {
+            XCTAssertEqual(
+                replayEvents.events
+.filter {
                 if case .end = $0 {
                     true
                 } else {
                     false
                 }
-            }.count, 1)
+            }
+.count,
+                1
+            )
             let incomplete = ReplayRequest(
-                source: ReplaySource(requestID: sourceID, representation: .original), destination: destination,
-                method: "POST", headers: [], body: [1], bodyIsComplete: false
+                source: ReplaySource(requestID: sourceID, representation: .original),
+                destination: destination,
+                method: "POST",
+                headers: [],
+                body: [1],
+                bodyIsComplete: false
             )
             do {
                 _ = try await proxy.replay(incomplete, responseSink: replayEvents)
@@ -199,27 +223,39 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
             )
             let requestHead = try XCTUnwrap(release022Requests(captured).first)
             let responseHead = try XCTUnwrap(captured.compactMap { event -> CapturedResponseHead? in
-                if case .responseHead(let head) = event {
+                if case let .responseHead(head) = event {
                     head
                 } else {
                     nil
                 }
-            }.first)
+            }
+.first)
             let exchange = HARExchange(
-                representation: .original, request: requestHead, response: responseHead,
+                representation: .original,
+                request: requestHead,
+                response: responseHead,
                 responseBody: HARBody(bytes: body, mimeType: "text/plain", isText: true, truncated: false),
-                completed: true, timings: timings, responseContentBytes: stage2ResponseCount(captured)
+                completed: true,
+                timings: timings,
+                responseContentBytes: stage2ResponseCount(captured)
             )
             let withoutTiming = HARExchange(
-                representation: .original, request: requestHead, response: responseHead,
-                completed: true, responseContentBytes: stage2ResponseCount(captured)
+                representation: .original,
+                request: requestHead,
+                response: responseHead,
+                completed: true,
+                responseContentBytes: stage2ResponseCount(captured)
             )
             let missing = AsyncStream<HARExchange>(bufferingPolicy: .bufferingOldest(1)) { continuation in
                 continuation.yield(withoutTiming)
                 continuation.finish()
             }
             do {
-                try await HARExporter.export(missing, configuration: HARExportConfiguration(representation: .original), writer: Stage2HARBytes())
+                try await HARExporter.export(
+                    missing,
+                    configuration: HARExportConfiguration(representation: .original),
+                    writer: Stage2HARBytes()
+                )
                 XCTFail("HAR exporter invented mandatory timings")
             } catch HARExportError.missingTimings {
                 XCTAssertNil(withoutTiming.timings)
@@ -229,7 +265,11 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
                 continuation.finish()
             }
             let writer = Stage2HARBytes()
-            try await HARExporter.export(entries, configuration: HARExportConfiguration(representation: .original), writer: writer)
+            try await HARExporter.export(
+                entries,
+                configuration: HARExportConfiguration(representation: .original),
+                writer: writer
+            )
             let data = Data(writer.bytes)
             let document = try JSONDecoder().decode(Stage2HARDocument.self, from: data)
             XCTAssertEqual(document.log.version, "1.2")
@@ -238,8 +278,13 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
             XCTAssertEqual(document.log.entries.first?.response.status, 200)
             XCTAssertTrue(document.log.entries.first?.request.url.contains("keep=yes") ?? false)
             let output = String(decoding: writer.bytes, as: UTF8.self)
-            for secret in ["synthetic-query-secret", "synthetic-header-secret", "synthetic-cookie-secret",
-                           "synthetic-response-secret", "synthetic-body-secret"] {
+            for secret in [
+                "synthetic-query-secret",
+                "synthetic-header-secret",
+                "synthetic-cookie-secret",
+                "synthetic-response-secret",
+                "synthetic-body-secret"
+            ] {
                 XCTAssertFalse(output.contains(secret), "Export leaked \(secret)")
             }
         }

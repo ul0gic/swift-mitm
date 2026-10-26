@@ -27,6 +27,7 @@ class Response:
     trailers: list = field(default_factory=list)
     body: bytearray = field(default_factory=bytearray)
     first_data: asyncio.Event = field(default_factory=asyncio.Event)
+    trailers_received: asyncio.Event = field(default_factory=asyncio.Event)
     done: asyncio.Event = field(default_factory=asyncio.Event)
     error: str | None = None
 
@@ -60,6 +61,7 @@ class Client(QuicConnectionProtocol):
             if isinstance(received, HeadersReceived):
                 if response.headers:
                     response.trailers.extend(received.headers)
+                    response.trailers_received.set()
                 else:
                     response.headers.extend(received.headers)
             elif isinstance(received, DataReceived):
@@ -91,6 +93,16 @@ class Client(QuicConnectionProtocol):
     def cancel(self, stream):
         self._quic.stop_stream(stream, error_code=ErrorCode.H3_REQUEST_CANCELLED)
         self._quic.reset_stream(stream, error_code=ErrorCode.H3_REQUEST_CANCELLED)
+        self.transmit()
+
+    def trailers(self, stream, sequence):
+        self.http.send_headers(stream, [
+            (b"x-request-trailer", str(sequence).encode("ascii"))
+        ], end_stream=False)
+        self.transmit()
+
+    def finish(self, stream):
+        self._quic.send_stream_data(stream, b"", end_stream=True)
         self.transmit()
 
 
@@ -177,6 +189,38 @@ async def rejected(port, authority, certificate, hostname):
         return
 
 
+async def separated_fin(port, authority, certificate, peer):
+    stats_file = Path(peer["stats"])
+    release_file = Path(peer["releaseFin"])
+    async with connect("127.0.0.1", port, configuration=configuration(certificate, "localhost"),
+                       create_protocol=Client) as client:
+        assert client.alpn == "h3"
+        # Cross the spike's 128 initial bidirectional stream-credit boundary.
+        for sequence in range(129):
+            stream, response = client.request(authority, f"/split-fin/{sequence}", end=False)
+            client.trailers(stream, sequence)
+            async with asyncio.timeout(10):
+                while sequence not in json.loads(stats_file.read_text())["splitRequestTrailers"]:
+                    if response.error:
+                        raise AssertionError(response.error)
+                    await asyncio.sleep(0.01)
+            # End-to-end trailer receipt proves the earlier HEADERS left the sender.
+            client.finish(stream)
+            await asyncio.wait_for(response.trailers_received.wait(), timeout=10)
+            assert response.trailers == [(b"x-response-trailer", str(sequence).encode("ascii"))]
+            temporary = release_file.with_suffix(".tmp")
+            temporary.write_text(str(sequence))
+            temporary.replace(release_file)
+            assert await response_complete(response) == b"split-response"
+            async with asyncio.timeout(10):
+                while sequence not in json.loads(stats_file.read_text())["splitResponseFin"]:
+                    await asyncio.sleep(0.01)
+            del client.responses[stream]
+        assert await response_complete(client.request(authority, "/after-split-fin")[1]) == b"origin"
+    return {"separatedRequestAndResponseFIN": True, "completedExchanges": 129,
+            "initialStreamCredit": 128, "sameConnectionSubsequentStream": True}
+
+
 async def run_case(binary, name):
     with tempfile.TemporaryDirectory(prefix="swiftmitm-h3-") as temporary:
         directory = Path(temporary)
@@ -224,6 +268,8 @@ async def run_case(binary, name):
                         async with asyncio.timeout(10):
                             while json.loads(Path(peer["stats"]).read_text())["cancelSignals"] == 0:
                                 await asyncio.sleep(0.02)
+                    elif name == "separated-fin":
+                        report = await separated_fin(ready["port"], authority, certificate, peer)
                     elif name == "changed-authority":
                         await rejected(ready["port"], f"other.invalid:{peer['port']}", certificate, hostname)
                     elif name == "downstream-trust":
@@ -240,6 +286,12 @@ async def run_case(binary, name):
                     assert stats["cancelSignals"] > 0
                     assert stats["peerQpackCapacity"] == 0 and stats["peerQpackBlocked"] == 0
                     return dict(report, upstreamALPN=stats["alpn"], originRequests=stats["requests"])
+                if name == "separated-fin":
+                    assert stats["splitRequestTrailers"] == list(range(129)), stats
+                    assert stats["splitResponseFin"] == list(range(129)), stats
+                    assert stats["alpn"] and set(stats["alpn"]) == {"h3"}
+                    assert stats["requests"] == 130, stats
+                    return dict(report, upstreamALPN=stats["alpn"], originRequests=stats["requests"])
                 assert stats["requests"] == 0, stats
                 if name == "denied-route":
                     assert stats["datagrams"] == 0, stats
@@ -253,7 +305,7 @@ async def run_case(binary, name):
 async def main(arguments):
     results = {"peer": f"aioquic/{aioquic.__version__}", "checks": {}}
     for name in ("streaming", "changed-authority", "upstream-hostname", "upstream-trust",
-                 "downstream-trust", "denied-route"):
+                 "downstream-trust", "denied-route", "separated-fin"):
         try:
             async with asyncio.timeout(90):
                 observation = await run_case(arguments.binary, name)

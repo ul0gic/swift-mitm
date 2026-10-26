@@ -25,16 +25,18 @@ extension ExplicitHTTPProxyHandler {
         switch part {
         case .head:
             break
-        case .body(let body):
+        case let .body(body):
             (sink as? ObservationCaptureSink)?.receiveBody(
-                requestID: exchange.id, direction: .request, bytes: body.readableBytesView
+                requestID: exchange.id,
+                direction: .request,
+                bytes: body.readableBytesView
             )
             sink.receive(.requestBodyChunk(
                 requestID: exchange.id,
                 bytes: exchange.requestBody.take(body.readableBytesView),
                 byteCount: body.readableBytes
             ))
-        case .end(let trailers):
+        case let .end(trailers):
             if let trailers, !trailers.isEmpty {
                 sink.receive(.requestTrailers(requestID: exchange.id, headers: Self.fields(trailers)))
             }

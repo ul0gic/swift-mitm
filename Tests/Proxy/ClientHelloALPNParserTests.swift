@@ -19,7 +19,7 @@ final class ClientHelloALPNParserTests: XCTestCase {
         )
         XCTAssertEqual(metadata.supportedALPNProtocols, [.http11, .http2])
         XCTAssertTrue(metadata.hasALPNExtension)
-        guard case .protocols(let protocols) = metadata.compatibilityALPNOffer else {
+        guard case let .protocols(protocols) = metadata.compatibilityALPNOffer else {
             return XCTFail("expected an ALPN offer")
         }
         XCTAssertEqual(protocols, [.http11, .http2])
@@ -71,7 +71,7 @@ final class ClientHelloALPNParserTests: XCTestCase {
 
         XCTAssertEqual(metadata.offeredALPNProtocols.map(\.bytes), ["acme/1", "acme/2"].map { Array($0.utf8) })
         XCTAssertTrue(metadata.supportedALPNProtocols.isEmpty)
-        guard case .protocols(let protocols)? = try ClientHelloALPNParser.parse(bytes) else {
+        guard case let .protocols(protocols)? = try ClientHelloALPNParser.parse(bytes) else {
             return XCTFail("expected an ALPN offer")
         }
         XCTAssertTrue(protocols.isEmpty)
@@ -85,7 +85,7 @@ final class ClientHelloALPNParserTests: XCTestCase {
 
         XCTAssertEqual(metadata.offeredALPNProtocols.map(\.bytes), identifiers)
         XCTAssertEqual(metadata.supportedALPNProtocols, [.http2])
-        guard case .protocols(let protocols)? = try ClientHelloALPNParser.parse(bytes) else {
+        guard case let .protocols(protocols)? = try ClientHelloALPNParser.parse(bytes) else {
             return XCTFail("expected an ALPN offer")
         }
         XCTAssertEqual(protocols, [.http2])
@@ -99,7 +99,7 @@ final class ClientHelloALPNParserTests: XCTestCase {
 
         XCTAssertEqual(metadata.offeredALPNProtocols.map(\.bytes), identifiers)
         XCTAssertTrue(metadata.supportedALPNProtocols.isEmpty)
-        guard case .protocols(let protocols)? = try ClientHelloALPNParser.parse(bytes) else {
+        guard case let .protocols(protocols)? = try ClientHelloALPNParser.parse(bytes) else {
             return XCTFail("expected an ALPN offer")
         }
         XCTAssertTrue(protocols.isEmpty)

@@ -1,6 +1,8 @@
 public enum HARExporter {
     public static func export<Entries: AsyncSequence>(
-        _ entries: Entries, configuration: HARExportConfiguration, writer: any HAROutputWriter
+        _ entries: Entries,
+        configuration: HARExportConfiguration,
+        writer: any HAROutputWriter
     ) async throws where Entries.Element == HARExchange {
         var output = HARJSONWriter(writer: writer)
         try await output.raw("{\"log\":{\"version\":\"1.2\",\"creator\":{")

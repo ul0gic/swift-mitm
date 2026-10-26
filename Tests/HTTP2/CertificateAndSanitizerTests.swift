@@ -27,7 +27,7 @@ final class CertificateAuthorityTests: XCTestCase {
         let san = try XCTUnwrap(leaf.extensions.subjectAlternativeNames)
 
         XCTAssertEqual(san.count, 1)
-        guard case .ipAddress(let address) = san.first else {
+        guard case let .ipAddress(address) = san.first else {
             return XCTFail("IPv4 leaf must use an IP-address SAN")
         }
         XCTAssertEqual(Array(address.bytes), [192, 0, 2, 10])
@@ -40,7 +40,7 @@ final class CertificateAuthorityTests: XCTestCase {
         let san = try XCTUnwrap(leaf.extensions.subjectAlternativeNames)
 
         XCTAssertEqual(san.count, 1)
-        guard case .ipAddress(let address) = san.first else {
+        guard case let .ipAddress(address) = san.first else {
             return XCTFail("IPv6 leaf must use an IP-address SAN")
         }
         XCTAssertEqual(Array(address.bytes), [0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])

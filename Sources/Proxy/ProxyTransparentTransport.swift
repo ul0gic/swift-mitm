@@ -18,13 +18,13 @@ extension ProxyServer {
             return channel.closeFuture
         }
         switch ingress {
-        case .priorKnowledgeHTTP2(let configuration):
+        case let .priorKnowledgeHTTP2(configuration):
             return configurePriorKnowledgeHTTP2(channel, configuration: configuration)
         case .explicitConnect:
             return configureExplicitInbound(channel, tlsRuntime: tlsRuntime)
         case .explicitHTTP:
             return configureExplicitInbound(channel, tlsRuntime: tlsRuntime)
-        case .trustedProxyV2(let configuration):
+        case let .trustedProxyV2(configuration):
             return configureTransparentInbound(channel, configuration: configuration, tlsRuntime: tlsRuntime)
         }
     }
@@ -95,7 +95,7 @@ extension ProxyServer {
         channel.closeFuture.whenComplete { _ in setupToken.cancel() }
         let setup: EventLoopFuture<TransparentApplicationReadMode>
         switch classification {
-        case .interceptedTLS(let metadata):
+        case let .interceptedTLS(metadata):
             failureHandler.value.beginTLSSetup(
                 deadline: timeoutPolicy.tlsHandshakeDeadline.nioTimeAmount ?? .seconds(10),
                 setupToken: setupToken
@@ -148,7 +148,8 @@ extension ProxyServer {
         }
         return setup.always { result in
             if case .success = result, case .interceptedTLS = classification {
-                failureHandler.value.handoffFuture(on: channel.eventLoop)
+                failureHandler.value
+.handoffFuture(on: channel.eventLoop)
                     .whenComplete { _ in setupToken.complete() }
             } else {
                 setupToken.complete()
@@ -219,7 +220,8 @@ extension ProxyServer {
         }
         upstream.channel.closeFuture.whenComplete { _ in inbound.close(promise: nil) }
         inbound.closeFuture.whenComplete { _ in upstream.channel.close(promise: nil) }
-        return inbound.eventLoop.makeCompletedFuture {
+        return inbound.eventLoop
+.makeCompletedFuture {
             try upstream.channel.pipeline.syncOperations.addHandlers([
                 HTTP1CaptureTapHandler(
                     direction: .response,
@@ -275,7 +277,8 @@ extension ProxyServer {
             ),
             eventLoop: inbound.eventLoop
         )
-        return inbound.eventLoop.makeCompletedFuture {
+        return inbound.eventLoop
+.makeCompletedFuture {
             try upstream.channel.pipeline.syncOperations.addHandler(pair.value.1)
             try inbound.pipeline.syncOperations.addHandler(pair.value.0)
         }

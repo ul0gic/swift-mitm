@@ -19,7 +19,7 @@ final class CountingSink: CaptureEventSink, @unchecked Sendable {
             switch event {
             case .requestHead: requestHeads += 1
             case .responseHead: responseHeads += 1
-            case .responseBodyChunk(_, _, let count): responseBytes += count
+            case let .responseBodyChunk(_, _, count): responseBytes += count
             case .responseEnd: responseEnds += 1
             case .streamError: errors += 1
             default: break
@@ -49,9 +49,9 @@ private final class StreamingRSSSampler: @unchecked Sendable {
             defer { self.finished.leave() }
             while !self.stopRequested.withLockedValue({ $0 }) {
                 switch MachMemory.residentBytesResult() {
-                case .success(let current):
+                case let .success(current):
                     self.peak.withLockedValue { $0 = max($0, current) }
-                case .failure(let error):
+                case let .failure(error):
                     self.samplingError.withLockedValue { $0 = error }
                     self.stopRequested.withLockedValue { $0 = true }
                 }

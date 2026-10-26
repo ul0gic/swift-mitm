@@ -126,11 +126,11 @@ public struct TrustedPeerPolicy: Sendable {
         let addressText = String(components[0])
         guard let address = try? SocketAddress(ipAddress: addressText, port: 0) else { return nil }
         switch address {
-        case .v4(let address):
+        case let .v4(address):
             guard let prefixLength = parsePrefixLength(components, maximum: 32) else { return nil }
             let bytes = withUnsafeBytes(of: address.address.sin_addr) { Array($0) }
             return .ipv4(bytes: bytes, prefixLength: prefixLength)
-        case .v6(let address):
+        case let .v6(address):
             guard let prefixLength = parsePrefixLength(components, maximum: 128) else { return nil }
             let bytes = withUnsafeBytes(of: address.address.sin6_addr) { Array($0) }
             return .ipv6(bytes: bytes, prefixLength: prefixLength)
@@ -259,7 +259,8 @@ public struct HTTP2PriorKnowledgeIngress: Sendable {
 
     public init?(authority: String) {
         guard let target = ConnectionTarget(
-            explicitConnectAuthority: authority, ingressProvenance: .priorKnowledgeHTTP2
+            explicitConnectAuthority: authority,
+            ingressProvenance: .priorKnowledgeHTTP2
         ) else { return nil }
         self.authority = target.logicalAuthority
     }

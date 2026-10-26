@@ -60,7 +60,8 @@ final class Release022RunnerTrust {
     func install() throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["GITHUB_ACTIONS"] == "true", environment["RUNNER_ENVIRONMENT"] == "github-hosted" else {
-            throw Release022ClientError.missingEnvironment("ephemeral GitHub-hosted runner required for browser CA trust")
+            throw Release022ClientError
+                .missingEnvironment("ephemeral GitHub-hosted runner required for browser CA trust")
         }
         let list = try security(["list-keychains", "-d", "user"])
         previousKeychains = list.split(separator: "\n").map {

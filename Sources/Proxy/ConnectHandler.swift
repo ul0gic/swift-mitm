@@ -22,7 +22,7 @@ final class ConnectHandler: ChannelInboundHandler, RemovableChannelHandler {
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         guard !terminal else { return }
         switch unwrapInboundIn(data) {
-        case .head(let head):
+        case let .head(head):
             guard head.method == .CONNECT else {
                 onRejected(.transportFailure, .unsupportedProtocol)
                 respond(context: context, status: .methodNotAllowed)

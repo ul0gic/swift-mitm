@@ -230,7 +230,7 @@ private final class Phase3LoadOriginStreamHandler: ChannelDuplexHandler {
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-        guard case .headers(let frame) = unwrapInboundIn(data), !started else { return }
+        guard case let .headers(frame) = unwrapInboundIn(data), !started else { return }
         state.recordRequestHeaders(endStream: frame.endStream)
         let headers = frame.headers
         guard
@@ -304,7 +304,7 @@ private final class Phase3LoadOriginStreamHandler: ChannelDuplexHandler {
                 } else {
                     handler.pump(context: context)
                 }
-            case .failure(let error):
+            case let .failure(error):
                 handler.sentCompletion.complete(.failure(error))
                 context.close(promise: nil)
             }

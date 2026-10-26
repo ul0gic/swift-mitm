@@ -216,35 +216,35 @@ final class OpaqueFlowBridgeHandlerTests: XCTestCase {
 
     private func dataBytes(_ events: [CaptureEvent]) -> [[UInt8]] {
         events.compactMap { event in
-            guard case .opaqueData(_, _, _, let bytes, _) = event else { return nil }
+            guard case let .opaqueData(_, _, _, bytes, _) = event else { return nil }
             return bytes
         }
     }
 
     private func dataCounts(_ events: [CaptureEvent]) -> [Int] {
         events.compactMap { event in
-            guard case .opaqueData(_, _, _, _, let byteCount) = event else { return nil }
+            guard case let .opaqueData(_, _, _, _, byteCount) = event else { return nil }
             return byteCount
         }
     }
 
     private func endDirections(_ events: [CaptureEvent]) -> [OpaqueFlowDirection] {
         events.compactMap { event in
-            guard case .opaqueDirectionEnd(_, _, let direction, _, _) = event else { return nil }
+            guard case let .opaqueDirectionEnd(_, _, direction, _, _) = event else { return nil }
             return direction
         }
     }
 
     private func closeReasons(_ events: [CaptureEvent]) -> [OpaqueFlowCloseReason] {
         events.compactMap { event in
-            guard case .opaqueClose(_, _, let reason) = event else { return nil }
+            guard case let .opaqueClose(_, _, reason) = event else { return nil }
             return reason
         }
     }
 
     private func errorReasons(_ events: [CaptureEvent]) -> [CapturedConnectionFailureReason] {
         events.compactMap { event in
-            guard case .opaqueError(_, _, let reason) = event else { return nil }
+            guard case let .opaqueError(_, _, reason) = event else { return nil }
             return reason
         }
     }

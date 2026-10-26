@@ -99,7 +99,7 @@ final class ProxyALPNHandlersTests: XCTestCase {
             }
         }
 
-        guard case .protocols(let protocols) = try handler.clientALPNOffer.wait() else {
+        guard case let .protocols(protocols) = try handler.clientALPNOffer.wait() else {
             return XCTFail("expected an ALPN offer")
         }
         XCTAssertEqual(protocols, [.http2, .http11])

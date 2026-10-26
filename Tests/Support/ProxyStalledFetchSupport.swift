@@ -200,7 +200,7 @@ private final class H1StalledClient: ChannelInboundHandler {
         switch unwrapInboundIn(data) {
         case .head:
             break
-        case .body(let buffer):
+        case let .body(buffer):
             state.add(buffer.readableBytes)
         case .end:
             finish()
@@ -264,12 +264,12 @@ private final class H2StalledClient: ChannelDuplexHandler {
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         switch unwrapInboundIn(data) {
-        case .data(let frame):
+        case let .data(frame):
             state.add(frame.data.readableBytes)
             if frame.endStream {
                 finish()
             }
-        case .headers(let frame):
+        case let .headers(frame):
             if frame.endStream {
                 finish()
             }

@@ -19,7 +19,9 @@ final class Release022PublicOpaqueDiagnosticTests: XCTestCase {
             let policy = try XCTUnwrap(ProxyInterceptionPolicy(passThroughAuthorities: [target]))
             let server = ProxyServer(
                 certificateAuthority: try CertificateAuthority.generate().authority,
-                sink: sink, group: group, egressPolicy: .init(allowInternal: true),
+                sink: sink,
+                group: group,
+                egressPolicy: .init(allowInternal: true),
                 interceptionPolicy: policy
             )
             proxy = server
@@ -32,7 +34,7 @@ final class Release022PublicOpaqueDiagnosticTests: XCTestCase {
             try received.waitForClose()
             try await server.stop()
             let failures = sink.events.compactMap { event -> CapturedConnectionFailure? in
-                if case .connectionFailure(let failure) = event {
+                if case let .connectionFailure(failure) = event {
                     failure
                 } else {
                     nil

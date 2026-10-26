@@ -88,7 +88,7 @@ struct HARJSONWriter {
     }
 
     func include(_ body: HARBody?, configuration: HARExportConfiguration) -> Bool {
-        guard let body, case .includeUnredacted(let mimeTypes) = configuration.bodyPolicy else { return false }
+        guard let body, case let .includeUnredacted(mimeTypes) = configuration.bodyPolicy else { return false }
         let mime = body.mimeType.split(separator: ";", maxSplits: 1).first.map(String.init)?.lowercased()
         return mime.map { mimeTypes.contains($0) } ?? false
     }

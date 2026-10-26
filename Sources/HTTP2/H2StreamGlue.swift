@@ -27,8 +27,11 @@ enum H2StreamGlue {
            !runtime.configurationSnapshot.rules.isEmpty {
             return inboundStream.eventLoop.makeCompletedFuture {
                 try inboundStream.pipeline.syncOperations.addHandler(HTTP2ControlStreamSelector(
-                    server: controlServer, upstreamMux: upstreamMux, authority: configuration.authority,
-                    target: configuration.target, extendedConnectEnabled: configuration.extendedConnectEnabled
+                    server: controlServer,
+                    upstreamMux: upstreamMux,
+                    authority: configuration.authority,
+                    target: configuration.target,
+                    extendedConnectEnabled: configuration.extendedConnectEnabled
                 ))
             }
         }
@@ -36,7 +39,8 @@ enum H2StreamGlue {
     }
 
     private static func glueRaw(
-        inboundStream: Channel, upstreamMux: NIOHTTP2Handler.StreamMultiplexer,
+        inboundStream: Channel,
+        upstreamMux: NIOHTTP2Handler.StreamMultiplexer,
         configuration: Configuration
     ) -> EventLoopFuture<Void> {
         let loop = inboundStream.eventLoop
@@ -54,10 +58,14 @@ enum H2StreamGlue {
         let pair = NIOLoopBound(GlueHandler.matchedPair(propagateInputClosed: false), eventLoop: loop)
         let capture: @Sendable (HTTP2CaptureTapHandler.Direction) -> HTTP2CaptureTapHandler = { direction in
             HTTP2CaptureTapHandler(
-                direction: direction, requestID: requestID, authority: configuration.authority,
-                target: configuration.target, sink: configuration.sink,
+                direction: direction,
+                requestID: requestID,
+                authority: configuration.authority,
+                target: configuration.target,
+                sink: configuration.sink,
                 captureBodyLimit: configuration.captureBodyLimit,
-                errorState: errorState, streamContext: streamContext
+                errorState: errorState,
+                streamContext: streamContext
             )
         }
 

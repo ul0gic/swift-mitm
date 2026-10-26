@@ -149,7 +149,7 @@ final class Phase4CaptureSink: CaptureEventSink, TransparentIngressStageObserver
 
     private func recordHTTP(_ event: CaptureEvent) {
         switch event {
-        case .requestHead(let head):
+        case let .requestHead(head):
             storage.requestHeads.append(head)
             storage.eventKinds.append(.requestHead)
         case let .requestBodyChunk(requestID, bytes, byteCount):
@@ -158,7 +158,7 @@ final class Phase4CaptureSink: CaptureEventSink, TransparentIngressStageObserver
         case let .requestEnd(requestID, truncated):
             storage.requestEnds.append(.init(requestID: requestID, truncated: truncated))
             storage.eventKinds.append(.requestEnd)
-        case .responseHead(let head):
+        case let .responseHead(head):
             storage.responseHeads.append(head)
             storage.eventKinds.append(.responseHead)
         case let .responseBodyChunk(requestID, bytes, byteCount):
@@ -204,7 +204,7 @@ final class Phase4CaptureSink: CaptureEventSink, TransparentIngressStageObserver
                 permessageDeflate: permessageDeflate
             ))
             storage.eventKinds.append(.webSocketOpen)
-        case .webSocketFrame(let frame):
+        case let .webSocketFrame(frame):
             storage.webSocketFrames.append(frame)
             storage.eventKinds.append(.webSocketFrame)
         case let .webSocketClose(connectionID, _, code, reason):
@@ -217,7 +217,7 @@ final class Phase4CaptureSink: CaptureEventSink, TransparentIngressStageObserver
 
     private func recordOpaque(_ event: CaptureEvent) {
         switch event {
-        case .opaqueOpen(let flow):
+        case let .opaqueOpen(flow):
             storage.opaqueFlows.append(flow)
             storage.eventKinds.append(.opaqueOpen)
         case let .opaqueData(flowID, _, direction, bytes, byteCount):
@@ -242,7 +242,7 @@ final class Phase4CaptureSink: CaptureEventSink, TransparentIngressStageObserver
         case let .opaqueError(flowID, _, reason):
             storage.opaqueErrors.append(.init(flowID: flowID, reason: reason))
             storage.eventKinds.append(.opaqueError)
-        case .connectionFailure(let failure):
+        case let .connectionFailure(failure):
             storage.connectionFailures.append(failure)
             storage.eventKinds.append(.connectionFailure)
         default:

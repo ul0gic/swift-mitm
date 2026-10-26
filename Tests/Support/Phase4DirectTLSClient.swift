@@ -118,7 +118,7 @@ private final class Phase4TLSHandshakeObserver: ChannelInboundHandler {
     }
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
-        if case TLSUserEvent.handshakeCompleted(let negotiatedProtocol) = event {
+        if case let TLSUserEvent.handshakeCompleted(negotiatedProtocol) = event {
             completion.complete(.success(negotiatedProtocol))
         }
         context.fireUserInboundEventTriggered(event)

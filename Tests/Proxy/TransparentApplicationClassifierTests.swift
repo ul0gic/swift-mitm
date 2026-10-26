@@ -20,7 +20,7 @@ final class TransparentApplicationClassifierTests: XCTestCase {
         assertFull(try channel.writeInbound(ByteBuffer(bytes: second)))
         channel.embeddedEventLoop.run()
 
-        guard case .interceptedTLS(let metadata) = storage.classification else {
+        guard case let .interceptedTLS(metadata) = storage.classification else {
             return XCTFail("expected intercepted TLS")
         }
         XCTAssertEqual(metadata.serverName, "api.example.com")
@@ -39,7 +39,7 @@ final class TransparentApplicationClassifierTests: XCTestCase {
         assertFull(try channel.writeInbound(ByteBuffer(bytes: makeTLSClientHello(protocols: nil))))
         channel.embeddedEventLoop.run()
 
-        guard case .interceptedTLS(let metadata) = storage.classification else {
+        guard case let .interceptedTLS(metadata) = storage.classification else {
             return XCTFail("expected intercepted TLS")
         }
         XCTAssertFalse(metadata.hasALPNExtension)
@@ -116,7 +116,7 @@ final class TransparentApplicationClassifierTests: XCTestCase {
         assertFull(try channel.writeInbound(ByteBuffer(bytes: makeTLSClientHello(protocols: protocols))))
         channel.embeddedEventLoop.run()
 
-        guard case .interceptedTLS(let metadata) = storage.classification else {
+        guard case let .interceptedTLS(metadata) = storage.classification else {
             return XCTFail("expected intercepted TLS")
         }
         XCTAssertEqual(metadata.offeredALPNProtocols.map(\.bytes), protocols)

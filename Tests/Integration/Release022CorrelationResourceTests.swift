@@ -34,12 +34,16 @@ final class Release022CorrelationResourceTests: XCTestCase {
         let sink = Release022Events()
         let ingress = try XCTUnwrap(TrustedProxyV2Ingress(trustedPeers: .loopback))
         let policy = try XCTUnwrap(HTTP1CorrelationPolicy(
-            maximumPendingExchanges: 1024, maximumPendingMethodBytes: 1_048_576
+            maximumPendingExchanges: 1024,
+            maximumPendingMethodBytes: 1_048_576
         ))
         let proxy = ProxyServer(
             certificateAuthority: try CertificateAuthority.generate().authority,
-            sink: sink, group: group, egressPolicy: .init(allowInternal: true),
-            ingress: .trustedProxyV2(ingress), correlationPolicy: policy
+            sink: sink,
+            group: group,
+            egressPolicy: .init(allowInternal: true),
+            ingress: .trustedProxyV2(ingress),
+            correlationPolicy: policy
         )
         var client: Channel?
         let before = try MachMemory.residentBytes()
@@ -79,12 +83,16 @@ final class Release022CorrelationResourceTests: XCTestCase {
     private let response = Array("HTTP/1.1 204 No Content\r\n\r\n".utf8)
 
     private func warm(
-        channel: Channel, origin: Release022WireOrigin,
-        received: Release022WireObservation, sink: Release022Events
+        channel: Channel,
+        origin: Release022WireOrigin,
+        received: Release022WireObservation,
+        sink: Release022Events
     ) throws {
         let header = Phase4ProxyV2Header.ipv4(
-            source: [192, 0, 2, 1], destination: [127, 0, 0, 1],
-            sourcePort: 50_001, destinationPort: origin.port
+            source: [192, 0, 2, 1],
+            destination: [127, 0, 0, 1],
+            sourcePort: 50_001,
+            destinationPort: origin.port
         )
         let request = Array("GET /warm HTTP/1.1\r\nHost: localhost\r\n\r\n".utf8)
         try phase4BoundedWait(channel.writeAndFlush(ByteBuffer(bytes: header.bytes + request)))
@@ -98,8 +106,11 @@ final class Release022CorrelationResourceTests: XCTestCase {
     }
 
     private func fill(
-        _ scenario: Scenario, channel: Channel, origin: Release022WireOrigin,
-        received: Release022WireObservation, sink: Release022Events
+        _ scenario: Scenario,
+        channel: Channel,
+        origin: Release022WireOrigin,
+        received: Release022WireObservation,
+        sink: Release022Events
     ) throws {
         let method = String(repeating: "A", count: scenario.methodLength)
         let request = Array("\(method) /ceiling HTTP/1.1\r\nHost: localhost\r\n\r\n".utf8)
@@ -130,7 +141,7 @@ final class Release022CorrelationResourceTests: XCTestCase {
         XCTAssertEqual(Set(errors(events)), Set(heads(events).map(\.id)))
         XCTAssertTrue(ends(events).isEmpty)
         let failures = events.compactMap { event -> CapturedConnectionFailure? in
-            if case .connectionFailure(let failure) = event {
+            if case let .connectionFailure(failure) = event {
                 failure
             } else {
                 nil
@@ -143,7 +154,7 @@ final class Release022CorrelationResourceTests: XCTestCase {
 
     private func heads(_ events: [CaptureEvent]) -> [CapturedRequestHead] {
         events.compactMap {
-            if case .requestHead(let head) = $0 {
+            if case let .requestHead(head) = $0 {
                 head
             } else {
                 nil
@@ -153,7 +164,7 @@ final class Release022CorrelationResourceTests: XCTestCase {
 
     private func ends(_ events: [CaptureEvent]) -> [UUID] {
         events.compactMap {
-            if case .responseEnd(let id, _) = $0 {
+            if case let .responseEnd(id, _) = $0 {
                 id
             } else {
                 nil
@@ -163,7 +174,7 @@ final class Release022CorrelationResourceTests: XCTestCase {
 
     private func errors(_ events: [CaptureEvent]) -> [UUID] {
         events.compactMap {
-            if case .streamError(let id, _) = $0 {
+            if case let .streamError(id, _) = $0 {
                 id
             } else {
                 nil

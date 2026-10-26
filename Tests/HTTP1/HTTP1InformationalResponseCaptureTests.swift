@@ -52,7 +52,7 @@ final class HTTP1InformationalResponseCaptureTests: XCTestCase {
 
     private func responseHeads(_ events: [CaptureEvent]) -> [CapturedResponseHead] {
         events.compactMap {
-            if case .responseHead(let head) = $0 {
+            if case let .responseHead(head) = $0 {
                 return head
             }
             return nil
@@ -61,7 +61,7 @@ final class HTTP1InformationalResponseCaptureTests: XCTestCase {
 
     private func responseEndIDs(_ events: [CaptureEvent]) -> [UUID] {
         events.compactMap {
-            if case .responseEnd(let requestID, _) = $0 {
+            if case let .responseEnd(requestID, _) = $0 {
                 return requestID
             }
             return nil

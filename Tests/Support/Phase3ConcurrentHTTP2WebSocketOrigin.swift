@@ -178,9 +178,9 @@ private final class Phase3ConcurrentOriginStreamHandler: ChannelDuplexHandler {
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         switch unwrapInboundIn(data) {
-        case .headers(let frame):
+        case let .headers(frame):
             receive(headers: frame.headers, context: context)
-        case .data(let frame):
+        case let .data(frame):
             receive(data: frame.data, context: context)
         default:
             break
@@ -220,7 +220,7 @@ private final class Phase3ConcurrentOriginStreamHandler: ChannelDuplexHandler {
     }
 
     private func receive(data: IOData, context: ChannelHandlerContext) {
-        guard let path, case .byteBuffer(let buffer) = data else {
+        guard let path, case let .byteBuffer(buffer) = data else {
             context.close(promise: nil)
             return
         }

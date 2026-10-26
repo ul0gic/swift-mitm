@@ -13,7 +13,8 @@ extension ExplicitHTTPProxyHandler {
         correlator.end(id: exchange.id, request: false)
         context.write(wrapOutboundOut(.head(head)), promise: nil)
         let channel = context.channel
-        context.writeAndFlush(wrapOutboundOut(.end(nil))).assumeIsolated()
+        context.writeAndFlush(wrapOutboundOut(.end(nil)))
+.assumeIsolated()
             .flatMap {
                 self.stopped = true
                 return context.pipeline.syncOperations.removeHandler(context: context)
@@ -49,10 +50,12 @@ extension ExplicitHTTPProxyHandler {
         upstream.closeFuture.whenComplete { _ in channel.close(promise: nil) }
         do {
             try channel.pipeline.syncOperations.addHandlers([
-                HTTPForwardWebSocketTap(session: session, direction: .clientToServer), pair.0
+                HTTPForwardWebSocketTap(session: session, direction: .clientToServer),
+                pair.0
             ])
             try upstream.pipeline.syncOperations.addHandlers([
-                HTTPForwardWebSocketTap(session: session, direction: .serverToClient), pair.1
+                HTTPForwardWebSocketTap(session: session, direction: .serverToClient),
+                pair.1
             ])
         } catch {
             session.close()
@@ -60,7 +63,10 @@ extension ExplicitHTTPProxyHandler {
             return
         }
         stopped = true
-        channel.pipeline.syncOperations.removeHandler(context: context).assumeIsolated()
+        channel.pipeline
+.syncOperations
+.removeHandler(context: context)
+.assumeIsolated()
             .flatMap { Self.remove(HTTPForwardResponseHandler.self, from: upstream) }
             .flatMap { Self.remove(BytePreservingHTTPResponseEncoder.self, from: channel) }
             .flatMap { Self.remove(BytePreservingHTTPRequestEncoder.self, from: upstream) }

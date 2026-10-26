@@ -1,6 +1,9 @@
 public enum GRPCMessageDecompression {
     public static func decode(
-        _ bytes: [UInt8], encoding: String, maximumDecodedBytes: Int, budget: InspectionMemoryBudget
+        _ bytes: [UInt8],
+        encoding: String,
+        maximumDecodedBytes: Int,
+        budget: InspectionMemoryBudget
     ) throws -> [UInt8] {
         let coding: ContentCoding
         switch encoding.lowercased() {
@@ -8,7 +11,8 @@ public enum GRPCMessageDecompression {
         case "deflate": coding = .deflate
         default: throw GRPCDiagnostic.unsupportedCompression
         }
-        guard (0...(16 * 1024 * 1024)).contains(maximumDecodedBytes), budget.reserve(maximumDecodedBytes * 2) else { throw GRPCDiagnostic.limitExceeded }
+        guard (0...(16 * 1024 * 1024)).contains(maximumDecodedBytes),
+              budget.reserve(maximumDecodedBytes * 2) else { throw GRPCDiagnostic.limitExceeded }
         defer { budget.release(maximumDecodedBytes * 2) }
         let decoder = try ContentDecoder(coding: coding, budget: budget)
         var output: [UInt8] = []
@@ -27,7 +31,9 @@ public enum GRPCMessageDecompression {
     }
 
     private static func feedInput(
-        _ bytes: [UInt8], decoder: ContentDecoder, emit: (UnsafeRawBufferPointer) throws -> Void
+        _ bytes: [UInt8],
+        decoder: ContentDecoder,
+        emit: (UnsafeRawBufferPointer) throws -> Void
     ) throws {
         try bytes.withUnsafeBytes { input in
             var consumed = 0

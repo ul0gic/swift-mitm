@@ -93,7 +93,7 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
         guard !stopped else { return }
         let part = unwrapInboundIn(data)
         switch part {
-        case .head(let head):
+        case let .head(head):
             guard let isKeepAlive = typedHTTP2 ? true : pendingRequestKeepAlive else {
                 reject(status: .badRequest, message: "Missing HTTP/1 request parser metadata")
                 return
@@ -110,7 +110,7 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
                 return
             }
             forward(part, for: exchange)
-        case .end(let trailers):
+        case let .end(trailers):
             receiveRequestEnd(trailers)
         }
     }
@@ -246,7 +246,7 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
     func startNext() {
         guard !stopped, active == nil, let exchange = queue[first], exchange.controlReady, let context else { return }
         active = exchange
-        if let decision = exchange.syntheticDecision, case .respond(let status, _, let body) = decision.action {
+        if let decision = exchange.syntheticDecision, case let .respond(status, _, body) = decision.action {
             guard let headers = decision.syntheticResponseHeaders else {
                 controlFailed(exchange, error: HTTPControlError.invalidHeaders)
                 return
@@ -265,11 +265,11 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
         }
         connect(target, context.eventLoop).hop(to: context.eventLoop).assumeIsolated().whenComplete { result in
             switch result {
-            case .failure(let error):
+            case let .failure(error):
                 guard !self.stopped else { return }
                 self.diagnoseConnect(error)
                 self.reject(status: .badGateway, message: "HTTP/1 origin connection failed")
-            case .success(let connection):
+            case let .success(connection):
                 guard !self.stopped, self.active === exchange else {
                     connection.channel.close(promise: nil)
                     return

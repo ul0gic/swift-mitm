@@ -19,7 +19,7 @@ final class ConnectHandlerTests: XCTestCase {
         try channel.writeInbound(HTTPServerRequestPart.head(head))
         try channel.writeInbound(HTTPServerRequestPart.end(nil))
 
-        guard case .head(let response)? = try channel.readOutbound(as: HTTPServerResponsePart.self) else {
+        guard case let .head(response)? = try channel.readOutbound(as: HTTPServerResponsePart.self) else {
             return XCTFail("expected a response head")
         }
         XCTAssertEqual(response.status.code, 200)
@@ -40,14 +40,14 @@ final class ConnectHandlerTests: XCTestCase {
         request.writeString("CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n")
         try channel.writeInbound(request)
 
-        guard case .byteBuffer(let response)? = try channel.readOutbound(as: IOData.self) else {
+        guard case let .byteBuffer(response)? = try channel.readOutbound(as: IOData.self) else {
             return XCTFail("expected an encoded CONNECT response")
         }
         XCTAssertEqual(
             response.getString(at: response.readerIndex, length: response.readableBytes),
             "HTTP/1.1 200 Connection Established\r\n\r\n"
         )
-        guard case .byteBuffer(let end)? = try channel.readOutbound(as: IOData.self) else {
+        guard case let .byteBuffer(end)? = try channel.readOutbound(as: IOData.self) else {
             return XCTFail("expected an empty response end")
         }
         XCTAssertEqual(end.readableBytes, 0)
@@ -62,7 +62,7 @@ final class ConnectHandlerTests: XCTestCase {
         let head = HTTPRequestHead(version: .http1_1, method: .GET, uri: "/")
         try channel.writeInbound(HTTPServerRequestPart.head(head))
 
-        guard case .head(let response)? = try channel.readOutbound(as: HTTPServerResponsePart.self) else {
+        guard case let .head(response)? = try channel.readOutbound(as: HTTPServerResponsePart.self) else {
             return XCTFail("expected a response head")
         }
         XCTAssertEqual(response.status, .methodNotAllowed)

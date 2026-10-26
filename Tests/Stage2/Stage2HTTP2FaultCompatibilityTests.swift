@@ -22,17 +22,34 @@ final class Stage2HTTP2FaultCompatibilityTests: XCTestCase {
         let authority = try CertificateAuthority.generate().authority
         let proxyRoot = peer.directory.appendingPathComponent("proxy-ca.pem")
         try Data(authority.caCertificatePEM.utf8).write(to: proxyRoot)
-        let fault = try HTTPFault(direction: .response, delayMilliseconds: 1500, bytesPerSecond: 65_536, burstBytes: 1024)
+        let fault = try HTTPFault(
+            direction: .response,
+            delayMilliseconds: 1500,
+            bytesPerSecond: 65_536,
+            burstBytes: 1024
+        )
         let runtime = HTTPControlRuntime(configuration: try HTTPControlConfiguration(rules: [
-            HTTPRule(id: "slow", match: HTTPRuleMatch(phase: .response, path: "/stage2.Fault/Slow"), action: .fault(fault)),
-            HTTPRule(id: "cancel", match: HTTPRuleMatch(phase: .response, path: "/stage2.Fault/Cancel"), action: .fault(fault))
+            HTTPRule(
+                id: "slow",
+                match: HTTPRuleMatch(phase: .response, path: "/stage2.Fault/Slow"),
+                action: .fault(fault)
+            ),
+            HTTPRule(
+                id: "cancel",
+                match: HTTPRuleMatch(phase: .response, path: "/stage2.Fault/Cancel"),
+                action: .fault(fault)
+            )
         ], limits: HTTPControlLimits()))
         let admission = ResourceAdmissionController(configuration: try ResourceAdmissionConfiguration())
         let capture = Release022Events()
         let proxy = ProxyServer(
-            certificateAuthority: authority, sink: capture, group: group,
+            certificateAuthority: authority,
+            sink: capture,
+            group: group,
             upstreamPolicy: .init(additionalTrustRootsPEM: [try String(contentsOfFile: ready.root, encoding: .utf8)]),
-            egressPolicy: .init(allowInternal: true), controlRuntime: runtime, admission: admission
+            egressPolicy: .init(allowInternal: true),
+            controlRuntime: runtime,
+            admission: admission
         )
         do {
             let port = try await proxy.start(port: 0)
@@ -44,7 +61,11 @@ final class Stage2HTTP2FaultCompatibilityTests: XCTestCase {
             environment["NO_PROXY"] = ""
             let output = try release022RunProcess(executable: peer.python, arguments: [
                 Release022ExternalPeer.clientsDirectory.appendingPathComponent("Stage2/h2_fault_peer.py").path,
-                "client", "--target", "localhost:\(ready.port)", "--root", proxyRoot.path
+                "client",
+                "--target",
+                "localhost:\(ready.port)",
+                "--root",
+                proxyRoot.path
             ], environment: environment)
             let report = try JSONDecoder().decode(Report.self, from: Data(output.utf8))
             XCTAssertEqual(report.responseBytes, 262_146)
@@ -56,7 +77,7 @@ final class Stage2HTTP2FaultCompatibilityTests: XCTestCase {
             let slow = try XCTUnwrap(release022Requests(capture.events).first { $0.path == "/stage2.Fault/Slow" })
             XCTAssertEqual(slow.version, .http2)
             XCTAssertFalse(capture.events.contains {
-                if case .streamError(let id, _) = $0 {
+                if case let .streamError(id, _) = $0 {
                     id == slow.id
                 } else {
                     false

@@ -42,7 +42,7 @@ private final class RecordingSink: CaptureEventSink, @unchecked Sendable {
     var truncated: Bool {
         events.contains {
             switch $0 {
-            case .requestEnd(_, let truncated), .responseEnd(_, let truncated): return truncated
+            case let .requestEnd(_, truncated), let .responseEnd(_, truncated): return truncated
             default: return false
             }
         }
@@ -61,7 +61,7 @@ private final class LockedBodySink: CaptureEventSink, @unchecked Sendable {
             case let .responseBodyChunk(_, bytes, count):
                 body.append(contentsOf: bytes)
                 byteCount += count
-            case .responseEnd(_, let isTruncated):
+            case let .responseEnd(_, isTruncated):
                 truncated = truncated || isTruncated
             default:
                 break
@@ -295,20 +295,24 @@ final class CaptureBodyTests: XCTestCase {
     }
 
     private func firstRequestID(_ sink: RecordingSink) -> UUID? {
-        sink.events.compactMap { event -> UUID? in
+        sink.events
+.compactMap { event -> UUID? in
             if case let .requestHead(head) = event {
                 return head.id
             }
             return nil
-        }.first
+        }
+.first
     }
 
     private func firstResponseID(_ sink: RecordingSink) -> UUID? {
-        sink.events.compactMap { event -> UUID? in
+        sink.events
+.compactMap { event -> UUID? in
             if case let .responseHead(head) = event {
                 return head.requestID
             }
             return nil
-        }.first
+        }
+.first
     }
 }

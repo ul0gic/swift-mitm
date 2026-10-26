@@ -49,11 +49,21 @@ final class HTTP2WebSocketStreamIntegrationTests: XCTestCase {
         try channels.response.writeInbound(data([0x89, 0x00, 0x82, 0x02, 0xCA, 0xFE], endStream: true))
 
         XCTAssertEqual(eventKinds(sink.events), [
-            "request", "response:103", "response:200", "open", "frame:text", "requestEnd",
-            "frame:ping", "frame:binary", "close", "responseEnd"
+            "request",
+            "response:103",
+            "response:200",
+            "open",
+            "frame:text",
+            "requestEnd",
+            "frame:ping",
+            "frame:binary",
+            "close",
+            "responseEnd"
         ])
         XCTAssertEqual(webSocketFrames(sink.events).map(\.direction), [
-            .clientToServer, .serverToClient, .serverToClient
+            .clientToServer,
+            .serverToClient,
+            .serverToClient
         ])
         XCTAssertEqual(webSocketFrames(sink.events).map(\.bytes), [Array("test".utf8), [], [0xCA, 0xFE]])
         XCTAssertTrue(responseOpenUsesPermessageDeflate(sink.events))
@@ -71,7 +81,12 @@ final class HTTP2WebSocketStreamIntegrationTests: XCTestCase {
         try channels.response.writeInbound(data(Array("denied".utf8), endStream: true))
 
         XCTAssertEqual(eventKinds(sink.events), [
-            "request", "response:403", "requestBody", "requestEnd", "responseBody", "responseEnd"
+            "request",
+            "response:403",
+            "requestBody",
+            "requestEnd",
+            "responseBody",
+            "responseEnd"
         ])
         XCTAssertFalse(hasWebSocketEvent(sink.events))
     }
@@ -120,7 +135,7 @@ final class HTTP2WebSocketStreamIntegrationTests: XCTestCase {
         assertFull(try channels.request.writeInbound(payload))
         let forwarded = try XCTUnwrap(channels.request.readInbound(as: HTTP2Frame.FramePayload.self))
 
-        guard case .data(let frame) = forwarded, case .byteBuffer(let buffer) = frame.data else {
+        guard case let .data(frame) = forwarded, case let .byteBuffer(buffer) = frame.data else {
             return XCTFail("Expected forwarded DATA")
         }
         XCTAssertEqual(Array(buffer.readableBytesView), Array("ordinary".utf8))

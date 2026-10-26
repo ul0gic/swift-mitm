@@ -81,12 +81,12 @@ final class LeafIdentityCache: Sendable {
         }
 
         switch lookup {
-        case .cached(let identity):
+        case let .cached(identity):
             promise.succeed(identity)
             return promise.futureResult
-        case .pending(let promise):
+        case let .pending(promise):
             return promise.futureResult
-        case .start(let promise):
+        case let .start(promise):
             threadPool
                 .runIfActive(eventLoop: eventLoop) { [mint] in try mint(host) }
                 .whenComplete { [self] result in complete(host: host, result: result) }
@@ -106,7 +106,7 @@ final class LeafIdentityCache: Sendable {
     private func complete(host: String, result: Result<MintedIdentity, Error>) {
         let waiters = state.withLockedValue { state -> [EventLoopPromise<MintedIdentity>] in
             let waiters = state.waiters.removeValue(forKey: host) ?? []
-            if case .success(let identity) = result {
+            if case let .success(identity) = result {
                 state.identities[host] = identity
                 Self.recordAccess(to: host, state: &state)
                 while state.identities.count > maximumEntries, let evicted = state.recency.first {

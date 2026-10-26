@@ -5,7 +5,9 @@ extension ExplicitHTTPProxyHandler {
         guard let fixedDestination else { return HTTPForwardTarget(head: head) }
         if head.uri.hasPrefix("/") || head.uri == "*" {
             return HTTPForwardTarget(
-                scheme: fixedDestination.scheme, authority: fixedDestination.authority, requestTarget: head.uri
+                scheme: fixedDestination.scheme,
+                authority: fixedDestination.authority,
+                requestTarget: head.uri
             )
         }
         guard let absolute = HTTPForwardTarget(head: head, scheme: fixedDestination.scheme),
@@ -44,13 +46,21 @@ extension ExplicitHTTPProxyHandler {
     ) -> HTTPHeaders {
         let nominated = HTTP1MessageParser.tokens(fields(original), named: "connection")
         let removed: Set = [
-            "connection", "proxy-connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-            "te", "trailer", "transfer-encoding", "upgrade"
+            "connection",
+            "proxy-connection",
+            "keep-alive",
+            "proxy-authenticate",
+            "proxy-authorization",
+            "te",
+            "trailer",
+            "transfer-encoding",
+            "upgrade"
         ]
         var headers = HTTPHeaders(original.filter {
             !removed.contains($0.name.lowercased()) && !nominated.contains($0.name.lowercased())
                 && !excluded.contains($0.name.lowercased())
-        }.map { ($0.name, $0.value) })
+        }
+.map { ($0.name, $0.value) })
         if appendVia {
             headers.add(name: "via", value: "1.1 SwiftMITM")
         }

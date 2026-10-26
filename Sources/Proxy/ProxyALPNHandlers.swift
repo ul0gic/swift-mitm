@@ -79,7 +79,7 @@ final class UpstreamALPNHandler: ChannelInboundHandler, RemovableChannelHandler 
     }
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
-        if case TLSUserEvent.handshakeCompleted(let protocolName) = event {
+        if case let TLSUserEvent.handshakeCompleted(protocolName) = event {
             let result: Result<ALPNProtocol, Error>
             if let protocolName {
                 result = ALPNProtocol(rawValue: protocolName)
@@ -89,13 +89,14 @@ final class UpstreamALPNHandler: ChannelInboundHandler, RemovableChannelHandler 
                 result = .success(.http11)
             }
             switch result {
-            case .success(let negotiated):
+            case let .success(negotiated):
                 guard !completed else { break }
                 completed = true
-                context.channel.setOption(ChannelOptions.autoRead, value: false)
+                context.channel
+.setOption(ChannelOptions.autoRead, value: false)
                     .map { negotiated }
                     .cascade(to: negotiatedProtocol)
-            case .failure(let error):
+            case let .failure(error):
                 fail(error, context: context)
             }
         }
@@ -192,7 +193,8 @@ struct IncrementalClientHelloInspector {
 
     private mutating func inspectAvailableRecords() throws -> ClientHelloMetadata? {
         while true {
-            guard try beginRecordIfAvailable(), let recordEndIndex = pendingRecordEndIndex, recordEndIndex <= bytes.count else {
+            guard try beginRecordIfAvailable(), let recordEndIndex = pendingRecordEndIndex,
+                  recordEndIndex <= bytes.count else {
                 return nil
             }
             inspectHandshakeHeader(recordEndIndex: recordEndIndex)
@@ -349,7 +351,8 @@ final class PendingTLSReads: ChannelInboundHandler, RemovableChannelHandler {
         do {
             guard let metadata = try inspector.append(buffer.readableBytesView) else { return }
             completed = true
-            context.channel.setOption(ChannelOptions.autoRead, value: false)
+            context.channel
+.setOption(ChannelOptions.autoRead, value: false)
                 .map { metadata }
                 .cascade(to: clientHelloPromise)
         } catch {

@@ -148,9 +148,9 @@ private final class Phase3HTTP2WebSocketOriginStreamHandler: ChannelDuplexHandle
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         switch unwrapInboundIn(data) {
-        case .headers(let frame):
+        case let .headers(frame):
             receive(headers: frame.headers, context: context)
-        case .data(let frame):
+        case let .data(frame):
             receive(data: frame.data, context: context)
         default:
             break
@@ -180,7 +180,7 @@ private final class Phase3HTTP2WebSocketOriginStreamHandler: ChannelDuplexHandle
         switch scenario {
         case .accepted:
             sendStatus(200, endStream: false, context: context)
-        case .finalStatus(let status):
+        case let .finalStatus(status):
             sendStatus(status, endStream: true, context: context)
             complete()
         case .prematureSuccessEnd:
@@ -192,7 +192,7 @@ private final class Phase3HTTP2WebSocketOriginStreamHandler: ChannelDuplexHandle
     }
 
     private func receive(data: IOData, context: ChannelHandlerContext) {
-        guard case .byteBuffer(let buffer) = data else {
+        guard case let .byteBuffer(buffer) = data else {
             completion.complete(.failure(Phase2FixtureError.unexpectedBytes))
             context.close(promise: nil)
             return

@@ -6,15 +6,21 @@ extension ExplicitHTTPProxyHandler {
         guard reusePool != nil, !typedHTTP2, fixedDestination == nil, exchange.controlSnapshot == nil,
               let target = exchange.target, target.scheme == "http" else { return nil }
         let credentials: Set = ["authorization", "proxy-authorization", "cookie"]
-        return HTTP1ReuseKey(downstreamID: connectionID, authority: target.authority, scheme: target.scheme,
-                             credentialScope: Self.fields(exchange.effectiveHead.headers).filter { credentials.contains($0.name.lowercased()) })
+        return HTTP1ReuseKey(
+            downstreamID: connectionID,
+            authority: target.authority,
+            scheme: target.scheme,
+            credentialScope: Self.fields(exchange.effectiveHead.headers)
+                             .filter { credentials.contains($0.name.lowercased()) }
+        )
     }
 
     func takeReusableOrigin(_ exchange: Exchange, target: HTTPForwardTarget) -> Bool {
         guard let key = reuseKey(exchange), let pooled = reusePool?.take(key: key) else { return false }
         let channel = pooled.channel
         guard authorizeReuse(target, channel), let remote = channel.remoteAddress,
-              let unresolved = ConnectionTarget(host: target.host, port: target.port, ingressProvenance: .explicitHTTP) else {
+              let unresolved = ConnectionTarget(host: target.host, port: target.port, ingressProvenance: .explicitHTTP)
+              else {
             channel.close(promise: nil)
             return false
         }
@@ -28,8 +34,10 @@ extension ExplicitHTTPProxyHandler {
                     channel.close(promise: nil)
                     return
                 }
-                handler.configureOrigin(HTTPForwardConnection(channel: channel,
-                                                              target: ResolvedTarget(unresolved: unresolved, connectedAddress: remote).capturedTarget), exchange: exchange)
+                handler.configureOrigin(HTTPForwardConnection(
+                    channel: channel,
+                    target: ResolvedTarget(unresolved: unresolved, connectedAddress: remote).capturedTarget
+                ), exchange: exchange)
             case .failure:
                 channel.close(promise: nil)
                 handler.reject(status: .badGateway, message: "HTTP reuse checkout failed")
@@ -60,7 +68,10 @@ extension ExplicitHTTPProxyHandler {
     }
 
     func parkReusableOrigin(
-        _ channel: Channel, exchange: Exchange, key: HTTP1ReuseKey, pool: HTTP1ReusePool
+        _ channel: Channel,
+        exchange: Exchange,
+        key: HTTP1ReuseKey,
+        pool: HTTP1ReusePool
     ) {
         do {
             try channel.pipeline.syncOperations.addHandler(HTTP1IdleGuard(), name: "http1.reuse.raw", position: .first)
@@ -72,7 +83,8 @@ extension ExplicitHTTPProxyHandler {
         Self.remove(HTTPForwardResponseHandler.self, from: channel)
             .flatMap { Self.remove(ByteToMessageHandler<BytePreservingHTTPResponseDecoder>.self, from: channel) }
             .flatMap { Self.remove(BytePreservingHTTPRequestEncoder.self, from: channel) }
-            .assumeIsolated().whenComplete { result in
+            .assumeIsolated()
+.whenComplete { result in
                 guard !self.stopped, self.active === exchange else {
                     channel.close(promise: nil)
                     return
@@ -93,8 +105,13 @@ extension ExplicitHTTPProxyHandler {
     static func removeIdleGuards(from channel: Channel) -> EventLoopFuture<Void> {
         do {
             let raw = try channel.pipeline.syncOperations.context(name: "http1.reuse.raw")
-            let typed = NIOLoopBound(try channel.pipeline.syncOperations.context(name: "http1.reuse.typed"), eventLoop: channel.eventLoop)
-            return channel.pipeline.syncOperations.removeHandler(context: raw)
+            let typed = NIOLoopBound(
+                try channel.pipeline.syncOperations.context(name: "http1.reuse.typed"),
+                eventLoop: channel.eventLoop
+            )
+            return channel.pipeline
+.syncOperations
+.removeHandler(context: raw)
                 .flatMap { channel.pipeline.syncOperations.removeHandler(context: typed.value) }
         } catch { return channel.eventLoop.makeFailedFuture(error) }
     }

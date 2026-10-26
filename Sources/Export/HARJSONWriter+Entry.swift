@@ -17,7 +17,8 @@ extension HARJSONWriter {
     }
 
     private mutating func request(
-        _ entry: HARExchange, configuration: HARExportConfiguration
+        _ entry: HARExchange,
+        configuration: HARExportConfiguration
     ) async throws {
         let sourceURL = entry.request.scheme + "://" + entry.request.authority + entry.request.path
         guard let url = redactedURL(sourceURL, configuration: configuration), url.host != nil,
@@ -55,7 +56,8 @@ extension HARJSONWriter {
     }
 
     private mutating func postData(
-        _ body: HARBody?, configuration: HARExportConfiguration
+        _ body: HARBody?,
+        configuration: HARExportConfiguration
     ) async throws {
         guard include(body, configuration: configuration), let body else { return }
         if try validText(body) {
@@ -71,7 +73,8 @@ extension HARJSONWriter {
     }
 
     private mutating func response(
-        _ entry: HARExchange, configuration: HARExportConfiguration
+        _ entry: HARExchange,
+        configuration: HARExportConfiguration
     ) async throws {
         guard let contentBytes = entry.responseContentBytes else { throw HARExportError.missingContentSize }
         try await raw("{\"status\":" + String(entry.response.status))
@@ -88,7 +91,8 @@ extension HARJSONWriter {
     }
 
     private mutating func content(
-        _ body: HARBody?, configuration: HARExportConfiguration
+        _ body: HARBody?,
+        configuration: HARExportConfiguration
     ) async throws {
         guard include(body, configuration: configuration), let body else { return }
         try await raw(",\"text\":")
@@ -105,8 +109,10 @@ extension HARJSONWriter {
         try await raw(",\"wait\":" + String(timings.wait))
         try await raw(",\"receive\":" + String(timings.receive))
         let optional = [
-            ("blocked", timings.blocked), ("dns", timings.dns),
-            ("connect", timings.connect), ("ssl", timings.ssl)
+            ("blocked", timings.blocked),
+            ("dns", timings.dns),
+            ("connect", timings.connect),
+            ("ssl", timings.ssl)
         ]
         for (name, value) in optional {
             if let value {
@@ -117,7 +123,8 @@ extension HARJSONWriter {
     }
 
     private mutating func metadata(
-        _ entry: HARExchange, configuration: HARExportConfiguration
+        _ entry: HARExchange,
+        configuration: HARExportConfiguration
     ) async throws {
         let requestAllowed = include(entry.requestBody, configuration: configuration)
         let requestText = requestAllowed ? try validText(entry.requestBody) : false
@@ -141,9 +148,13 @@ extension HARJSONWriter {
 
     private mutating func losses() async throws {
         let names = [
-            "optional-transport-timing-not-inferred", "wire-header-size-unavailable",
-            "cookie-views-omitted", "status-reason-unavailable", "redirect-view-omitted",
-            "protocol-framing-unavailable", "header-octets-not-preserved",
+            "optional-transport-timing-not-inferred",
+            "wire-header-size-unavailable",
+            "cookie-views-omitted",
+            "status-reason-unavailable",
+            "redirect-view-omitted",
+            "protocol-framing-unavailable",
+            "header-octets-not-preserved",
             "binary-request-uses-extension-or-is-omitted"
         ]
         try await raw("[")

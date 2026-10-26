@@ -4,21 +4,21 @@ import SwiftMITM
 extension HTTPInspector {
     func processCapture(_ event: CaptureEvent, key: Key, state: inout Worker) throws -> Bool {
         switch event {
-        case .requestHead(let head):
+        case let .requestHead(head):
             try requestHead(head, key: key, state: &state)
-        case .responseHead(let head):
+        case let .responseHead(head):
             try responseHead(head, key: key, state: &state)
         case let .requestTrailers(_, headers), let .responseTrailers(_, headers):
             try state.bodies[key]?.setTrailers(headers)
         case .requestEnd(_, _), .responseEnd:
             return try endBody(key, state: &state)
-        case .streamError(let id, _):
+        case let .streamError(id, _):
             streamError(id, key: key, state: &state)
-        case .webSocketOpen(let id, _, _):
+        case let .webSocketOpen(id, _, _):
             for exchangeKey in state.exchanges.keys.filter({ $0.id == id }) {
                 state.exchanges[exchangeKey]?.upgraded = true
             }
-        case .webSocketClose(let id, _, _, _):
+        case let .webSocketClose(id, _, _, _):
             closeSocket(id, state: &state)
         default: break
         }
@@ -54,7 +54,10 @@ extension HTTPInspector {
             state.exchanges[exchangeKey(key)] = exchange
         }
         state.bodies[key] = try makeBody(
-            key, headers: head.headers, path: state.exchanges[exchangeKey(key)]?.path ?? "", status: head.status
+            key,
+            headers: head.headers,
+            path: state.exchanges[exchangeKey(key)]?.path ?? "",
+            status: head.status
         )
     }
 
@@ -67,8 +70,7 @@ extension HTTPInspector {
         if var exchange = state.exchanges[exchangeKey(key)] {
             if key.direction == .request {
                 exchange.requestEnded = true
-            }
-            else {
+            } else {
                 exchange.responseEnded = true
             }
             state.exchanges[exchangeKey(key)] = exchange
@@ -97,7 +99,10 @@ extension HTTPInspector {
     }
 
     func makeBody(
-        _ key: Key, headers: [HTTPHeaderField], path: String, status: Int?
+        _ key: Key,
+        headers: [HTTPHeaderField],
+        path: String,
+        status: Int?
     ) throws -> HTTPInspectionBody {
         try HTTPInspectionBody(
             context: key.context,
@@ -117,7 +122,7 @@ extension HTTPInspector {
                 configuration.budget.release(exchange.charge)
             }
         }
-        sequences.withLock { $0.removeValue(forKey: id) }
+        sequences.withLock { _ = $0.removeValue(forKey: id) }
         ingress.withLock { value in
             value.active.remove(id)
             value.failed = value.failed.filter { $0.id != id }

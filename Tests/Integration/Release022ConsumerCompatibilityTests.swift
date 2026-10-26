@@ -16,12 +16,27 @@ final class Release022ConsumerCompatibilityTests: XCTestCase {
             try clear.start()
             try secure.start()
             let authority = try CertificateAuthority.generate()
-            let port = try example.start(root: authority, originRoot: secure.caCertificatePEM, asynchronous: true, captureBytes: 8)
+            let port = try example.start(
+                root: authority,
+                originRoot: secure.caCertificatePEM,
+                asynchronous: true,
+                captureBytes: 8
+            )
             let certificate = example.directory.appendingPathComponent("proxy-ca.pem")
             for url in ["http://localhost:\(clear.localPort)/", "https://localhost:\(secure.localPort)/"] {
                 let body = try release022RunProcess(executable: "/usr/bin/curl", arguments: [
-                    "--silent", "--show-error", "--fail", "--max-time", "10", "--noproxy", "",
-                    "--proxy", "http://127.0.0.1:\(port)", "--cacert", certificate.path, url
+                    "--silent",
+                    "--show-error",
+                    "--fail",
+                    "--max-time",
+                    "10",
+                    "--noproxy",
+                    "",
+                    "--proxy",
+                    "http://127.0.0.1:\(port)",
+                    "--cacert",
+                    certificate.path,
+                    url
                 ])
                 XCTAssertEqual(body, String(repeating: "A", count: 8))
             }
@@ -58,14 +73,27 @@ final class Release022ConsumerCompatibilityTests: XCTestCase {
         do {
             try origin.start()
             let port = try example.start(
-                root: try CertificateAuthority.generate(), originRoot: origin.caCertificatePEM,
-                asynchronous: true, captureBytes: 512 * 1024
+                root: try CertificateAuthority.generate(),
+                originRoot: origin.caCertificatePEM,
+                asynchronous: true,
+                captureBytes: 512 * 1024
             )
             example.pauseOutput()
             let delivered = try release022RunProcess(executable: "/usr/bin/curl", arguments: [
-                "--silent", "--show-error", "--fail", "--max-time", "10", "--noproxy", "",
-                "--proxy", "http://127.0.0.1:\(port)", "--output", "/dev/null",
-                "--write-out", "%{size_download}", "http://localhost:\(origin.localPort)/held-output"
+                "--silent",
+                "--show-error",
+                "--fail",
+                "--max-time",
+                "10",
+                "--noproxy",
+                "",
+                "--proxy",
+                "http://127.0.0.1:\(port)",
+                "--output",
+                "/dev/null",
+                "--write-out",
+                "%{size_download}",
+                "http://localhost:\(origin.localPort)/held-output"
             ])
             XCTAssertEqual(delivered, "1048576")
             example.requestStop(signal: SIGTERM)
@@ -98,13 +126,23 @@ final class Release022ConsumerCompatibilityTests: XCTestCase {
         do {
             try origin.start()
             let port = try example.start(
-                root: try CertificateAuthority.generate(), originRoot: origin.caCertificatePEM,
-                asynchronous: true, captureBytes: 8
+                root: try CertificateAuthority.generate(),
+                originRoot: origin.caCertificatePEM,
+                asynchronous: true,
+                captureBytes: 8
             )
             try example.closeOutputReader()
             let body = try release022RunProcess(executable: "/usr/bin/curl", arguments: [
-                "--silent", "--show-error", "--fail", "--max-time", "10", "--noproxy", "",
-                "--proxy", "http://127.0.0.1:\(port)", "http://localhost:\(origin.localPort)/broken-output"
+                "--silent",
+                "--show-error",
+                "--fail",
+                "--max-time",
+                "10",
+                "--noproxy",
+                "",
+                "--proxy",
+                "http://127.0.0.1:\(port)",
+                "http://localhost:\(origin.localPort)/broken-output"
             ])
             XCTAssertEqual(body, "AAAAAAAA")
             _ = try example.wait { records in
@@ -142,12 +180,26 @@ final class Release022ConsumerCompatibilityTests: XCTestCase {
         do {
             try origin.start()
             let authority = try CertificateAuthority.generate()
-            let port = try example.start(root: authority, originRoot: origin.caCertificatePEM, asynchronous: true, captureBytes: captureBytes)
+            let port = try example.start(
+                root: authority,
+                originRoot: origin.caCertificatePEM,
+                asynchronous: true,
+                captureBytes: captureBytes
+            )
             example.pauseOutput()
             for index in 0 ..< requests {
                 _ = try release022RunProcess(executable: "/usr/bin/curl", arguments: [
-                    "--silent", "--show-error", "--fail", "--max-time", "10",
-                    "--noproxy", "", "--proxy", "http://127.0.0.1:\(port)", "--output", "/dev/null",
+                    "--silent",
+                    "--show-error",
+                    "--fail",
+                    "--max-time",
+                    "10",
+                    "--noproxy",
+                    "",
+                    "--proxy",
+                    "http://127.0.0.1:\(port)",
+                    "--output",
+                    "/dev/null",
                     "http://localhost:\(origin.localPort)/\(index)"
                 ])
             }

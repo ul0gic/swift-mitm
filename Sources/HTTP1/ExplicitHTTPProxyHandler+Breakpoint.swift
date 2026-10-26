@@ -40,7 +40,7 @@ extension ExplicitHTTPProxyHandler {
                         exchange.breakpointEditReservation = edit.controls.first
                         exchange.breakpointEditAdmissionReservation = edit.global.first
                         completion(handler, exchange, resolved)
-                    case .failure(let error): handler.controlFailed(exchange, error: error)
+                    case let .failure(error): handler.controlFailed(exchange, error: error)
                     }
                 }
             }

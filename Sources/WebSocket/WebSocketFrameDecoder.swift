@@ -49,16 +49,32 @@ final class WebSocketFrameDecoder {
         emit: (Frame) -> Void
     ) -> Bool where Bytes.Element == UInt8 {
         if frameBytes == nil {
-            for byte in bytes {
-                guard shouldContinue() else { return true }
-                switch phase {
-                case .header: consumeHeaderByte(byte, emit: emit)
-                case .payload: consumePayloadByte(byte, emit: emit)
-                case .failed: return false
-                }
-            }
-            return phase != .failed
+            return decodeRetained(bytes, shouldContinue: shouldContinue, emit: emit)
         }
+        return decodeObserved(bytes, shouldContinue: shouldContinue, emit: emit)
+    }
+
+    private func decodeRetained<Bytes: Sequence>(
+        _ bytes: Bytes,
+        shouldContinue: () -> Bool,
+        emit: (Frame) -> Void
+    ) -> Bool where Bytes.Element == UInt8 {
+        for byte in bytes {
+            guard shouldContinue() else { return true }
+            switch phase {
+            case .header: consumeHeaderByte(byte, emit: emit)
+            case .payload: consumePayloadByte(byte, emit: emit)
+            case .failed: return false
+            }
+        }
+        return phase != .failed
+    }
+
+    private func decodeObserved<Bytes: Sequence>(
+        _ bytes: Bytes,
+        shouldContinue: () -> Bool,
+        emit: (Frame) -> Void
+    ) -> Bool where Bytes.Element == UInt8 {
         return withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 16_384) { scratch in
             var count = 0
             defer {

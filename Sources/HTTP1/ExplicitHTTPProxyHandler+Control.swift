@@ -20,13 +20,18 @@ extension ExplicitHTTPProxyHandler {
         body: Data? = nil
     ) -> HTTPControlMessage {
         let identity = HTTPControlContext(
-            requestID: exchange.id, authority: exchange.originalTarget?.authority ?? exchange.head.uri,
-            method: exchange.head.method.rawValue, path: exchange.originalTarget?.requestTarget ?? exchange.head.uri,
+            requestID: exchange.id,
+            authority: exchange.originalTarget?.authority ?? exchange.head.uri,
+            method: exchange.head.method.rawValue,
+            path: exchange.originalTarget?.requestTarget ?? exchange.head.uri,
             isHTTP2OrLater: typedHTTP2
         )
         return HTTPControlMessage(
-            context: identity, phase: phase, status: status,
-            headers: Self.fields(headers ?? exchange.head.headers), body: body
+            context: identity,
+            phase: phase,
+            status: status,
+            headers: Self.fields(headers ?? exchange.head.headers),
+            body: body
         )
     }
 
@@ -40,12 +45,12 @@ extension ExplicitHTTPProxyHandler {
             let headResult = try snapshot.evaluateHead(message)
             var reservationBytes = snapshot.retainedBytes + message.retainedBytes + 65_536
             switch headResult {
-            case .needsBody(let maximum):
+            case let .needsBody(maximum):
                 exchange.controlMaximumBody = maximum
                 exchange.controlCollectingBody = true
                 exchange.controlReady = false
                 reservationBytes += maximum + snapshot.limits.maximumBodyBytes
-            case .decision(let decision):
+            case let .decision(decision):
                 if case .breakpoint = decision.action {
                     exchange.controlMaximumBody = min(snapshot.limits.maximumBodyBytes, 65_536)
                 }
@@ -58,7 +63,7 @@ extension ExplicitHTTPProxyHandler {
             }
             switch headResult {
             case .needsBody: context?.read()
-            case .decision(let decision): applyControlledRequest(decision, exchange: exchange, message: message)
+            case let .decision(decision): applyControlledRequest(decision, exchange: exchange, message: message)
             }
             return !stopped
         } catch {
@@ -68,7 +73,7 @@ extension ExplicitHTTPProxyHandler {
     }
 
     func retainControlledRequest(_ part: HTTPServerRequestPart, exchange: Exchange) -> Bool {
-        guard !exchange.controlReady, case .body(let buffer) = part else { return false }
+        guard !exchange.controlReady, case let .body(buffer) = part else { return false }
         guard buffer.readableBytes <= exchange.controlMaximumBody - exchange.controlBody.count else {
             controlFailed(exchange, error: HTTPControlError.bodyLimitExceeded)
             return true
@@ -134,10 +139,12 @@ extension ExplicitHTTPProxyHandler {
         case .breakpoint:
             controlFailed(exchange, error: HTTPControlError.unsupportedEdit)
             return false
-        case .route(let authority, _):
+        case let .route(authority, _):
             guard let original = exchange.target,
                   let target = HTTPForwardTarget(
-                      scheme: original.scheme, authority: authority, requestTarget: original.requestTarget
+                      scheme: original.scheme,
+                      authority: authority,
+                      requestTarget: original.requestTarget
                   ) else {
                 controlFailed(exchange, error: HTTPControlError.unsupportedEdit)
                 return false
@@ -151,7 +158,7 @@ extension ExplicitHTTPProxyHandler {
                 startNext()
             }
             return false
-        case .replaceBody(let body, let maximum, _, _):
+        case let .replaceBody(body, maximum, _, _):
             if !exchange.requestEnded {
                 exchange.controlMaximumBody = maximum
                 exchange.pendingBodyDecision = decision
@@ -176,26 +183,42 @@ extension ExplicitHTTPProxyHandler {
             headers = decision.headers
         }
         controlEventSink?.receive(.effectiveHead(
-            requestID: exchange.id, phase: .request, headers: headers, appliedRuleIDs: decision.appliedRuleIDs
+            requestID: exchange.id,
+            phase: .request,
+            headers: headers,
+            appliedRuleIDs: decision.appliedRuleIDs
         ))
         if decision.overridesNoTransform {
             controlEventSink?.receive(.noTransformOverride(
-                requestID: exchange.id, phase: .request, appliedRuleIDs: decision.appliedRuleIDs
+                requestID: exchange.id,
+                phase: .request,
+                appliedRuleIDs: decision.appliedRuleIDs
             ))
         }
         (sink as? ObservationCaptureSink)?.receiveEffective(.requestHead(CapturedRequestHead(
-            id: exchange.id, timestamp: Date(), scheme: exchange.target?.scheme ?? "http",
-            authority: exchange.target?.authority ?? exchange.head.uri, method: exchange.head.method.rawValue,
-            path: exchange.target?.requestTarget ?? exchange.head.uri, version: typedHTTP2 ? .http2 : .http11, headers: headers
+            id: exchange.id,
+            timestamp: Date(),
+            scheme: exchange.target?.scheme ?? "http",
+            authority: exchange.target?.authority ?? exchange.head.uri,
+            method: exchange.head.method.rawValue,
+            path: exchange.target?.requestTarget ?? exchange.head.uri,
+            version: typedHTTP2 ? .http2 : .http11,
+            headers: headers
         )))
     }
 
     func controlWorkLifetime(_ exchange: Exchange) -> HTTPControlWorkLifetime {
         HTTPControlWorkLifetime(
-            controls: [exchange.controlReservation, exchange.responseControlReservation,
-                       exchange.breakpointEditReservation].compactMap(\.self),
-            global: [exchange.controlAdmissionReservation, exchange.responseControlAdmissionReservation,
-                     exchange.breakpointEditAdmissionReservation].compactMap(\.self)
+            controls: [
+                exchange.controlReservation,
+                exchange.responseControlReservation,
+                exchange.breakpointEditReservation
+            ].compactMap(\.self),
+            global: [
+                exchange.controlAdmissionReservation,
+                exchange.responseControlAdmissionReservation,
+                exchange.breakpointEditAdmissionReservation
+            ].compactMap(\.self)
         )
     }
 
@@ -216,23 +239,23 @@ extension ExplicitHTTPProxyHandler {
         }
         guard let snapshot = exchange.controlSnapshot else { throw HTTPControlError.cancelled }
         switch decision.action {
-        case .replaceBody(let body, let maximum, _, let override):
+        case let .replaceBody(body, maximum, _, override):
             guard maximum <= snapshot.limits.maximumBodyBytes, body.count <= snapshot.limits.maximumBodyBytes,
-                  exchange.head.method != .HEAD, exchange.head.method != .CONNECT else { throw HTTPControlError.unsupportedEdit }
+                  exchange.head.method != .HEAD,
+                  exchange.head.method != .CONNECT else { throw HTTPControlError.unsupportedEdit }
             let headers: [HTTPHeaderField]
             if phase == .request {
                 headers = Self.fields(exchange.head.headers)
-            }
-            else if let head = exchange.responseControlHead {
+            } else if let head = exchange.responseControlHead {
                 headers = Self.fields(head.headers)
-            }
-            else {
+            } else {
                 throw HTTPControlError.unsupportedEdit
             }
-            guard override || !HTTPControlConfiguration.hasNoTransform(headers) else { throw HTTPControlError.noTransform }
+            guard override || !HTTPControlConfiguration.hasNoTransform(headers)
+                else { throw HTTPControlError.noTransform }
             let bytes = phase == .request ? exchange.controlBody.count : exchange.responseControlBody.count
             guard bytes <= maximum else { throw HTTPControlError.bodyLimitExceeded }
-        case .respond(_, _, let body):
+        case let .respond(_, _, body):
             guard body.count <= snapshot.limits.maximumBodyBytes,
                   exchange.head.method != .HEAD || body.isEmpty else { throw HTTPControlError.unsupportedEdit }
         default: break
@@ -257,25 +280,42 @@ extension ExplicitHTTPProxyHandler {
                 if reset == nil || candidate < (reset ?? candidate) {
                     reset = candidate
                     scope = fault.resetScope
-                }
-                else if candidate == reset, fault.resetScope == .transport {
+                } else if candidate == reset, fault.resetScope == .transport {
                     scope = .transport
                 }
             }
         }
         guard delay <= 30_000 else { throw HTTPControlError.invalidConfiguration }
-        return try HTTPFault(direction: direction, delayMilliseconds: delay, bytesPerSecond: rate,
-                             burstBytes: burst, resetAfterBytes: reset, resetScope: scope)
+        return try HTTPFault(
+            direction: direction,
+            delayMilliseconds: delay,
+            bytesPerSecond: rate,
+            burstBytes: burst,
+            resetAfterBytes: reset,
+            resetScope: scope
+        )
     }
 
     func sendControlledResponse(status: Int, headers: [HTTPHeaderField], body: Data, exchange: Exchange) {
         guard let context else { return }
         (sink as? ObservationCaptureSink)?.receiveEffective(.requestEnd(requestID: exchange.id, truncated: true))
-        controlEventSink?.receive(.effectiveHead(requestID: exchange.id, phase: .response, headers: headers, appliedRuleIDs: []))
-        let response = HTTPResponseHead(version: .http1_1, status: HTTPResponseStatus(statusCode: status),
-                                        headers: HTTPHeaders(headers.map { ($0.name, $0.value) }))
+        controlEventSink?.receive(.effectiveHead(
+            requestID: exchange.id,
+            phase: .response,
+            headers: headers,
+            appliedRuleIDs: []
+        ))
+        let response = HTTPResponseHead(
+            version: .http1_1,
+            status: HTTPResponseStatus(statusCode: status),
+            headers: HTTPHeaders(headers.map { ($0.name, $0.value) })
+        )
         (sink as? ObservationCaptureSink)?.receiveEffective(.responseHead(CapturedResponseHead(
-            requestID: exchange.id, timestamp: Date(), status: status, version: typedHTTP2 ? .http2 : .http11, headers: headers
+            requestID: exchange.id,
+            timestamp: Date(),
+            status: status,
+            version: typedHTTP2 ? .http2 : .http11,
+            headers: headers
         )))
         context.write(wrapOutboundOut(.head(response)), promise: nil)
         if !body.isEmpty {
@@ -296,7 +336,10 @@ extension ExplicitHTTPProxyHandler {
     }
 
     func controlFailed(_ exchange: Exchange, error: any Error) {
-        controlEventSink?.receive(.failure(requestID: exchange.id, code: error as? HTTPControlError ?? .unsupportedEdit))
+        controlEventSink?.receive(.failure(
+            requestID: exchange.id,
+            code: error as? HTTPControlError ?? .unsupportedEdit
+        ))
         reject(status: .badGateway, message: "HTTP control rejected exchange")
     }
 }

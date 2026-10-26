@@ -36,7 +36,11 @@ final class Release022IndependentGRPCCompatibilityTests: XCTestCase {
             environment["NO_PROXY"] = ""
             let result = try release022RunProcess(executable: peer.python, arguments: [
                 Release022ExternalPeer.clientsDirectory.appendingPathComponent("grpc_peer.py").path,
-                "client", "--target", "localhost:\(ready.port)", "--root", proxyRoot.path
+                "client",
+                "--target",
+                "localhost:\(ready.port)",
+                "--root",
+                proxyRoot.path
             ], environment: environment)
             FileHandle.standardError.write(Data("CLIENT-MATRIX \(result)".utf8))
             XCTAssertTrue(result.contains("trailers-only"))
@@ -47,7 +51,8 @@ final class Release022IndependentGRPCCompatibilityTests: XCTestCase {
                     } else {
                         false
                     }
-                }.count == 5
+                }
+.count == 5
             }
             assertIndependentGRPCEvents(events)
             try await server.stop()
@@ -63,15 +68,17 @@ final class Release022IndependentGRPCCompatibilityTests: XCTestCase {
 
     private func assertIndependentGRPCEvents(_ events: [CaptureEvent]) {
         let requests = events.compactMap { event -> CapturedRequestHead? in
-            if case .requestHead(let head) = event {
+            if case let .requestHead(head) = event {
                 head
             } else {
                 nil
             }
         }
         XCTAssertEqual(Set(requests.map(\.path)), Set([
-            "/independent.Transport/Unary", "/independent.Transport/ServerStream",
-            "/independent.Transport/ClientStream", "/independent.Transport/Bidi",
+            "/independent.Transport/Unary",
+            "/independent.Transport/ServerStream",
+            "/independent.Transport/ClientStream",
+            "/independent.Transport/Bidi",
             "/independent.Transport/Denied"
         ]))
         XCTAssertTrue(requests.allSatisfy { $0.version == .http2 })

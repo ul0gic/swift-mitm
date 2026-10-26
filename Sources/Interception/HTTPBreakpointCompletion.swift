@@ -36,8 +36,7 @@ final class HTTPBreakpointCompletion: Sendable {
             state.waiter = nil
             if waiter == nil {
                 state.result = resolution
-            }
-            else {
+            } else {
                 state.consumed = true
             }
             return waiter

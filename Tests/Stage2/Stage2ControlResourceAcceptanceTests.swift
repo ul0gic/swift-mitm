@@ -9,9 +9,16 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
     func testBodyReplacementAcceptsLimitAndRejectsLimitPlusOneBeforeEgress() async throws {
         for size in [4, 5] {
             let runtime = HTTPControlRuntime(configuration: try HTTPControlConfiguration(rules: [
-                HTTPRule(id: "body", match: HTTPRuleMatch(phase: .request, path: "/replace"),
-                         action: .replaceBody(Data("edited".utf8), maximumInputBytes: 4,
-                                              contentEncoding: nil, overrideNoTransform: false))
+                HTTPRule(
+                    id: "body",
+                    match: HTTPRuleMatch(phase: .request, path: "/replace"),
+                    action: .replaceBody(
+                        Data("edited".utf8),
+                        maximumInputBytes: 4,
+                        contentEncoding: nil,
+                        overrideNoTransform: false
+                    )
+                )
             ], limits: HTTPControlLimits()))
             let events = Stage2ControlEvents()
             try await stage2WithHTTPOrigin(runtime: runtime, controlSink: events) { peer in
@@ -19,7 +26,10 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
                 let client = try release022WireClient(group: peer.group, port: peer.proxyPort, observation: received)
                 let head = "POST http://127.0.0.1:\(peer.origin.port)/replace HTTP/1.1\r\nHost: localhost\r\n"
                     + "Content-Length: \(size)\r\n\r\n"
-                try phase4BoundedWait(client.writeAndFlush(ByteBuffer(bytes: Array(head.utf8) + [UInt8](repeating: 97, count: size))))
+                try phase4BoundedWait(client.writeAndFlush(ByteBuffer(bytes: Array(head.utf8) + [UInt8](
+                    repeating: 97,
+                    count: size
+                ))))
                 if size == 4 {
                     try await stage2Await { peer.origin.requests.count == 1 }
                     let request = try XCTUnwrap(peer.origin.requests.first)
@@ -47,14 +57,20 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
     }
 
     func testMapRemoteStripsCredentialsAndReauthorizesDeniedDestination() async throws {
-        let runtime = HTTPControlRuntime(configuration: try HTTPControlConfiguration(rules: [], limits: HTTPControlLimits()))
+        let runtime = HTTPControlRuntime(configuration: try HTTPControlConfiguration(
+            rules: [],
+            limits: HTTPControlLimits()
+        ))
         try await stage2WithHTTPOrigin(runtime: runtime) { peer in
             let second = Stage2HTTPOrigin(group: peer.group)
             try await second.start()
             do {
                 try await runtime.replaceConfiguration(HTTPControlConfiguration(rules: [
-                    HTTPRule(id: "route", match: HTTPRuleMatch(phase: .request, path: "/map"),
-                             action: .route(authority: "127.0.0.1:\(second.port)", sensitiveHeaders: ["X-Private"]))
+                    HTTPRule(
+                        id: "route",
+                        match: HTTPRuleMatch(phase: .request, path: "/map"),
+                        action: .route(authority: "127.0.0.1:\(second.port)", sensitiveHeaders: ["X-Private"])
+                    )
                 ], limits: HTTPControlLimits()))
                 let received = Release022WireObservation()
                 let client = try release022WireClient(group: peer.group, port: peer.proxyPort, observation: received)
@@ -77,12 +93,18 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
                 throw failure
             }
         }
-        let deniedRuntime = HTTPControlRuntime(configuration: try HTTPControlConfiguration(rules: [], limits: HTTPControlLimits()))
+        let deniedRuntime = HTTPControlRuntime(configuration: try HTTPControlConfiguration(
+            rules: [],
+            limits: HTTPControlLimits()
+        ))
         let controls = Stage2ControlEvents()
         try await stage2WithHTTPOrigin(runtime: deniedRuntime, controlSink: controls, egressPolicy: .default) { peer in
             try await deniedRuntime.replaceConfiguration(HTTPControlConfiguration(rules: [
-                HTTPRule(id: "deny-map", match: HTTPRuleMatch(phase: .request, path: "/map"),
-                         action: .route(authority: "127.0.0.1:\(peer.origin.port)", sensitiveHeaders: []))
+                HTTPRule(
+                    id: "deny-map",
+                    match: HTTPRuleMatch(phase: .request, path: "/map"),
+                    action: .route(authority: "127.0.0.1:\(peer.origin.port)", sensitiveHeaders: [])
+                )
             ], limits: HTTPControlLimits()))
             let received = Release022WireObservation()
             let client = try release022WireClient(group: peer.group, port: peer.proxyPort, observation: received)
@@ -91,7 +113,7 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
             try received.waitForClose()
             XCTAssertEqual(peer.origin.acceptedConnections, 0)
             XCTAssertTrue(peer.raw.events.contains { event in
-                if case .connectionFailure(let failure) = event {
+                if case let .connectionFailure(failure) = event {
                     failure.code == .egressDenied
                 } else {
                     false
@@ -124,7 +146,8 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
     }
 
     func testAdmissionAtConnectionCeilingRejectsNewWorkWithoutEvictingActiveClient() async throws {
-        let admission = ResourceAdmissionController(configuration: try ResourceAdmissionConfiguration(maximumConnections: 2))
+        let admission =
+            ResourceAdmissionController(configuration: try ResourceAdmissionConfiguration(maximumConnections: 2))
         try await stage2WithHTTPOrigin(admission: admission, reuse: HTTP1ReusePolicy()) { peer in
             let received = Release022WireObservation()
             let first = try release022WireClient(group: peer.group, port: peer.proxyPort, observation: received)
@@ -153,14 +176,21 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
 
     func testDelayedRequestDoesNotBlockIndependentRequest() async throws {
         let runtime = HTTPControlRuntime(configuration: try HTTPControlConfiguration(rules: [
-            HTTPRule(id: "delay", match: HTTPRuleMatch(phase: .request, path: "/delayed"),
-                     action: .fault(HTTPFault(direction: .request, delayMilliseconds: 1000)))
+            HTTPRule(
+                id: "delay",
+                match: HTTPRuleMatch(phase: .request, path: "/delayed"),
+                action: .fault(HTTPFault(direction: .request, delayMilliseconds: 1000))
+            )
         ], limits: HTTPControlLimits()))
         try await stage2WithHTTPOrigin(runtime: runtime) { peer in
             let delayedBytes = Release022WireObservation()
             let delayed = try release022WireClient(group: peer.group, port: peer.proxyPort, observation: delayedBytes)
             let immediateBytes = Release022WireObservation()
-            let immediate = try release022WireClient(group: peer.group, port: peer.proxyPort, observation: immediateBytes)
+            let immediate = try release022WireClient(
+                group: peer.group,
+                port: peer.proxyPort,
+                observation: immediateBytes
+            )
             let clock = ContinuousClock()
             let started = clock.now
             try phase4BoundedWait(delayed.writeAndFlush(ByteBuffer(string:
@@ -201,13 +231,19 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
                     default: false
                     }
                 })
-                XCTAssertEqual(peer.inspected.events.filter { event in
+                XCTAssertEqual(
+                    peer.inspected
+.events
+.filter { event in
                     if case .end = event.payload, event.direction == .response {
                         true
                     } else {
                         false
                     }
-                }.count, index + 1)
+                }
+.count,
+                    index + 1
+                )
                 if client.isActive {
                     try await client.close().get()
                 }
@@ -219,8 +255,11 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
 
     func testReplayUsesControlsAndAcceptsEarlyFinalResponseWithoutRetry() async throws {
         let runtime = HTTPControlRuntime(configuration: try HTTPControlConfiguration(rules: [
-            HTTPRule(id: "replay-header", match: HTTPRuleMatch(phase: .request, path: "/early"),
-                     action: .editHeaders(remove: [], append: [HTTPHeaderField(name: "X-Controlled", value: "yes")]))
+            HTTPRule(
+                id: "replay-header",
+                match: HTTPRuleMatch(phase: .request, path: "/early"),
+                action: .editHeaders(remove: [], append: [HTTPHeaderField(name: "X-Controlled", value: "yes")])
+            )
         ], limits: HTTPControlLimits()))
         try await stage2WithHTTPOrigin(runtime: runtime, reply: { _ in
             Stage2OriginReply(status: .payloadTooLarge, beforeRequestEnd: true)
@@ -228,8 +267,11 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
             let request = ReplayRequest(
                 source: ReplaySource(requestID: UUID(), representation: .original),
                 destination: try XCTUnwrap(URL(string: "http://127.0.0.1:\(peer.origin.port)/early")),
-                method: "POST", headers: [], body: [UInt8](repeating: 97, count: 1_048_576),
-                bodyIsComplete: true, useControls: true
+                method: "POST",
+                headers: [],
+                body: [UInt8](repeating: 97, count: 1_048_576),
+                bodyIsComplete: true,
+                useControls: true
             )
             let result = try await peer.proxy.replay(request, responseSink: Stage2ReplayEvents())
             XCTAssertEqual(result.status, 413)
@@ -241,9 +283,16 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
 
     func testResponseBodyReplacementPreservesTrailersAndOriginalCapture() async throws {
         let runtime = HTTPControlRuntime(configuration: try HTTPControlConfiguration(rules: [
-            HTTPRule(id: "response-body", match: HTTPRuleMatch(phase: .response, path: "/response"),
-                     action: .replaceBody(Data("changed".utf8), maximumInputBytes: 4,
-                                          contentEncoding: nil, overrideNoTransform: false))
+            HTTPRule(
+                id: "response-body",
+                match: HTTPRuleMatch(phase: .response, path: "/response"),
+                action: .replaceBody(
+                    Data("changed".utf8),
+                    maximumInputBytes: 4,
+                    contentEncoding: nil,
+                    overrideNoTransform: false
+                )
+            )
         ], limits: HTTPControlLimits()))
         let controls = Stage2ControlEvents()
         try await stage2WithInspectionWire(controlRuntime: runtime, controlEventSink: controls) { peer in
@@ -262,7 +311,7 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
             XCTAssertFalse(text.lowercased().contains("etag:"))
             XCTAssertEqual(stage2ResponseCount(peer.raw.events), 4)
             XCTAssertTrue(peer.raw.events.contains { event in
-                if case .responseTrailers(_, let headers) = event {
+                if case let .responseTrailers(_, headers) = event {
                     headers.contains { $0.name.lowercased() == "x-end" && $0.value == "complete" }
                 } else {
                     false

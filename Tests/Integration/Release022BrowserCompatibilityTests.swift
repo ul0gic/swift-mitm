@@ -44,7 +44,13 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
             let result = try await completion.futureResult.get()
             XCTAssertEqual(result, "passed")
             try assertBrowserCapture(sink)
-            FileHandle.standardError.write(Data("CLIENT-MATRIX WKWebView os=\(ProcessInfo.processInfo.operatingSystemVersionString) trusted=true sse=true websocket=true\n".utf8))
+            FileHandle.standardError
+                .write(
+                    Data(
+                        "CLIENT-MATRIX WKWebView os=\(ProcessInfo.processInfo.operatingSystemVersionString) trusted=true sse=true websocket=true\n"
+                .utf8
+                    )
+                )
             view.stopLoading()
             configuration.userContentController.removeScriptMessageHandler(forName: "result")
             view.navigationDelegate = nil
@@ -85,8 +91,12 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
             let port = try await server.start(port: 0)
             let result = try release022RunProcess(executable: peer.python, arguments: [
                 Release022ExternalPeer.clientsDirectory.appendingPathComponent("chromium_client.py").path,
-                "--executable", executable, "--proxy", "http://127.0.0.1:\(port)",
-                "--url", "https://localhost:\(ready.port)/"
+                "--executable",
+                executable,
+                "--proxy",
+                "http://127.0.0.1:\(port)",
+                "--url",
+                "https://localhost:\(ready.port)/"
             ])
             FileHandle.standardError.write(Data("CLIENT-MATRIX \(result)".utf8))
             XCTAssertTrue(result.contains("\"sse\": true"))
@@ -134,7 +144,7 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
             }
         }
         let requests = events.compactMap { event -> CapturedRequestHead? in
-            if case .requestHead(let head) = event {
+            if case let .requestHead(head) = event {
                 head
             } else {
                 nil
@@ -144,27 +154,35 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
         XCTAssertTrue(requests.contains { $0.path == "/socket" })
         let sseID = try XCTUnwrap(requests.first { $0.path == "/events" }?.id)
         let body = events.flatMap { event -> [UInt8] in
-            if case .responseBodyChunk(let id, let bytes, _) = event, id == sseID {
+            if case let .responseBodyChunk(id, bytes, _) = event, id == sseID {
                 bytes
             } else {
                 []
             }
         }
         XCTAssertEqual(body, Array(": heartbeat\n\ndata: €-first\n\ndata: second\n\n".utf8))
-        XCTAssertEqual(events.filter {
+        XCTAssertEqual(
+            events.filter {
             if case .webSocketOpen = $0 {
                 true
             } else {
                 false
             }
-        }.count, 1)
-        XCTAssertEqual(events.filter {
+        }
+.count,
+            1
+        )
+        XCTAssertEqual(
+            events.filter {
             if case .webSocketClose = $0 {
                 true
             } else {
                 false
             }
-        }.count, 1)
+        }
+.count,
+            1
+        )
         XCTAssertFalse(events.contains {
             if case .streamError = $0 {
                 true

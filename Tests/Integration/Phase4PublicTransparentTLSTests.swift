@@ -304,7 +304,7 @@ private final class Phase4TransparentTLSHandshakeHandler: ChannelInboundHandler 
     }
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
-        if case TLSUserEvent.handshakeCompleted(let protocolName) = event {
+        if case let TLSUserEvent.handshakeCompleted(protocolName) = event {
             completion.complete(.success(protocolName))
         }
         context.fireUserInboundEventTriggered(event)
@@ -340,7 +340,7 @@ private final class Phase4TransparentH1ClientHandler: ChannelDuplexHandler {
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         switch unwrapInboundIn(data) {
-        case .body(let buffer):
+        case let .body(buffer):
             bodyBytes += buffer.readableBytes
         case .end:
             completion.complete(.success(bodyBytes))
@@ -376,12 +376,12 @@ private final class Phase4TransparentH2ClientHandler: ChannelDuplexHandler {
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         switch unwrapInboundIn(data) {
-        case .data(let data):
+        case let .data(data):
             bodyBytes += data.data.readableBytes
             if data.endStream {
                 completion.complete(.success(bodyBytes))
             }
-        case .headers(let headers) where headers.endStream:
+        case let .headers(headers) where headers.endStream:
             completion.complete(.success(bodyBytes))
         default:
             break

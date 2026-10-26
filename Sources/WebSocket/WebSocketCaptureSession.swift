@@ -41,8 +41,12 @@ final class WebSocketCaptureSession {
             ] {
                 decoder.frameStarted = { opcode, fin, compressed, count in
                     observer.webSocketFrameStarted(
-                        connectionID: id, direction: direction, opcode: opcode,
-                        fin: fin, compressed: compressed, byteCount: count
+                        connectionID: id,
+                        direction: direction,
+                        opcode: opcode,
+                        fin: fin,
+                        compressed: compressed,
+                        byteCount: count
                     )
                 }
                 decoder.frameBytes = { bytes in

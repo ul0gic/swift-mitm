@@ -9,9 +9,9 @@ extension HTTPInspector {
 
     func captureDetails(_ event: CaptureEvent) -> (key: Key, charge: Int)? {
         switch event {
-        case .requestHead(let head):
+        case let .requestHead(head):
             return (makeKey(head.id, .request), requestCharge(head))
-        case .responseHead(let head):
+        case let .responseHead(head):
             guard head.status >= 200 || head.status == 101 else { return nil }
             let charge = 256 + head.headers.reduce(0) { $0 + $1.name.utf8.count + $1.value.utf8.count }
             return (makeKey(head.requestID, .response), charge)
@@ -39,10 +39,10 @@ extension HTTPInspector {
         case let .responseTrailers(id, headers):
             let charge = 256 + headers.reduce(0) { $0 + $1.name.utf8.count + $1.value.utf8.count }
             return (makeKey(id, .response), charge)
-        case .requestEnd(let id, _): return (makeKey(id, .request), 256)
-        case .responseEnd(let id, _): return (makeKey(id, .response), 256)
+        case let .requestEnd(id, _): return (makeKey(id, .request), 256)
+        case let .responseEnd(id, _): return (makeKey(id, .response), 256)
         case let .streamError(id, message): return (makeKey(id, .response), 256 + message.utf8.count)
-        case .webSocketOpen(let id, _, _): return (makeKey(id, .response), 256)
+        case let .webSocketOpen(id, _, _): return (makeKey(id, .response), 256)
         case let .webSocketClose(id, _, _, reason):
             return (makeKey(id, .response), 256 + (reason?.utf8.count ?? 0))
         default: return nil
@@ -54,7 +54,7 @@ extension HTTPInspector {
             guard state.accepting else { return false }
             switch admitExchange(key, state: &state) {
             case .admitted: break
-            case .rejected(let schedule): return schedule
+            case let .rejected(schedule): return schedule
             }
             recordTerminal(terminal, key: key, state: &state)
             if state.failed.contains(key) {
@@ -102,10 +102,14 @@ extension HTTPInspector {
         case .requestEnd?, .responseEnd?: state.ended.insert(key)
         case .streamError?:
             state.ended.insert(Key(HTTPBodyObservation(
-                requestID: key.id, direction: .request, representation: key.representation
+                requestID: key.id,
+                direction: .request,
+                representation: key.representation
             )))
             state.ended.insert(Key(HTTPBodyObservation(
-                requestID: key.id, direction: .response, representation: key.representation
+                requestID: key.id,
+                direction: .response,
+                representation: key.representation
             )))
         case .webSocketClose?: state.closedSockets.insert(key.id)
         default: break

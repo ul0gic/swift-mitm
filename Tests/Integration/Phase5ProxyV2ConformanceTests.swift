@@ -77,7 +77,8 @@ final class Phase5ProxyV2ConformanceTests: XCTestCase {
                 sourcePort: source.port,
                 destinationPort: destination.port,
                 tlvs: try tlv.tlvBytes
-            ).bytes,
+            )
+.bytes,
             try tlv.headerBytes
         )
     }
@@ -94,7 +95,7 @@ final class Phase5ProxyV2ConformanceTests: XCTestCase {
             XCTAssertEqual(try parser.parse(&first), .pending, "\(vector.id) split \(splitIndex)")
             XCTAssertEqual(first.readableBytes, 0, "\(vector.id) split \(splitIndex)")
             var second = ByteBuffer(bytes: header.dropFirst(splitIndex) + application)
-            guard case .complete(let metadata) = try parser.parse(&second) else {
+            guard case let .complete(metadata) = try parser.parse(&second) else {
                 return XCTFail("expected completion for \(vector.id) split \(splitIndex)")
             }
             assert(metadata, source: source, destination: destination, tlvCount: vector.tlvCount, id: vector.id)
@@ -107,7 +108,7 @@ final class Phase5ProxyV2ConformanceTests: XCTestCase {
             XCTAssertEqual(try parser.parse(&input), .pending, vector.id)
         }
         var final = ByteBuffer(bytes: [header[header.count - 1]] + application)
-        guard case .complete(let metadata) = try parser.parse(&final) else {
+        guard case let .complete(metadata) = try parser.parse(&final) else {
             return XCTFail("expected one-byte completion for \(vector.id)")
         }
         assert(metadata, source: source, destination: destination, tlvCount: vector.tlvCount, id: vector.id)

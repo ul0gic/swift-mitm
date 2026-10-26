@@ -116,7 +116,9 @@ public final class HTTPInspector: HTTPObservationSink, WebSocketObservationSink 
     public func receive(_ event: CaptureEvent, representation: HTTPRepresentationKind) {
         guard let (key, charge) = captureDetails(event) else { return }
         let represented = Key(HTTPBodyObservation(
-            requestID: key.id, direction: key.direction, representation: representation
+            requestID: key.id,
+            direction: key.direction,
+            representation: representation
         ))
         admit(key: represented, charge: charge, terminal: event) { .capture(event) }
     }
@@ -155,7 +157,9 @@ public final class HTTPInspector: HTTPObservationSink, WebSocketObservationSink 
     }
 
     public func webSocketFrameBytes(
-        connectionID: UUID, direction: WebSocketDirection, bytes: UnsafeRawBufferPointer
+        connectionID: UUID,
+        direction: WebSocketDirection,
+        bytes: UnsafeRawBufferPointer
     ) {
         var offset = 0
         while offset < bytes.count {

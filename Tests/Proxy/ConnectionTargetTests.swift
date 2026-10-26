@@ -56,7 +56,7 @@ final class ConnectionTargetTests: XCTestCase {
         XCTAssertEqual(target.logicalAuthority, "198.51.100.20:8443")
         XCTAssertNil(target.tlsServerName)
         XCTAssertEqual(target.leafIdentity, "198.51.100.20")
-        guard case .trustedProxyV2(let originalClient) = target.ingressProvenance else {
+        guard case let .trustedProxyV2(originalClient) = target.ingressProvenance else {
             return XCTFail("expected trusted PROXY v2 provenance")
         }
         XCTAssertEqual(originalClient, source)
@@ -87,7 +87,7 @@ final class ConnectionTargetTests: XCTestCase {
         XCTAssertEqual(refined.logicalAuthority, "198.51.100.20:8443")
         XCTAssertEqual(refined.tlsServerName, "api.example.com")
         XCTAssertEqual(refined.leafIdentity, "api.example.com")
-        guard case .trustedProxyV2(let originalClient) = refined.ingressProvenance else {
+        guard case let .trustedProxyV2(originalClient) = refined.ingressProvenance else {
             return XCTFail("expected trusted PROXY v2 provenance")
         }
         XCTAssertEqual(originalClient, source)

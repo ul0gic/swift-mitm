@@ -134,8 +134,18 @@ struct Phase5ProxyV2ConformanceDocument: Codable, Sendable {
 
 enum Phase5ProxyV2Encoder {
     private static let signature: [UInt8] = [
-        0x0D, 0x0A, 0x0D, 0x0A, 0x00, 0x0D, 0x0A, 0x51,
-        0x55, 0x49, 0x54, 0x0A
+        0x0D,
+        0x0A,
+        0x0D,
+        0x0A,
+        0x00,
+        0x0D,
+        0x0A,
+        0x51,
+        0x55,
+        0x49,
+        0x54,
+        0x0A
     ]
 
     static func encode(
@@ -179,9 +189,9 @@ enum Phase5ProxyV2Encoder {
             throw Phase5ProxyV2ConformanceError.invalidEndpoint
         }
         switch (endpoint.family, address) {
-        case (.ipv4, .v4(let value)):
+        case let (.ipv4, .v4(value)):
             return withUnsafeBytes(of: value.address.sin_addr) { Array($0) }
-        case (.ipv6, .v6(let value)):
+        case let (.ipv6, .v6(value)):
             return withUnsafeBytes(of: value.address.sin6_addr) { Array($0) }
         case (.ipv4, .v6), (.ipv4, .unixDomainSocket), (.ipv6, .v4), (.ipv6, .unixDomainSocket):
             throw Phase5ProxyV2ConformanceError.invalidEndpoint

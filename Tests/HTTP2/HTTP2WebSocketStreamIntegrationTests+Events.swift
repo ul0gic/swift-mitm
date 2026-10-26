@@ -7,13 +7,13 @@ extension HTTP2WebSocketStreamIntegrationTests {
         events.compactMap { event in
             switch event {
             case .requestHead: "request"
-            case .responseHead(let head): "response:\(head.status)"
+            case let .responseHead(head): "response:\(head.status)"
             case .requestBodyChunk: "requestBody"
             case .responseBodyChunk: "responseBody"
             case .requestEnd: "requestEnd"
             case .responseEnd: "responseEnd"
             case .webSocketOpen: "open"
-            case .webSocketFrame(let frame): "frame:\(frame.opcode)"
+            case let .webSocketFrame(frame): "frame:\(frame.opcode)"
             case .webSocketClose: "close"
             default: nil
             }
@@ -22,14 +22,14 @@ extension HTTP2WebSocketStreamIntegrationTests {
 
     func webSocketFrames(_ events: [CaptureEvent]) -> [CapturedWebSocketFrame] {
         events.compactMap { event in
-            guard case .webSocketFrame(let frame) = event else { return nil }
+            guard case let .webSocketFrame(frame) = event else { return nil }
             return frame
         }
     }
 
     func responseOpenUsesPermessageDeflate(_ events: [CaptureEvent]) -> Bool {
         events.contains { event in
-            guard case .webSocketOpen(_, _, let permessageDeflate) = event else { return false }
+            guard case let .webSocketOpen(_, _, permessageDeflate) = event else { return false }
             return permessageDeflate
         }
     }
@@ -61,7 +61,7 @@ extension HTTP2WebSocketStreamIntegrationTests {
 
     func streamErrorIDs(_ events: [CaptureEvent]) -> [UUID] {
         events.compactMap { event in
-            guard case .streamError(let requestID, _) = event else { return nil }
+            guard case let .streamError(requestID, _) = event else { return nil }
             return requestID
         }
     }
@@ -77,7 +77,7 @@ extension HTTP2WebSocketStreamIntegrationTests {
 
     func webSocketOpenIDs(_ events: [CaptureEvent]) -> [UUID] {
         events.compactMap { event in
-            guard case .webSocketOpen(let connectionID, _, _) = event else { return nil }
+            guard case let .webSocketOpen(connectionID, _, _) = event else { return nil }
             return connectionID
         }
     }
