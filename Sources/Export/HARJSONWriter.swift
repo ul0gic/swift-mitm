@@ -21,7 +21,9 @@ struct HARJSONWriter {
 
     private mutating func append(_ byte: UInt8) async throws {
         buffer.append(byte)
-        if buffer.count == sliceBytes { try await flush() }
+        if buffer.count == sliceBytes {
+            try await flush()
+        }
     }
 
     mutating func string(_ value: String) async throws {
@@ -48,7 +50,9 @@ struct HARJSONWriter {
     mutating func fields(_ fields: [HTTPHeaderField], configuration: HARExportConfiguration) async throws {
         try await raw("[")
         for (index, field) in fields.enumerated() {
-            if index > 0 { try await raw(",") }
+            if index > 0 {
+                try await raw(",")
+            }
             try await raw("{\"name\":")
             try await string(field.name)
             try await raw(",\"value\":")
@@ -60,7 +64,9 @@ struct HARJSONWriter {
 
     private func redactedHeader(_ field: HTTPHeaderField, configuration: HARExportConfiguration) -> String {
         let name = field.name.lowercased()
-        if configuration.redactedHeaderNames.contains(name) { return "[REDACTED]" }
+        if configuration.redactedHeaderNames.contains(name) {
+            return "[REDACTED]"
+        }
         guard ["location", "referer", "content-location", "origin"].contains(name) else { return field.value }
         return redactedURL(field.value, configuration: configuration)?.string ?? "[REDACTED]"
     }
@@ -82,8 +88,7 @@ struct HARJSONWriter {
     }
 
     func include(_ body: HARBody?, configuration: HARExportConfiguration) -> Bool {
-        guard let body else { return false }
-        guard case .includeUnredacted(let mimeTypes) = configuration.bodyPolicy else { return false }
+        guard let body, case .includeUnredacted(let mimeTypes) = configuration.bodyPolicy else { return false }
         let mime = body.mimeType.split(separator: ";", maxSplits: 1).first.map(String.init)?.lowercased()
         return mime.map { mimeTypes.contains($0) } ?? false
     }
@@ -92,7 +97,9 @@ struct HARJSONWriter {
         guard let body, body.isText else { return false }
         var validator = HARUTF8Validator()
         for (index, byte) in body.bytes.enumerated() {
-            if index & 65_535 == 0 { try Task.checkCancellation() }
+            if index & 65_535 == 0 {
+                try Task.checkCancellation()
+            }
             guard validator.consume(byte) else { return false }
         }
         return validator.complete

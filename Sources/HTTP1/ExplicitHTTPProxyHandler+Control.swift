@@ -5,7 +5,9 @@ import NIOHTTP1
 extension ExplicitHTTPProxyHandler {
     func exchange(requestID: UUID) -> Exchange? {
         for exchange in queue {
-            if let exchange, exchange.id == requestID { return exchange }
+            if let exchange, exchange.id == requestID {
+                return exchange
+            }
         }
         return nil
     }
@@ -66,8 +68,7 @@ extension ExplicitHTTPProxyHandler {
     }
 
     func retainControlledRequest(_ part: HTTPServerRequestPart, exchange: Exchange) -> Bool {
-        guard !exchange.controlReady else { return false }
-        guard case .body(let buffer) = part else { return false }
+        guard !exchange.controlReady, case .body(let buffer) = part else { return false }
         guard buffer.readableBytes <= exchange.controlMaximumBody - exchange.controlBody.count else {
             controlFailed(exchange, error: HTTPControlError.bodyLimitExceeded)
             return true
@@ -117,8 +118,12 @@ extension ExplicitHTTPProxyHandler {
             exchange.pending.append(.body(buffer))
             exchange.controlBody.removeAll(keepingCapacity: false)
         }
-        if exchange.requestEnded { exchange.pending.append(.end(exchange.requestControlTrailers)) }
-        if active == nil { startNext() }
+        if exchange.requestEnded {
+            exchange.pending.append(.end(exchange.requestControlTrailers))
+        }
+        if active == nil {
+            startNext()
+        }
     }
 
     func applyControlledRequestAction(_ decision: HTTPControlDecision, exchange: Exchange) -> Bool {
@@ -132,7 +137,7 @@ extension ExplicitHTTPProxyHandler {
         case .route(let authority, _):
             guard let original = exchange.target,
                   let target = HTTPForwardTarget(
-                    scheme: original.scheme, authority: authority, requestTarget: original.requestTarget
+                      scheme: original.scheme, authority: authority, requestTarget: original.requestTarget
                   ) else {
                 controlFailed(exchange, error: HTTPControlError.unsupportedEdit)
                 return false
@@ -142,7 +147,9 @@ extension ExplicitHTTPProxyHandler {
             publishEffectiveRequestHead(decision, exchange: exchange)
             exchange.syntheticDecision = decision
             exchange.controlReady = true
-            if active == nil { startNext() }
+            if active == nil {
+                startNext()
+            }
             return false
         case .replaceBody(let body, let maximum, _, _):
             if !exchange.requestEnded {
@@ -165,7 +172,9 @@ extension ExplicitHTTPProxyHandler {
         let headers: [HTTPHeaderField]
         if let target = exchange.target {
             headers = Self.fields(originHead(exchange, target: target).headers)
-        } else { headers = decision.headers }
+        } else {
+            headers = decision.headers
+        }
         controlEventSink?.receive(.effectiveHead(
             requestID: exchange.id, phase: .request, headers: headers, appliedRuleIDs: decision.appliedRuleIDs
         ))
@@ -184,9 +193,9 @@ extension ExplicitHTTPProxyHandler {
     func controlWorkLifetime(_ exchange: Exchange) -> HTTPControlWorkLifetime {
         HTTPControlWorkLifetime(
             controls: [exchange.controlReservation, exchange.responseControlReservation,
-                       exchange.breakpointEditReservation].compactMap { $0 },
+                       exchange.breakpointEditReservation].compactMap(\.self),
             global: [exchange.controlAdmissionReservation, exchange.responseControlAdmissionReservation,
-                     exchange.breakpointEditAdmissionReservation].compactMap { $0 }
+                     exchange.breakpointEditAdmissionReservation].compactMap(\.self)
         )
     }
 
@@ -211,9 +220,15 @@ extension ExplicitHTTPProxyHandler {
             guard maximum <= snapshot.limits.maximumBodyBytes, body.count <= snapshot.limits.maximumBodyBytes,
                   exchange.head.method != .HEAD, exchange.head.method != .CONNECT else { throw HTTPControlError.unsupportedEdit }
             let headers: [HTTPHeaderField]
-            if phase == .request { headers = Self.fields(exchange.head.headers) }
-            else if let head = exchange.responseControlHead { headers = Self.fields(head.headers) }
-            else { throw HTTPControlError.unsupportedEdit }
+            if phase == .request {
+                headers = Self.fields(exchange.head.headers)
+            }
+            else if let head = exchange.responseControlHead {
+                headers = Self.fields(head.headers)
+            }
+            else {
+                throw HTTPControlError.unsupportedEdit
+            }
             guard override || !HTTPControlConfiguration.hasNoTransform(headers) else { throw HTTPControlError.noTransform }
             let bytes = phase == .request ? exchange.controlBody.count : exchange.responseControlBody.count
             guard bytes <= maximum else { throw HTTPControlError.bodyLimitExceeded }
@@ -235,13 +250,17 @@ extension ExplicitHTTPProxyHandler {
         for fault in faults.dropFirst() {
             delay += fault.delayMilliseconds
             burst = min(burst, fault.burstBytes)
-            if let candidate = fault.bytesPerSecond { rate = rate.map { min($0, candidate) } ?? candidate }
+            if let candidate = fault.bytesPerSecond {
+                rate = rate.map { min($0, candidate) } ?? candidate
+            }
             if let candidate = fault.resetAfterBytes {
                 if reset == nil || candidate < (reset ?? candidate) {
                     reset = candidate
                     scope = fault.resetScope
                 }
-                else if candidate == reset, fault.resetScope == .transport { scope = .transport }
+                else if candidate == reset, fault.resetScope == .transport {
+                    scope = .transport
+                }
             }
         }
         guard delay <= 30_000 else { throw HTTPControlError.invalidConfiguration }
@@ -262,8 +281,12 @@ extension ExplicitHTTPProxyHandler {
         if !body.isEmpty {
             var buffer = context.channel.allocator.buffer(capacity: body.count)
             buffer.writeBytes(body)
-            (sink as? ObservationCaptureSink)?.receiveBody(requestID: exchange.id, direction: .response,
-                bytes: buffer.readableBytesView, representation: .effective)
+            (sink as? ObservationCaptureSink)?.receiveBody(
+                requestID: exchange.id,
+                direction: .response,
+                representation: .effective,
+                bytes: buffer.readableBytesView
+            )
             context.write(wrapOutboundOut(.body(.byteBuffer(buffer))), promise: nil)
         }
         (sink as? ObservationCaptureSink)?.receiveEffective(.responseEnd(requestID: exchange.id, truncated: false))

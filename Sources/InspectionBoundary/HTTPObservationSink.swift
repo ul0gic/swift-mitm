@@ -58,10 +58,12 @@ final class ObservationCaptureSink: CaptureEventSink {
         bytes: Bytes
     ) where Bytes.Element == UInt8 {
         let context = HTTPBodyObservation(requestID: requestID, direction: direction, representation: representation)
-        let contiguous = bytes.withContiguousStorageIfAvailable { buffer in
+        let contiguous: Void? = bytes.withContiguousStorageIfAvailable { buffer in
             observation.receiveBody(context, bytes: UnsafeRawBufferPointer(buffer))
         }
-        if case .some = contiguous { return }
+        if case .some = contiguous {
+            return
+        }
         var start = bytes.startIndex
         while start != bytes.endIndex {
             let end = bytes.index(start, offsetBy: 65_536, limitedBy: bytes.endIndex) ?? bytes.endIndex
@@ -71,7 +73,6 @@ final class ObservationCaptureSink: CaptureEventSink {
         }
     }
 }
-
 
 extension ObservationCaptureSink: WebSocketObservationSink {
     func webSocketFrameStarted(

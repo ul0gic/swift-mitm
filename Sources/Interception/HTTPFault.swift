@@ -65,7 +65,9 @@ public struct HTTPFaultSchedule: Sendable {
             return HTTPFaultAllowance(bytes: 0, waitNanoseconds: eligibleNanoseconds - nowNanoseconds, reset: nil)
         }
         var count = min(pendingBytes, fault.burstBytes)
-        if let reset = fault.resetAfterBytes { count = Int(min(UInt64(count), reset - forwardedBytes)) }
+        if let reset = fault.resetAfterBytes {
+            count = Int(min(UInt64(count), reset - forwardedBytes))
+        }
         return HTTPFaultAllowance(bytes: count, waitNanoseconds: 0, reset: nil)
     }
 

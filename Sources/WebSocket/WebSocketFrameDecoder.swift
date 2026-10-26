@@ -61,7 +61,11 @@ final class WebSocketFrameDecoder {
         }
         return withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 16_384) { scratch in
             var count = 0
-            defer { if count > 0 { frameBytes?(UnsafeRawBufferPointer(start: scratch.baseAddress, count: count)) } }
+            defer {
+                if count > 0 {
+                    frameBytes?(UnsafeRawBufferPointer(start: scratch.baseAddress, count: count))
+                }
+            }
             for byte in bytes {
                 guard shouldContinue() else { return true }
                 switch phase {

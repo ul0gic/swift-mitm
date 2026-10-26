@@ -19,13 +19,16 @@ extension ProxyServer {
             catch { token.complete(); return loop.makeFailedFuture(error) }
             connection = connectUpstreamTLS(
                 target: destination, applicationProtocols: [.http2],
-                tlsRuntime: runtime, setupToken: token, on: loop)
+                tlsRuntime: runtime, setupToken: token, on: loop
+            )
         } else {
             connection = connectUpstreamRaw(target: destination, on: loop, setupToken: token).map {
                 ResolvedUpstreamConnection(
                     connection: NegotiatedUpstreamConnection(
-                        channel: $0.channel, applicationProtocol: .http2, alpnHandler: nil),
-                    target: $0.target)
+                        channel: $0.channel, applicationProtocol: .http2, alpnHandler: nil
+                    ),
+                    target: $0.target
+                )
             }
         }
         return connection

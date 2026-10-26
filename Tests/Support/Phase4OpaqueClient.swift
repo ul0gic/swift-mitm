@@ -38,19 +38,15 @@ final class Phase4OpaqueClient {
                 }
             }
             .connect(host: "127.0.0.1", port: port))
-        if !scenario.clientBytes.isEmpty {
-            if let channel {
-                try phase4BoundedWait(channel.writeAndFlush(ByteBuffer(bytes: scenario.clientBytes)))
-            }
+        if !scenario.clientBytes.isEmpty, let channel {
+            try phase4BoundedWait(channel.writeAndFlush(ByteBuffer(bytes: scenario.clientBytes)))
         }
         if scenario.clientClosesOutput {
             if let channel {
                 try phase4BoundedWait(channel.close(mode: .output))
             }
-        } else if scenario.clientClosesAbruptly {
-            if let channel {
-                try phase4BoundedWait(channel.close())
-            }
+        } else if scenario.clientClosesAbruptly, let channel {
+            try phase4BoundedWait(channel.close())
         }
     }
 

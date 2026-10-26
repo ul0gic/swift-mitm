@@ -27,14 +27,28 @@ final class Stage2CodingAcceptanceTests: XCTestCase {
                 let drained = await peer.inspector.drain()
                 XCTAssertTrue(drained.drained)
                 let decoded = peer.inspected.events.flatMap { event -> [UInt8] in
-                    if case .decodedBody(let bytes) = event.payload, event.direction == .response { bytes } else { [] }
+                    if case .decodedBody(let bytes) = event.payload, event.direction == .response {
+                        bytes
+                    } else {
+                        []
+                    }
                 }
                 XCTAssertEqual(decoded, expected)
                 let messages = peer.inspected.events.compactMap { event -> String? in
-                    if case .sse(let message) = event.payload { message.data } else { nil }
+                    if case .sse(let message) = event.payload {
+                        message.data
+                    } else {
+                        nil
+                    }
                 }
                 XCTAssertEqual(messages, ["first", "second"])
-                XCTAssertFalse(peer.inspected.events.contains { if case .diagnostic = $0.payload { true } else { false } })
+                XCTAssertFalse(peer.inspected.events.contains {
+                    if case .diagnostic = $0.payload {
+                        true
+                    } else {
+                        false
+                    }
+                })
                 XCTAssertEqual(stage2ResponseCount(peer.raw.events), encoded.count)
                 XCTAssertTrue(release022ResponseBodyBytes(peer.raw.events).isEmpty)
             }
@@ -51,23 +65,32 @@ final class Stage2CodingAcceptanceTests: XCTestCase {
                     "GET http://127.0.0.1:\(peer.origin.port)/limit HTTP/1.1\r\nHost: localhost\r\n\r\n")))
                 _ = try peer.origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
                 let body = Array(("data: " + String(repeating: "x", count: size) + "\n\n").utf8)
-                try peer.origin.write(Array((
+                try peer.origin.write(Array(
                     "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: \(body.count)\r\n\r\n"
-                ).utf8) + body)
+.utf8
+                ) + body)
                 let forwarded = try peer.received.wait { $0.suffix(body.count).elementsEqual(body) }
                 XCTAssertEqual(Array(forwarded.suffix(body.count)), body)
                 _ = try peer.raw.wait { release022ResponseEnds($0).count == 1 }
                 let drained = await peer.inspector.drain()
                 XCTAssertTrue(drained.drained)
                 let messages = peer.inspected.events.compactMap { event -> String? in
-                    if case .sse(let message) = event.payload { message.data } else { nil }
+                    if case .sse(let message) = event.payload {
+                        message.data
+                    } else {
+                        nil
+                    }
                 }
                 if size == 4 {
                     XCTAssertEqual(messages, ["xxxx"])
                 } else {
                     XCTAssertTrue(messages.isEmpty)
                     XCTAssertEqual(peer.inspected.events.filter { event in
-                        if case .diagnostic(.malformedSSE(.eventLimitExceeded)) = event.payload { true } else { false }
+                        if case .diagnostic(.malformedSSE(.eventLimitExceeded)) = event.payload {
+                            true
+                        } else {
+                            false
+                        }
                     }.count, 1)
                 }
                 XCTAssertTrue(release022Errors(peer.raw.events).isEmpty)

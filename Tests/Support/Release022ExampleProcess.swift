@@ -87,14 +87,18 @@ final class Release022ExampleProcess: @unchecked Sendable {
         return try condition.withLock {
             while true {
                 let records = try Self.records(bytes, stream: "stdout") + Self.records(errorBytes, stream: "stderr")
-                if predicate(records) { return records }
+                if predicate(records) {
+                    return records
+                }
                 guard condition.wait(until: deadline) else { throw Phase2FixtureError.deadlineExceeded }
             }
         }
     }
 
     func requestStop(signal: Int32 = SIGTERM) {
-        if process.isRunning { kill(process.processIdentifier, signal) }
+        if process.isRunning {
+            kill(process.processIdentifier, signal)
+        }
     }
 
     func waitForExit(timeout: TimeInterval) throws -> Int32 {
@@ -114,8 +118,7 @@ final class Release022ExampleProcess: @unchecked Sendable {
 
     private static func records(_ data: Data, stream: String) throws -> [[String: Any]] {
         try data.split(separator: 10).compactMap { line -> [String: Any]? in
-            guard line.first == 123, line.last == 125 else { return nil }
-            guard var record = try JSONSerialization.jsonObject(with: Data(line)) as? [String: Any] else { return nil }
+            guard line.first == 123, line.last == 125, var record = try JSONSerialization.jsonObject(with: Data(line)) as? [String: Any] else { return nil }
             record["_stream"] = stream
             return record
         }
@@ -126,11 +129,17 @@ final class Release022ExampleProcess: @unchecked Sendable {
         requestStop()
         let deadline = Date().addingTimeInterval(3)
         while process.isRunning, Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
-        if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-        if process.processIdentifier != 0 { process.waitUntilExit() }
+        if process.isRunning {
+            kill(process.processIdentifier, SIGKILL)
+        }
+        if process.processIdentifier != 0 {
+            process.waitUntilExit()
+        }
         output.fileHandleForReading.readabilityHandler = nil
         diagnostic.fileHandleForReading.readabilityHandler = nil
-        if !outputClosed { try? output.fileHandleForReading.close() }
+        if !outputClosed {
+            try? output.fileHandleForReading.close()
+        }
         try? diagnostic.fileHandleForReading.close()
         try? FileManager.default.removeItem(at: directory)
     }

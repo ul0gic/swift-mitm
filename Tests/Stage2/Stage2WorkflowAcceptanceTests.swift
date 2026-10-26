@@ -15,8 +15,14 @@ final class Stage2ControlEvents: HTTPControlEventSink {
         let deadline = clock.now.advanced(by: .seconds(5))
         while true {
             if let handle = events.compactMap({ event -> BreakpointHandle? in
-                if case .breakpoint(let handle) = event { handle } else { nil }
-            }).first { return handle }
+                if case .breakpoint(let handle) = event {
+                    handle
+                } else {
+                    nil
+                }
+            }).first {
+                return handle
+            }
             guard clock.now < deadline else { throw Phase2FixtureError.deadlineExceeded }
             try await Task.sleep(for: .milliseconds(10))
         }
@@ -74,7 +80,11 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
             let original = try XCTUnwrap(release022Requests(peer.raw.events).first)
             XCTAssertEqual(original.headers.first { $0.name.lowercased() == "x-probe" }?.value, "original")
             let effective = controls.events.compactMap { event -> (UUID, [HTTPHeaderField], [String])? in
-                if case .effectiveHead(let id, .request, let headers, let rules) = event { (id, headers, rules) } else { nil }
+                if case .effectiveHead(let id, .request, let headers, let rules) = event {
+                    (id, headers, rules)
+                } else {
+                    nil
+                }
             }
             XCTAssertEqual(effective.count, 1)
             XCTAssertEqual(effective.first?.0, original.id)
@@ -96,9 +106,13 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
             let handle = try await controls.breakpoint()
             XCTAssertTrue(peer.origin.received.bytes.isEmpty)
             let first = await handle.resolve(.forwardOriginal)
-            if case .resumed = first {} else { XCTFail("First resume did not win") }
+            if case .resumed = first {} else {
+                XCTFail("First resume did not win")
+            }
             let duplicate = await handle.resolve(.reject)
-            if case .alreadyCompleted = duplicate {} else { XCTFail("Duplicate resume changed a completed hold") }
+            if case .alreadyCompleted = duplicate {} else {
+                XCTFail("Duplicate resume changed a completed hold")
+            }
             let forwarded = try peer.origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
             XCTAssertTrue(String(decoding: forwarded, as: UTF8.self).hasPrefix("GET /pause HTTP/1.1\r\n"))
             try peer.origin.write(Array("HTTP/1.1 204 No Content\r\n\r\n".utf8))
@@ -137,7 +151,13 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
             XCTAssertEqual(result.status, 200)
             XCTAssertEqual(result.responseBodyBytes, 2)
             XCTAssertEqual(peer.origin.acceptedConnections, 1)
-            XCTAssertEqual(replayEvents.events.filter { if case .end = $0 { true } else { false } }.count, 1)
+            XCTAssertEqual(replayEvents.events.filter {
+                if case .end = $0 {
+                    true
+                } else {
+                    false
+                }
+            }.count, 1)
             let incomplete = ReplayRequest(
                 source: ReplaySource(requestID: sourceID, representation: .original), destination: destination,
                 method: "POST", headers: [], body: [1], bodyIsComplete: false
@@ -179,7 +199,11 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
             )
             let requestHead = try XCTUnwrap(release022Requests(captured).first)
             let responseHead = try XCTUnwrap(captured.compactMap { event -> CapturedResponseHead? in
-                if case .responseHead(let head) = event { head } else { nil }
+                if case .responseHead(let head) = event {
+                    head
+                } else {
+                    nil
+                }
             }.first)
             let exchange = HARExchange(
                 representation: .original, request: requestHead, response: responseHead,
@@ -221,7 +245,6 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
         }
     }
 }
-
 
 func stage2Milliseconds(_ duration: Duration) -> Double {
     let parts = duration.components

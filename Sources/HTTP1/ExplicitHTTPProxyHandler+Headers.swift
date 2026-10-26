@@ -23,10 +23,16 @@ extension ExplicitHTTPProxyHandler {
 
     static func ambiguous(_ headers: HTTPHeaders) -> Bool {
         let fields = fields(headers)
-        if headers.contains(name: "transfer-encoding"), headers.contains(name: "content-length") { return true }
-        if case .invalid = HTTP1MessageParser.contentLength(fields) { return true }
+        if headers.contains(name: "transfer-encoding"), headers.contains(name: "content-length") {
+            return true
+        }
+        if case .invalid = HTTP1MessageParser.contentLength(fields) {
+            return true
+        }
         let codings = headers[canonicalForm: "transfer-encoding"].map { $0.lowercased() }
-        if codings.dropLast().contains("chunked") { return true }
+        if codings.dropLast().contains("chunked") {
+            return true
+        }
         return false
     }
 
@@ -37,7 +43,7 @@ extension ExplicitHTTPProxyHandler {
         excluding excluded: Set<String> = []
     ) -> HTTPHeaders {
         let nominated = HTTP1MessageParser.tokens(fields(original), named: "connection")
-        let removed: Set<String> = [
+        let removed: Set = [
             "connection", "proxy-connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
             "te", "trailer", "transfer-encoding", "upgrade"
         ]
@@ -45,7 +51,9 @@ extension ExplicitHTTPProxyHandler {
             !removed.contains($0.name.lowercased()) && !nominated.contains($0.name.lowercased())
                 && !excluded.contains($0.name.lowercased())
         }.map { ($0.name, $0.value) })
-        if appendVia { headers.add(name: "via", value: "1.1 SwiftMITM") }
+        if appendVia {
+            headers.add(name: "via", value: "1.1 SwiftMITM")
+        }
         if upgrading {
             headers.replaceOrAdd(name: "connection", value: "upgrade")
             headers.replaceOrAdd(name: "upgrade", value: "websocket")

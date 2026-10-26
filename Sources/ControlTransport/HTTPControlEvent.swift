@@ -17,7 +17,7 @@ enum HTTPControlTransport {
         _ decision: HTTPControlDecision,
         message: HTTPControlMessage,
         runtime: HTTPControlRuntime,
-        sink: (any HTTPControlEventSink)?,
+        sink: any HTTPControlEventSink?,
         snapshot: HTTPControlConfiguration? = nil
     ) async throws -> HTTPControlDecision {
         guard case .breakpoint = decision.action else { return decision }
@@ -42,24 +42,19 @@ enum HTTPControlTransport {
         }
         do {
             guard !Task.isCancelled else { throw HTTPControlError.cancelled }
-            let delivery = Task { () -> (HTTPBreakpointResumeResult, HTTPControlError)? in
-                do {
-                    _ = try await runtime.runCallback(
-                        message: message, retainedSnapshot: snapshot,
-                        retainedDecision: proposed, owningBreakpointID: handle.id
-                    ) { _ in
-                        sink.receive(.breakpoint(handle))
-                        return proposed
-                    }
-                    return nil
-                } catch {
-                    let outcome = await handle.resolve(.reject)
-                    return (outcome, error as? HTTPControlError ?? .cancelled)
-                }
-            }
+            let delivery = notify(
+                handle: handle,
+                proposed: proposed,
+                message: message,
+                runtime: runtime,
+                sink: sink,
+                snapshot: snapshot
+            )
             let resolution = await handle.wait()
             delivery.cancel()
-            if let (outcome, error) = await delivery.value, outcome == .resumed { throw error }
+            if let (outcome, error) = await delivery.value, outcome == .resumed {
+                throw error
+            }
             switch resolution {
             case .forwardOriginal:
                 let original = try HTTPControlConfiguration(rules: [], limits: runtime.configurationSnapshot.limits)
@@ -72,6 +67,33 @@ enum HTTPControlTransport {
             _ = await handle.resolve(.cancelled)
             _ = await handle.wait()
             throw error
+        }
+    }
+
+    private static func notify(
+        handle: BreakpointHandle,
+        proposed: HTTPControlDecision,
+        message: HTTPControlMessage,
+        runtime: HTTPControlRuntime,
+        sink: any HTTPControlEventSink,
+        snapshot: HTTPControlConfiguration?
+    ) -> Task<(HTTPBreakpointResumeResult, HTTPControlError)?, Never> {
+        Task {
+            do {
+                _ = try await runtime.runCallback(
+                    message: message,
+                    retainedSnapshot: snapshot,
+                    retainedDecision: proposed,
+                    owningBreakpointID: handle.id
+                ) { _ in
+                    sink.receive(.breakpoint(handle))
+                    return proposed
+                }
+                return nil
+            } catch {
+                let outcome = await handle.resolve(.reject)
+                return (outcome, error as? HTTPControlError ?? .cancelled)
+            }
         }
     }
 }

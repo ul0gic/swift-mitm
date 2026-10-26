@@ -43,12 +43,16 @@ func release022WithWire(
             try phase4BoundedWait(connection.writeAndFlush(ByteBuffer(bytes: header.bytes)))
         }
         try body(origin, connection, received, sink)
-        if connection.isActive { try await connection.close().get() }
+        if connection.isActive {
+            try await connection.close().get()
+        }
         try await proxy.stop()
         origin.stop()
         try await group.shutdownGracefully()
     } catch {
-        if let client { try? await client.close().get() }
+        if let client {
+            try? await client.close().get()
+        }
         try? await proxy.stop()
         origin.stop()
         try? await group.shutdownGracefully()
@@ -57,17 +61,41 @@ func release022WithWire(
 }
 
 func release022Requests(_ events: [CaptureEvent]) -> [CapturedRequestHead] {
-    events.compactMap { if case .requestHead(let head) = $0 { head } else { nil } }
+    events.compactMap {
+        if case .requestHead(let head) = $0 {
+            head
+        } else {
+            nil
+        }
+    }
 }
 
 func release022Errors(_ events: [CaptureEvent]) -> [UUID] {
-    events.compactMap { if case .streamError(let id, _) = $0 { id } else { nil } }
+    events.compactMap {
+        if case .streamError(let id, _) = $0 {
+            id
+        } else {
+            nil
+        }
+    }
 }
 
 func release022ResponseEnds(_ events: [CaptureEvent]) -> [UUID] {
-    events.compactMap { if case .responseEnd(let id, _) = $0 { id } else { nil } }
+    events.compactMap {
+        if case .responseEnd(let id, _) = $0 {
+            id
+        } else {
+            nil
+        }
+    }
 }
 
 func release022ResponseBodyBytes(_ events: [CaptureEvent]) -> [UInt8] {
-    events.flatMap { if case .responseBodyChunk(_, let bytes, _) = $0 { bytes } else { [] } }
+    events.flatMap {
+        if case .responseBodyChunk(_, let bytes, _) = $0 {
+            bytes
+        } else {
+            []
+        }
+    }
 }

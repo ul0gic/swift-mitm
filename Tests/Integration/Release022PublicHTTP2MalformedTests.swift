@@ -51,41 +51,19 @@ final class Release022PublicHTTP2MalformedTests: XCTestCase {
             )
             try phase4BoundedWait(tls.installed)
             XCTAssertEqual(try phase4BoundedWait(tls.handshake), "h2")
-            let base = [(":method", "GET"), (":scheme", "https"), (":authority", "localhost:\(origin.port)"), (":path", "/bad")]
-            var encoder = HPACKEncoder(allocator: ByteBufferAllocator(), useHuffmanEncoding: false)
-            var bad = ByteBufferAllocator().buffer(capacity: 256)
-            try encoder.encode(headers: HPACKHeaders(transform(base)), to: &bad)
-            var good = ByteBufferAllocator().buffer(capacity: 256)
-            try encoder.encode(headers: HPACKHeaders([(":method", "GET"), (":scheme", "https"), (":authority", "localhost:\(origin.port)"), (":path", "/control")]), to: &good)
-            let preface = Array("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".utf8)
-            let bytes = preface + frame(type: 4, flags: 0, stream: 0, payload: [])
-                + frame(type: 1, flags: 5, stream: 1, payload: Array(bad.readableBytesView))
-                + frame(type: 1, flags: 5, stream: 3, payload: Array(good.readableBytesView))
+            let bytes = try malformedAndControlBytes(port: origin.port, transform: transform)
             try phase4BoundedWait(channel.writeAndFlush(ByteBuffer(bytes: bytes)))
             let control = try origin.stream(0)
             try control.wait { !$0.isEmpty }
-            let paths = control.frames.compactMap { frame -> String? in
-                if case .headers(let headers) = frame { headers.headers.first(name: ":path") } else { nil }
-            }
-            XCTAssertEqual(paths, ["/control"])
-            try control.write(.headers(.init(headers: HPACKHeaders([(":status", "204")]), endStream: true)))
-            _ = try received.wait { bytes in
-                let frames = self.frames(bytes)
-                return frames.contains { $0.type == 3 && $0.stream == 1 }
-                    && frames.contains { $0.type == 1 && $0.stream == 3 && $0.flags & 1 != 0 }
-            }
-            let events = try sink.wait { $0.contains { if case .responseEnd = $0 { true } else { false } } }
-            let requests = events.compactMap { event -> CapturedRequestHead? in
-                if case .requestHead(let head) = event { head } else { nil }
-            }
-            XCTAssertEqual(requests.map(\.path), ["/control"])
-            XCTAssertFalse(self.frames(received.bytes).contains { $0.type == 7 })
+            try assertMalformedStreamIsolation(control: control, received: received, sink: sink)
             try await channel.close().get()
             try await proxy.stop()
             origin.stop()
             try await group.shutdownGracefully()
         } catch {
-            if let client, client.isActive { try? await client.close().get() }
+            if let client, client.isActive {
+                try? await client.close().get()
+            }
             try? await proxy.stop()
             origin.stop()
             try? await group.shutdownGracefully()
@@ -93,19 +71,76 @@ final class Release022PublicHTTP2MalformedTests: XCTestCase {
         }
     }
 
+
+    private func assertMalformedStreamIsolation(
+        control: Release022H2Stream, received: Release022WireObservation, sink: Release022Events
+    ) throws {
+        let paths = control.frames.compactMap { frame -> String? in
+            if case .headers(let headers) = frame {
+                headers.headers.first(name: ":path")
+            } else {
+                nil
+            }
+        }
+        XCTAssertEqual(paths, ["/control"])
+        try control.write(.headers(.init(headers: HPACKHeaders([(":status", "204")]), endStream: true)))
+        _ = try received.wait { bytes in
+            let frames = self.frames(bytes)
+            return frames.contains { $0.type == 3 && $0.stream == 1 }
+                && frames.contains { $0.type == 1 && $0.stream == 3 && $0.flags & 1 != 0 }
+        }
+        let events = try sink.wait { $0.contains {
+            if case .responseEnd = $0 {
+                true
+            } else {
+                false
+            }
+        } }
+        let requests = events.compactMap { event -> CapturedRequestHead? in
+            if case .requestHead(let head) = event {
+                head
+            } else {
+                nil
+            }
+        }
+        XCTAssertEqual(requests.map(\.path), ["/control"])
+        XCTAssertFalse(self.frames(received.bytes).contains { $0.type == 7 })
+    }
+
+    private func malformedAndControlBytes(
+        port: Int, transform: ([(String, String)]) -> [(String, String)]
+    ) throws -> [UInt8] {
+        let base = [(":method", "GET"), (":scheme", "https"), (":authority", "localhost:\(port)"), (":path", "/bad")]
+        var encoder = HPACKEncoder(allocator: ByteBufferAllocator(), useHuffmanEncoding: false)
+        var bad = ByteBufferAllocator().buffer(capacity: 256)
+        try encoder.encode(headers: HPACKHeaders(transform(base)), to: &bad)
+        var good = ByteBufferAllocator().buffer(capacity: 256)
+        try encoder.encode(headers: HPACKHeaders([(":method", "GET"), (":scheme", "https"), (":authority", "localhost:\(port)"), (":path", "/control")]), to: &good)
+        let preface = Array("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".utf8)
+        return preface + frame(type: 4, flags: 0, stream: 0, payload: [])
+            + frame(type: 1, flags: 5, stream: 1, payload: Array(bad.readableBytesView))
+            + frame(type: 1, flags: 5, stream: 3, payload: Array(good.readableBytesView))
+    }
+
     private func frame(type: UInt8, flags: UInt8, stream: UInt8, payload: [UInt8]) -> [UInt8] {
         [UInt8((payload.count >> 16) & 255), UInt8((payload.count >> 8) & 255), UInt8(payload.count & 255), type, flags, 0, 0, 0, stream] + payload
     }
 
-    private func frames(_ bytes: [UInt8]) -> [(type: UInt8, flags: UInt8, stream: Int)] {
+    private struct FrameHeader {
+        let type: UInt8
+        let flags: UInt8
+        let stream: Int
+    }
+
+    private func frames(_ bytes: [UInt8]) -> [FrameHeader] {
         var offset = 0
-        var frames: [(type: UInt8, flags: UInt8, stream: Int)] = []
+        var frames: [FrameHeader] = []
         while offset + 9 <= bytes.count {
             let length = Int(bytes[offset]) << 16 | Int(bytes[offset + 1]) << 8 | Int(bytes[offset + 2])
             guard offset + 9 + length <= bytes.count else { break }
             let stream = Int(bytes[offset + 5] & 127) << 24 | Int(bytes[offset + 6]) << 16
                 | Int(bytes[offset + 7]) << 8 | Int(bytes[offset + 8])
-            frames.append((bytes[offset + 3], bytes[offset + 4], stream))
+            frames.append(FrameHeader(type: bytes[offset + 3], flags: bytes[offset + 4], stream: stream))
             offset += 9 + length
         }
         return frames

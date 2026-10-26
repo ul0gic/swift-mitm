@@ -110,10 +110,7 @@ final class HTTP2WebSocketStreamContext {
         case .fileRegion:
             valid = false
         }
-        guard valid else {
-            return coordinator.fail()
-        }
-        guard !endStream || session.isAtFrameBoundary(direction: webSocketDirection) else {
+        guard valid, !endStream || session.isAtFrameBoundary(direction: webSocketDirection) else {
             return coordinator.fail()
         }
         closeIfEnded()

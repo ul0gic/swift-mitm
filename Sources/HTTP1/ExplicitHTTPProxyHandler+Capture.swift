@@ -21,8 +21,7 @@ extension ExplicitHTTPProxyHandler {
     }
 
     func captureRequest(_ part: HTTPServerRequestPart, exchange: Exchange) {
-        guard !externallyCaptured else { return }
-        guard exchange.published else { return }
+        guard !externallyCaptured, exchange.published else { return }
         switch part {
         case .head:
             break

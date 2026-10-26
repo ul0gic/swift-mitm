@@ -36,7 +36,9 @@ struct ReplayPreparedRequest: Sendable {
             ), let url = URL(string: mapped.scheme + "://" + mapped.authority + mapped.requestTarget)
             else { throw ReplayError.invalidRequest }
             destination = url
-            if mapped.authority != target.authority { policy = .strip }
+            if mapped.authority != target.authority {
+                policy = .strip
+            }
             sensitive.formUnion(names)
         case .forward, .editHeaders, .respond, .fault: break
         }
@@ -60,7 +62,9 @@ struct ReplayPreparedRequest: Sendable {
         let authorityHost = host.contains(":") && !host.hasPrefix("[") ? "[" + host + "]" : host
         let authority = authorityHost + ":" + String(port)
         var path = components.percentEncodedPath.isEmpty ? "/" : components.percentEncodedPath
-        if let query = components.percentEncodedQuery { path += "?" + query }
+        if let query = components.percentEncodedQuery {
+            path += "?" + query
+        }
         guard let target = HTTPForwardTarget(scheme: scheme, authority: authority, requestTarget: path) else {
             throw ReplayError.invalidRequest
         }
@@ -90,7 +94,9 @@ struct ReplayPreparedRequest: Sendable {
                 })
             else { throw ReplayError.invalidRequest }
             let name = field.name.lowercased()
-            if name == "proxy-authorization" || (!preserveCredentials && sensitive.contains(name)) { continue }
+            if name == "proxy-authorization" || (!preserveCredentials && sensitive.contains(name)) {
+                continue
+            }
             headers.add(name: field.name, value: field.value)
         }
         return headers

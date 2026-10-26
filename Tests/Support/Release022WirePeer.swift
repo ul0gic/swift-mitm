@@ -96,7 +96,9 @@ final class Release022WireHandler: ChannelInboundHandler {
     }
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
-        if case ChannelEvent.inputClosed = event { observation.end() }
+        if case ChannelEvent.inputClosed = event {
+            observation.end()
+        }
         context.fireUserInboundEventTriggered(event)
     }
 
@@ -150,7 +152,9 @@ final class Release022WireOrigin {
 
     func stop() {
         for peer in children.withLockedValue({ $0 }) { try? phase4BoundedWait(peer.close()) }
-        if let listener { try? phase4BoundedWait(listener.close()) }
+        if let listener {
+            try? phase4BoundedWait(listener.close())
+        }
     }
 }
 

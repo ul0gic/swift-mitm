@@ -84,7 +84,9 @@ public final class ContentDecoder {
             zstream.deinitialize(count: 1)
             zstream.deallocate()
         }
-        if initializedApple { _ = compression_stream_destroy(&appleStream) }
+        if initializedApple {
+            _ = compression_stream_destroy(&appleStream)
+        }
         output.deallocate()
         budget.release(reservedStorageBytes)
     }
@@ -140,22 +142,30 @@ public final class ContentDecoder {
         defer { clearPointers() }
         while produced < budget {
             if ended, consumed == input.count {
-                if final { finished = true }
+                if final {
+                    finished = true
+                }
                 return ContentDecoderProgress(
                     consumedBytes: consumed,
                     producedBytes: produced,
                     state: final || coding != .gzip ? .complete : .needsInput
                 )
             }
-            if ended { try beginNextMember() }
+            if ended {
+                try beginNextMember()
+            }
             let capacity = min(sliceBytes, budget - produced)
             let available = min(input.count - consumed, Int(UInt32.max))
             let source = UnsafeRawBufferPointer(rebasing: input[consumed..<(consumed + available)])
             let (used, written) = try nativeStep(source, capacity: capacity, final: final)
             consumed += used
             produced += written
-            if written > 0 { try emit(UnsafeRawBufferPointer(start: output, count: written)) }
-            if ended { continue }
+            if written > 0 {
+                try emit(UnsafeRawBufferPointer(start: output, count: written))
+            }
+            if ended {
+                continue
+            }
             if try needsInput((used, written), consumed: consumed, inputCount: input.count, final: final) {
                 return ContentDecoderProgress(
                     consumedBytes: consumed, producedBytes: produced, state: .needsInput
@@ -176,8 +186,12 @@ public final class ContentDecoder {
         _ progress: (used: Int, written: Int), consumed: Int, inputCount: Int, final: Bool
     ) throws -> Bool {
         guard progress.used == 0 && progress.written == 0 else { return false }
-        if final { throw ContentDecoderError.truncated }
-        if consumed != inputCount { throw ContentDecoderError.malformed }
+        if final {
+            throw ContentDecoderError.truncated
+        }
+        if consumed != inputCount {
+            throw ContentDecoderError.malformed
+        }
         return true
     }
 

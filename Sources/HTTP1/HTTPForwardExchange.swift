@@ -72,5 +72,4 @@ extension ExplicitHTTPProxyHandler {
             responseBody = CaptureBodyBuffer(limit: bodyLimit)
         }
     }
-
 }

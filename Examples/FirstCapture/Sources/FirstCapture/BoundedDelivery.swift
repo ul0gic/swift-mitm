@@ -93,7 +93,9 @@ final class BoundedDelivery: Sendable {
             }
         } onCancel: {
             state.withLock { state in
-                if state.failure == nil { state.terminate(.cancelled) }
+                if state.failure == nil {
+                    state.terminate(.cancelled)
+                }
             }
         }
     }

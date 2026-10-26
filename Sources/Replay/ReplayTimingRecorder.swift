@@ -23,7 +23,9 @@ final class ReplayTimingRecorder: Sendable {
 
     func startResponse() {
         state.withLockedValue {
-            if $0.responseStart == nil { $0.responseStart = NIODeadline.now().uptimeNanoseconds }
+            if $0.responseStart == nil {
+                $0.responseStart = NIODeadline.now().uptimeNanoseconds
+            }
         }
     }
 

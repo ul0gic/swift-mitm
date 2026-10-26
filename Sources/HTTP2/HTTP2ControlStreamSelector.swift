@@ -42,7 +42,7 @@ final class HTTP2ControlStreamSelector: ChannelInboundHandler, RemovableChannelH
             }
             try configureHTTP(payload, requestID: requestID, context: context)
             context.fireChannelRead(data)
-            context.pipeline.removeHandler(self, promise: nil)
+            context.pipeline.syncOperations.removeHandler(self, promise: nil)
         } catch {
             server.controlEventSink?.receive(.failure(
                 requestID: requestID, code: error as? HTTPControlError ?? .unsupportedEdit
@@ -57,7 +57,8 @@ final class HTTP2ControlStreamSelector: ChannelInboundHandler, RemovableChannelH
             let message = HTTPControlMessage(
                 context: HTTPControlContext(
                     requestID: requestID, authority: authority, method: "CONNECT",
-                    path: frame.headers.first(name: ":path") ?? "", isHTTP2OrLater: true),
+                    path: frame.headers.first(name: ":path") ?? "", isHTTP2OrLater: true
+                ),
                 phase: .request,
                 headers: frame.headers.filter { !$0.name.hasPrefix(":") }.map {
                     HTTPHeaderField(name: $0.name, value: $0.value)
@@ -81,9 +82,9 @@ final class HTTP2ControlStreamSelector: ChannelInboundHandler, RemovableChannelH
         let owner = NIOLoopBound(self, eventLoop: context.eventLoop)
         H2StreamGlue.glue(inboundStream: context.channel, upstreamMux: upstreamMux,
                           configuration: .init(
-                            authority: authority, target: target, sink: sink,
-                            captureBodyLimit: captureBodyLimit,
-                            extendedConnectEnabled: extendedConnectEnabled
+                              authority: authority, target: target, sink: sink,
+                              captureBodyLimit: captureBodyLimit,
+                              extendedConnectEnabled: extendedConnectEnabled
                           ))
             .assumeIsolated().whenComplete { result in
                 let handler = owner.value
@@ -108,7 +109,7 @@ final class HTTP2ControlStreamSelector: ChannelInboundHandler, RemovableChannelH
         frameAdmissionReservations.forEach { $0.release() }
         bytes = 0
         context.fireChannelReadComplete()
-        context.pipeline.removeHandler(self, promise: nil)
+        context.pipeline.syncOperations.removeHandler(self, promise: nil)
     }
 
     private func configureHTTP(_ payload: HTTP2Frame.FramePayload, requestID: UUID,
@@ -163,7 +164,9 @@ final class HTTP2ControlStreamSelector: ChannelInboundHandler, RemovableChannelH
         default: size = 64
         }
         guard size <= 65_536 - bytes else { throw HTTPControlError.capacityExceeded }
-        if let runtime = server.controlRuntime { reservations.append(try runtime.reserveTransportBytes(size)) }
+        if let runtime = server.controlRuntime {
+            reservations.append(try runtime.reserveTransportBytes(size))
+        }
         if let reservation = try server.admission?.acquire(.retainedBytes(size)) {
             admissionReservations.append(reservation)
         }

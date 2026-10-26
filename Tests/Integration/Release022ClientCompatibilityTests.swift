@@ -38,9 +38,19 @@ final class Release022ClientCompatibilityTests: XCTestCase {
                 XCTAssertEqual(result.status, 0, result.error)
                 XCTAssertEqual(result.output, String(repeating: "A", count: 32))
             }
-            let events = try sink.wait { $0.filter { if case .responseEnd = $0 { true } else { false } }.count == 2 }
+            let events = try sink.wait { $0.filter {
+                if case .responseEnd = $0 {
+                    true
+                } else {
+                    false
+                }
+            }.count == 2 }
             let schemes = events.compactMap { event -> String? in
-                if case .requestHead(let head) = event { head.scheme } else { nil }
+                if case .requestHead(let head) = event {
+                    head.scheme
+                } else {
+                    nil
+                }
             }
             XCTAssertEqual(schemes, ["http", "https"])
             try await proxy.stop()
@@ -94,9 +104,19 @@ final class Release022ClientCompatibilityTests: XCTestCase {
             let (data, response) = try await client.data(from: url)
             XCTAssertEqual(data, Data(repeating: 0x41, count: 32))
             XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
-            let events = try sink.wait { $0.contains { if case .responseEnd = $0 { true } else { false } } }
+            let events = try sink.wait { $0.contains {
+                if case .responseEnd = $0 {
+                    true
+                } else {
+                    false
+                }
+            } }
             let heads = events.compactMap { event -> CapturedRequestHead? in
-                if case .requestHead(let head) = event { head } else { nil }
+                if case .requestHead(let head) = event {
+                    head
+                } else {
+                    nil
+                }
             }
             XCTAssertEqual(heads.count, 1)
             XCTAssertEqual(heads.first?.version, version)
@@ -114,7 +134,13 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         }
     }
 
-    private func curl(_ arguments: [String]) throws -> (status: Int32, output: String, error: String) {
+    private struct CurlResult {
+        let status: Int32
+        let output: String
+        let error: String
+    }
+
+    private func curl(_ arguments: [String]) throws -> CurlResult {
         let process = Process()
         let output = Pipe()
         let error = Pipe()
@@ -124,10 +150,10 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         process.standardError = error
         try process.run()
         process.waitUntilExit()
-        return (
-            process.terminationStatus,
-            String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self),
-            String(decoding: error.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        return CurlResult(
+            status: process.terminationStatus,
+            output: String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self),
+            error: String(decoding: error.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         )
     }
 }

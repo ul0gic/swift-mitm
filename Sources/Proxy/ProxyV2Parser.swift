@@ -168,8 +168,7 @@ struct ProxyV2Parser {
         var index = startIndex
         var count = 0
         while index < endIndex {
-            guard endIndex - index >= 3 else { throw ProxyV2ParserError.malformedTLV }
-            guard let length: UInt16 = header.getInteger(at: index + 1, endianness: .big) else {
+            guard endIndex - index >= 3, let length: UInt16 = header.getInteger(at: index + 1, endianness: .big) else {
                 throw ProxyV2ParserError.malformedTLV
             }
             let nextIndex = index + 3 + Int(length)

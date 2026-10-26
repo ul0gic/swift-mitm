@@ -69,7 +69,9 @@ final class HTTP1ReusePool: Sendable {
         guard inserted else { return false }
         let entryID = entry.id
         let expiry = channel.eventLoop.scheduleTask(in: .seconds(Int64(policy.idleTimeoutSeconds))) { [weak self] in
-            if let self { self.expire(downstreamID: key.downstreamID, entryID: entryID) }
+            if let self {
+                self.expire(downstreamID: key.downstreamID, entryID: entryID)
+            }
         }
         let retained = entries.withLockedValue { entries in
             guard var current = entries[key.downstreamID], current.id == entryID else { return false }
@@ -77,7 +79,9 @@ final class HTTP1ReusePool: Sendable {
             entries[key.downstreamID] = current
             return true
         }
-        if !retained { expiry.cancel() }
+        if !retained {
+            expiry.cancel()
+        }
         channel.closeFuture.whenComplete { [weak self] _ in
             expiry.cancel()
             self?.forget(downstreamID: key.downstreamID, entryID: entryID)
@@ -103,7 +107,9 @@ final class HTTP1ReusePool: Sendable {
 
     private func forget(downstreamID: UUID, entryID: UUID) {
         entries.withLockedValue { entries in
-            if entries[downstreamID]?.id == entryID { entries.removeValue(forKey: downstreamID) }
+            if entries[downstreamID]?.id == entryID {
+                entries.removeValue(forKey: downstreamID)
+            }
         }
     }
 

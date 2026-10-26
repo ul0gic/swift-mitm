@@ -58,7 +58,9 @@ public final class SSEParser {
             for byte in input {
                 if skipLF {
                     skipLF = false
-                    if byte == 10 { continue }
+                    if byte == 10 {
+                        continue
+                    }
                 }
                 if byte == 10 || byte == 13 {
                     try processLine(emit: emit)
@@ -88,7 +90,9 @@ public final class SSEParser {
         var bytes = line[...]
         if firstLine {
             firstLine = false
-            if bytes.starts(with: [0xEF, 0xBB, 0xBF]) { bytes = bytes.dropFirst(3) }
+            if bytes.starts(with: [0xEF, 0xBB, 0xBF]) {
+                bytes = bytes.dropFirst(3)
+            }
         }
         if bytes.isEmpty {
             try dispatch(emit: emit)
@@ -97,7 +101,9 @@ public final class SSEParser {
         let decoded = String(decoding: bytes, as: UTF8.self)
         let decodedCount = decoded.utf8.count
         guard decodedCount <= maximumLineBytes else { throw SSEParserError.lineLimitExceeded }
-        if decoded.first == ":" { return }
+        if decoded.first == ":" {
+            return
+        }
         let (field, value) = Self.field(decoded)
         try apply(field: field, value: value)
     }
@@ -120,7 +126,9 @@ public final class SSEParser {
         if let colon = decoded.firstIndex(of: ":") {
             let field = decoded[..<colon]
             var value = decoded[decoded.index(after: colon)...]
-            if value.first == " " { value = value.dropFirst() }
+            if value.first == " " {
+                value = value.dropFirst()
+            }
             return (field, value)
         }
         return (decoded[...], "")
@@ -140,7 +148,9 @@ public final class SSEParser {
             }
             event = String(value)
         case "id":
-            if !value.utf8.contains(0) { lastEventID = String(value) }
+            if !value.utf8.contains(0) {
+                lastEventID = String(value)
+            }
         case "retry":
             if !value.isEmpty && value.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }) {
                 retryMilliseconds = String(value)

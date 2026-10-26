@@ -19,7 +19,9 @@ final class Stage2InspectionEvents: InspectionEventSink {
         let deadline = clock.now.advanced(by: .seconds(5))
         while true {
             let current = events
-            if predicate(current) { return current }
+            if predicate(current) {
+                return current
+            }
             guard clock.now < deadline else { throw Phase2FixtureError.deadlineExceeded }
             try await Task.sleep(for: .milliseconds(10))
         }
@@ -39,7 +41,7 @@ struct Stage2WireContext {
 
 func stage2WithInspectionWire(
     controlRuntime: HTTPControlRuntime? = nil,
-    controlEventSink: (any HTTPControlEventSink)? = nil,
+    controlEventSink: any HTTPControlEventSink? = nil,
     inspectionConfiguration: InspectionConfiguration? = nil,
     admission: ResourceAdmissionController? = nil,
     reusePolicy: HTTP1ReusePolicy? = nil,
@@ -70,7 +72,9 @@ func stage2WithInspectionWire(
             proxy: proxy, group: group, origin: origin, client: channel, received: received,
             raw: raw, inspected: inspected, inspector: inspector
         ))
-        if channel.isActive { try await channel.close().get() }
+        if channel.isActive {
+            try await channel.close().get()
+        }
         try await proxy.stop()
         origin.stop()
         let shutdown = await inspector.shutdown()
@@ -79,7 +83,9 @@ func stage2WithInspectionWire(
     } catch {
         let failure = error
         do {
-            if let client, client.isActive { try await client.close().get() }
+            if let client, client.isActive {
+                try await client.close().get()
+            }
             try await proxy.stop()
         } catch { XCTFail("Proxy cleanup failed: \(error)") }
         origin.stop()
@@ -97,7 +103,11 @@ func stage2WriteChunk(_ bytes: [UInt8], origin: Release022WireOrigin) throws {
 
 func stage2ResponseCount(_ events: [CaptureEvent]) -> Int {
     events.reduce(0) { count, event in
-        if case .responseBodyChunk(_, _, let byteCount) = event { count + byteCount } else { count }
+        if case .responseBodyChunk(_, _, let byteCount) = event {
+            count + byteCount
+        } else {
+            count
+        }
     }
 }
 
@@ -107,9 +117,10 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
             let request = "GET http://127.0.0.1:\(peer.origin.port)/events HTTP/1.1\r\nHost: localhost\r\n\r\n"
             try phase4BoundedWait(peer.client.writeAndFlush(ByteBuffer(string: request)))
             _ = try peer.origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
-            try peer.origin.write(Array((
+            try peer.origin.write(Array(
                 "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n"
-            ).utf8))
+.utf8
+            ))
             let pieces: [[UInt8]] = [
                 [0xEF], [0xBB, 0xBF] + Array("id: evt-1\r".utf8),
                 Array("\nevent: update\r\ndata: ".utf8) + [0xE2],
@@ -122,10 +133,20 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
                 _ = try peer.raw.wait { stage2ResponseCount($0) >= total }
             }
             let events = try await peer.inspected.wait { events in
-                events.contains { if case .sse = $0.payload { true } else { false } }
+                events.contains {
+                    if case .sse = $0.payload {
+                        true
+                    } else {
+                        false
+                    }
+                }
             }
             let messages = events.compactMap { event -> SSEEvent? in
-                if case .sse(let message) = event.payload { message } else { nil }
+                if case .sse(let message) = event.payload {
+                    message
+                } else {
+                    nil
+                }
             }
             XCTAssertEqual(messages.count, 1)
             XCTAssertEqual(messages.first?.data, "€\nsecond")
@@ -138,7 +159,13 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
             _ = try peer.raw.wait { release022ResponseEnds($0).count == 1 }
             let drain = await peer.inspector.drain()
             XCTAssertTrue(drain.drained)
-            XCTAssertEqual(peer.inspected.events.filter { if case .sse = $0.payload { true } else { false } }.count, 1)
+            XCTAssertEqual(peer.inspected.events.filter {
+                if case .sse = $0.payload {
+                    true
+                } else {
+                    false
+                }
+            }.count, 1)
         }
     }
 
@@ -148,19 +175,28 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
             try phase4BoundedWait(peer.client.writeAndFlush(ByteBuffer(string: request)))
             _ = try peer.origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
             let body: [UInt8] = [0x01, 0x02, 0x03, 0x04, 0xFF, 0x00]
-            try peer.origin.write(Array((
+            try peer.origin.write(Array(
                 "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: \(body.count)\r\n\r\n"
-            ).utf8) + body)
+.utf8
+            ) + body)
             let received = try peer.received.wait { $0.suffix(body.count).elementsEqual(body) }
             XCTAssertEqual(Array(received.suffix(body.count)), body)
             _ = try peer.raw.wait { release022ResponseEnds($0).count == 1 }
             let events = try await peer.inspected.wait { events in
                 events.contains { event in
-                    if case .diagnostic(.malformedCoding) = event.payload { true } else { false }
+                    if case .diagnostic(.malformedCoding) = event.payload {
+                        true
+                    } else {
+                        false
+                    }
                 }
             }
             XCTAssertEqual(events.filter { event in
-                if case .diagnostic(.malformedCoding) = event.payload { true } else { false }
+                if case .diagnostic(.malformedCoding) = event.payload {
+                    true
+                } else {
+                    false
+                }
             }.count, 1)
             XCTAssertTrue(release022Errors(peer.raw.events).isEmpty)
             XCTAssertEqual(stage2ResponseCount(peer.raw.events), body.count)
@@ -173,9 +209,10 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
                 + "Host: localhost\r\nContent-Type: application/grpc-web-text+proto\r\nContent-Length: 0\r\n\r\n"
             try phase4BoundedWait(peer.client.writeAndFlush(ByteBuffer(string: request)))
             _ = try peer.origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
-            try peer.origin.write(Array((
+            try peer.origin.write(Array(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/grpc-web-text+proto\r\nTransfer-Encoding: chunked\r\n\r\n"
-            ).utf8))
+.utf8
+            ))
             let message: [UInt8] = [0, 0, 0, 0, 2, 8, 42]
             let encoded = Array(Data(message).base64EncodedString().utf8)
             try stage2WriteChunk(Array(encoded.prefix(3)), origin: peer.origin)
@@ -183,11 +220,19 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
             try stage2WriteChunk(Array(encoded.dropFirst(3)), origin: peer.origin)
             let early = try await peer.inspected.wait { events in
                 events.contains { event in
-                    if case .grpc(.message) = event.payload, event.direction == .response { true } else { false }
+                    if case .grpc(.message) = event.payload, event.direction == .response {
+                        true
+                    } else {
+                        false
+                    }
                 }
             }
             let messages = early.compactMap { event -> GRPCMessage? in
-                if case .grpc(.message(let message)) = event.payload, event.direction == .response { message } else { nil }
+                if case .grpc(.message(let message)) = event.payload, event.direction == .response {
+                    message
+                } else {
+                    nil
+                }
             }
             XCTAssertEqual(messages.map(\.bytes), [[8, 42]])
             XCTAssertTrue(release022ResponseEnds(peer.raw.events).isEmpty)
@@ -199,12 +244,18 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
                 events.contains { event in
                     if case .grpc(.status(let status)) = event.payload, event.direction == .response {
                         status.code == 0
-                    } else { false }
+                    } else {
+                        false
+                    }
                 }
             }
             XCTAssertTrue(release022ResponseBodyBytes(peer.raw.events).isEmpty)
             XCTAssertEqual(finished.filter { event in
-                if case .grpc(.message) = event.payload, event.direction == .response { true } else { false }
+                if case .grpc(.message) = event.payload, event.direction == .response {
+                    true
+                } else {
+                    false
+                }
             }.count, 1)
         }
     }
@@ -222,30 +273,54 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
                 + "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n"
                 + "Sec-WebSocket-Extensions: permessage-deflate; server_no_context_takeover; client_no_context_takeover\r\n\r\n"
             ).utf8))
-            _ = try peer.raw.wait { $0.contains { if case .webSocketOpen = $0 { true } else { false } } }
+            _ = try peer.raw.wait { $0.contains {
+                if case .webSocketOpen = $0 {
+                    true
+                } else {
+                    false
+                }
+            } }
             // RFC7692 section7.2.3.1 Hello vector, fragmented around an interleaved ping.
             let frames: [UInt8] = [0x41, 3, 0xF2, 0x48, 0xCD, 0x89, 0, 0x80, 4, 0xC9, 0xC9, 0x07, 0x00]
             try peer.origin.write(frames)
             let received = try peer.received.wait { $0.suffix(frames.count).elementsEqual(frames) }
             XCTAssertEqual(Array(received.suffix(frames.count)), frames)
             let events = try await peer.inspected.wait { events in
-                events.contains { if case .webSocketMessage = $0.payload { true } else { false } }
+                events.contains {
+                    if case .webSocketMessage = $0.payload {
+                        true
+                    } else {
+                        false
+                    }
+                }
             }
             let bytes = events.flatMap { event -> [UInt8] in
-                if case .webSocketChunk(let bytes) = event.payload { bytes } else { [] }
+                if case .webSocketChunk(let bytes) = event.payload {
+                    bytes
+                } else {
+                    []
+                }
             }
             XCTAssertEqual(bytes, Array("Hello".utf8))
             let summary = try XCTUnwrap(events.compactMap { event -> WebSocketMessageSummary? in
-                if case .webSocketMessage(let summary) = event.payload { summary } else { nil }
+                if case .webSocketMessage(let summary) = event.payload {
+                    summary
+                } else {
+                    nil
+                }
             }.first)
             XCTAssertTrue(summary.compressed)
             XCTAssertEqual(summary.encodedBytes, 7)
             XCTAssertEqual(summary.decodedBytes, 5)
             let framesCaptured = peer.raw.events.compactMap { event -> CapturedWebSocketFrame? in
-                if case .webSocketFrame(let frame) = event { frame } else { nil }
+                if case .webSocketFrame(let frame) = event {
+                    frame
+                } else {
+                    nil
+                }
             }
             XCTAssertEqual(framesCaptured.map(\.byteCount), [3, 0, 4])
-            XCTAssertTrue(framesCaptured.allSatisfy { $0.bytes.isEmpty })
+            XCTAssertTrue(framesCaptured.allSatisfy(\.bytes.isEmpty))
         }
     }
 
@@ -265,19 +340,40 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
                 + "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n"
                 + "Sec-WebSocket-Extensions: permessage-deflate\r\n\r\n"
             ).utf8))
-            _ = try peer.raw.wait { $0.contains { if case .webSocketOpen = $0 { true } else { false } } }
+            _ = try peer.raw.wait { $0.contains {
+                if case .webSocketOpen = $0 {
+                    true
+                } else {
+                    false
+                }
+            } }
             try peer.origin.write(frames)
             let forwarded = try peer.received.wait { $0.suffix(frames.count).elementsEqual(frames) }
             XCTAssertEqual(Array(forwarded.suffix(frames.count)), frames)
             let observed = try await peer.inspected.wait { events in
-                events.filter { if case .webSocketMessage = $0.payload { true } else { false } }.count == 2
+                events.filter {
+                    if case .webSocketMessage = $0.payload {
+                        true
+                    } else {
+                        false
+                    }
+                }.count == 2
             }
             let bytes = observed.flatMap { event -> [UInt8] in
-                if case .webSocketChunk(let bytes) = event.payload { bytes } else { [] }
+                if case .webSocketChunk(let bytes) = event.payload {
+                    bytes
+                } else {
+                    []
+                }
             }
             XCTAssertEqual(bytes, expected)
-            XCTAssertFalse(observed.contains { if case .diagnostic = $0.payload { true } else { false } })
+            XCTAssertFalse(observed.contains {
+                if case .diagnostic = $0.payload {
+                    true
+                } else {
+                    false
+                }
+            })
         }
     }
-
 }

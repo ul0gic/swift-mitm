@@ -29,11 +29,15 @@ extension ExplicitHTTPProxyHandler {
                 byteCount: body.readableBytes
             ))
             }
-            if retainControlledResponse(body, exchange: exchange) { return }
+            if retainControlledResponse(body, exchange: exchange) {
+                return
+            }
             if let writer = exchange.responseFaultWriter {
                 do { try writer.enqueue(body) }
                 catch { controlFailed(exchange, error: error) }
-            } else { writeResponseBody(body, exchange: exchange, context: context) }
+            } else {
+                writeResponseBody(body, exchange: exchange, context: context)
+            }
         case .end(let trailers):
             if exchange.responseControlHead != nil {
                 completeControlledResponse(trailers, exchange: exchange)
@@ -48,7 +52,9 @@ extension ExplicitHTTPProxyHandler {
         if !externallyCaptured, let trailers, !trailers.isEmpty {
             sink.receive(.responseTrailers(requestID: exchange.id, headers: Self.fields(trailers)))
         }
-        if !externallyCaptured { sink.receive(.responseEnd(requestID: exchange.id, truncated: exchange.responseBody.truncated)) }
+        if !externallyCaptured {
+            sink.receive(.responseEnd(requestID: exchange.id, truncated: exchange.responseBody.truncated))
+        }
         correlator.end(id: exchange.id, request: false)
         if exchange.originKeepAlive == false, !exchange.upgrading {
             let origin = upstream
@@ -78,8 +84,12 @@ extension ExplicitHTTPProxyHandler {
             }
             }
         }
-        if let writer = exchange.responseFaultWriter { writer.finish(complete) }
-        else { complete() }
+        if let writer = exchange.responseFaultWriter {
+            writer.finish(complete)
+        }
+        else {
+            complete()
+        }
     }
 
     func receiveHead(
@@ -113,14 +123,18 @@ extension ExplicitHTTPProxyHandler {
                 $0.lowercased().contains("permessage-deflate")
             }
         }
-        if !externallyCaptured { sink.receive(.responseHead(CapturedResponseHead(
-            requestID: exchange.id,
-            timestamp: Date(),
-            status: Int(receivedHead.status.code),
-            version: .http11,
-            headers: Self.fields(receivedHead.headers)
-        ))) }
-        if prepareControlledResponse(receivedHead, exchange: exchange) { return }
+        if !externallyCaptured {
+            sink.receive(.responseHead(CapturedResponseHead(
+                requestID: exchange.id,
+                timestamp: Date(),
+                status: Int(receivedHead.status.code),
+                version: .http11,
+                headers: Self.fields(receivedHead.headers)
+            )))
+        }
+        if prepareControlledResponse(receivedHead, exchange: exchange) {
+            return
+        }
         forwardResponseHead(receivedHead, exchange: exchange, context: context)
     }
 
@@ -164,14 +178,18 @@ extension ExplicitHTTPProxyHandler {
             readClientIfNeeded()
             return
         }
-        if finishWithReuse(exchange) { return }
+        if finishWithReuse(exchange) {
+            return
+        }
         finishExchange(exchange)
     }
 
     func finishExchange(_ exchange: Exchange) {
         guard !stopped, active === exchange else { return }
         let origin = upstream
-        if let origin { retainControlBytesUntilClosed(origin, exchange: exchange) }
+        if let origin {
+            retainControlBytesUntilClosed(origin, exchange: exchange)
+        }
         upstream = nil
         origin?.close(promise: nil)
         if (exchange.earlyResponse && !typedHTTP2) || !exchange.requestKeepAlive {
@@ -201,7 +219,9 @@ extension ExplicitHTTPProxyHandler {
     }
 
     func readClientIfNeeded() {
-        if active?.requestFaultWriter?.hasPending == true { return }
+        if active?.requestFaultWriter?.hasPending == true {
+            return
+        }
         if let receiving, receiving.controlCollectingBody, !stopped {
             context?.read()
             return
@@ -212,8 +232,12 @@ extension ExplicitHTTPProxyHandler {
     }
 
     func readOriginIfNeeded() {
-        if active?.responseFaultWriter?.hasPending == true { return }
-        if let active, active.responseControlHead != nil, !active.responseControlCollecting { return }
+        if active?.responseFaultWriter?.hasPending == true {
+            return
+        }
+        if let active, active.responseControlHead != nil, !active.responseControlCollecting {
+            return
+        }
         guard !stopped, context?.channel.isWritable == true else { return }
         upstream?.read()
     }
@@ -224,7 +248,9 @@ extension ExplicitHTTPProxyHandler {
             return
         }
         guard !stopped, let upstream, active?.responseEnded != true else { return }
-        if let channel, upstream !== channel { return }
+        if let channel, upstream !== channel {
+            return
+        }
         if active?.responseStarted == true {
             abort(message: "Invalid or incomplete HTTP/1 origin response")
         } else {
@@ -259,9 +285,13 @@ extension ExplicitHTTPProxyHandler {
         }
         stopped = true
         reusePool?.close(downstreamID: connectionID)
-        for exchange in queue.compactMap({ $0 }) {
-            if let context { retainControlBytesUntilClosed(context.channel, exchange: exchange) }
-            if active === exchange, let upstream { retainControlBytesUntilClosed(upstream, exchange: exchange) }
+        for exchange in queue.compactMap(\.self) {
+            if let context {
+                retainControlBytesUntilClosed(context.channel, exchange: exchange)
+            }
+            if active === exchange, let upstream {
+                retainControlBytesUntilClosed(upstream, exchange: exchange)
+            }
             exchange.controlTask?.cancel()
             exchange.controlReservation = nil
             exchange.responseControlReservation = nil
@@ -277,7 +307,9 @@ extension ExplicitHTTPProxyHandler {
                 Task { await runtime.cancel(requestID: requestID) }
             }
         }
-        if !externallyCaptured { correlator.failOutstanding(sink: sink, message: message) }
+        if !externallyCaptured {
+            correlator.failOutstanding(sink: sink, message: message)
+        }
         let origin = upstream
         upstream = nil
         origin?.close(promise: nil)
@@ -285,7 +317,9 @@ extension ExplicitHTTPProxyHandler {
         receiving = nil
         active = nil
         count = 0
-        if close { context?.close(promise: nil) }
+        if close {
+            context?.close(promise: nil)
+        }
     }
 
     func cancel() {

@@ -10,7 +10,7 @@ extension HTTPInspector {
             try responseHead(head, key: key, state: &state)
         case let .requestTrailers(_, headers), let .responseTrailers(_, headers):
             try state.bodies[key]?.setTrailers(headers)
-        case .requestEnd(_, _), .responseEnd(_, _):
+        case .requestEnd(_, _), .responseEnd:
             return try endBody(key, state: &state)
         case .streamError(let id, _):
             streamError(id, key: key, state: &state)
@@ -60,17 +60,25 @@ extension HTTPInspector {
 
     private func endBody(_ key: Key, state: inout Worker) throws -> Bool {
         state.bodies[key]?.end()
-        if try state.bodies[key]?.turn() == false { return false }
+        if try state.bodies[key]?.turn() == false {
+            return false
+        }
         state.bodies.removeValue(forKey: key)
         if var exchange = state.exchanges[exchangeKey(key)] {
-            if key.direction == .request { exchange.requestEnded = true }
-            else { exchange.responseEnded = true }
+            if key.direction == .request {
+                exchange.requestEnded = true
+            }
+            else {
+                exchange.responseEnded = true
+            }
             state.exchanges[exchangeKey(key)] = exchange
             if exchange.requestEnded && exchange.responseEnded && !exchange.upgraded {
                 if let removed = state.exchanges.removeValue(forKey: exchangeKey(key)) {
                     configuration.budget.release(removed.charge)
                 }
-                if !state.exchanges.keys.contains(where: { $0.id == key.id }) { cleanup(key.id, state: &state) }
+                if !state.exchanges.keys.contains(where: { $0.id == key.id }) {
+                    cleanup(key.id, state: &state)
+                }
             }
         }
         return true
@@ -83,7 +91,9 @@ extension HTTPInspector {
         if let removed = state.exchanges.removeValue(forKey: exchangeKey(key)) {
             configuration.budget.release(removed.charge)
         }
-        if !state.exchanges.keys.contains(where: { $0.id == id }) { cleanup(id, state: &state) }
+        if !state.exchanges.keys.contains(where: { $0.id == id }) {
+            cleanup(id, state: &state)
+        }
     }
 
     func makeBody(
@@ -103,7 +113,9 @@ extension HTTPInspector {
     func cleanup(_ id: UUID, state: inout Worker) {
         let keys = state.exchanges.keys.filter { $0.id == id }
         for key in keys {
-            if let exchange = state.exchanges.removeValue(forKey: key) { configuration.budget.release(exchange.charge) }
+            if let exchange = state.exchanges.removeValue(forKey: key) {
+                configuration.budget.release(exchange.charge)
+            }
         }
         sequences.withLock { $0.removeValue(forKey: id) }
         ingress.withLock { value in

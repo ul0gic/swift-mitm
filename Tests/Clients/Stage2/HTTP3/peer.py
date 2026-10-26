@@ -1,0 +1,138 @@
+import argparse
+import asyncio
+from functools import partial
+import json
+from pathlib import Path
+import signal
+import sys
+
+from aioquic.asyncio.protocol import QuicConnectionProtocol
+from aioquic.asyncio.server import QuicServer
+from aioquic.h3.connection import H3Connection, Setting
+from aioquic.h3.events import DataReceived, HeadersReceived
+from aioquic.quic.configuration import QuicConfiguration
+from aioquic.quic.events import HandshakeCompleted, StopSendingReceived, StreamReset
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from client_tls import create_identity
+
+
+class Origin(QuicConnectionProtocol):
+    def __init__(self, *args, stats, publish, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.http = H3Connection(self._quic)
+        self.stats = stats
+        self.publish = publish
+        self.paths = {}
+
+    def quic_event_received(self, event):
+        if isinstance(event, HandshakeCompleted):
+            self.stats["handshakes"] += 1
+            self.stats["alpn"].append(event.alpn_protocol)
+            self.stats["earlyDataAccepted"] |= event.early_data_accepted
+        elif isinstance(event, (StreamReset, StopSendingReceived)):
+            self.stats["cancelSignals"] += 1
+            self.paths.pop(event.stream_id, None)
+        for received in self.http.handle_event(event):
+            if isinstance(received, HeadersReceived):
+                self.headers(received)
+            elif isinstance(received, DataReceived):
+                self.data(received)
+        settings = self.http.received_settings
+        if settings is not None:
+            self.stats["peerQpackCapacity"] = settings.get(Setting.QPACK_MAX_TABLE_CAPACITY, 0)
+            self.stats["peerQpackBlocked"] = settings.get(Setting.QPACK_BLOCKED_STREAMS, 0)
+        self.publish()
+        self.transmit()
+
+    def headers(self, event):
+        values = dict(event.headers)
+        path = values.get(b":path")
+        if path is None:
+            return
+        if len(self.paths) >= 64:
+            raise RuntimeError("independent origin request bound exceeded")
+        self.paths[event.stream_id] = path
+        self.stats["requests"] += 1
+        self.stats["paths"].append(path.decode("ascii"))
+        self.http.send_headers(event.stream_id, [
+            (b":status", b"200"), (b"x-duplicate", b"first"), (b"x-duplicate", b"second")
+        ])
+        if path == b"/duplex":
+            self.http.send_data(event.stream_id, b"early:", end_stream=False)
+        elif path == b"/hold":
+            self.http.send_data(event.stream_id, b"held", end_stream=False)
+        elif path == b"/large":
+            self.http.send_data(event.stream_id, bytes(range(256)) * 1024, end_stream=True)
+            self.paths.pop(event.stream_id)
+        else:
+            self.http.send_data(event.stream_id, b"origin", end_stream=True)
+            self.paths.pop(event.stream_id)
+
+    def data(self, event):
+        path = self.paths.get(event.stream_id)
+        self.stats["uploadBytes"] += len(event.data)
+        if path == b"/duplex":
+            self.http.send_data(event.stream_id, event.data, end_stream=False)
+            if event.stream_ended:
+                self.http.send_headers(event.stream_id, [
+                    (b"x-trailer", b"first"), (b"x-trailer", b"second")
+                ], end_stream=True)
+                self.paths.pop(event.stream_id)
+
+
+class CountingServer(QuicServer):
+    def __init__(self, *args, stats, publish, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.stats = stats
+        self.publish = publish
+
+    def datagram_received(self, data, address):
+        self.stats["datagrams"] += 1
+        self.publish()
+        super().datagram_received(data, address)
+
+
+async def serve(arguments):
+    directory = arguments.ready_file.parent
+    directory.mkdir(parents=True, exist_ok=True)
+    certificate, key = create_identity(directory)
+    stats = {"datagrams": 0, "handshakes": 0, "alpn": [], "earlyDataAccepted": False,
+             "requests": 0, "paths": [], "uploadBytes": 0, "cancelSignals": 0,
+             "peerQpackCapacity": None, "peerQpackBlocked": None}
+    stats_file = directory / "stats.json"
+
+    def publish():
+        temporary = stats_file.with_suffix(".tmp")
+        temporary.write_text(json.dumps(stats), encoding="utf-8")
+        temporary.replace(stats_file)
+
+    configuration = QuicConfiguration(is_client=False, alpn_protocols=["h3"], idle_timeout=15)
+    configuration.load_cert_chain(certificate, key)
+    loop = asyncio.get_running_loop()
+    transport, server = await loop.create_datagram_endpoint(
+        lambda: CountingServer(
+            configuration=configuration, stats=stats, publish=publish,
+            create_protocol=partial(Origin, stats=stats, publish=publish)
+        ), local_addr=("127.0.0.1", 0)
+    )
+    stopped = asyncio.Event()
+    for name in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(name, stopped.set)
+    publish()
+    arguments.ready_file.write_text(json.dumps({
+        "port": transport.get_extra_info("sockname")[1], "hostname": "localhost",
+        "certificate": str(certificate), "key": str(key), "stats": str(stats_file)
+    }), encoding="utf-8")
+    try:
+        await asyncio.wait_for(stopped.wait(), timeout=180)
+    finally:
+        server.close()
+        transport.close()
+        publish()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--ready-file", type=Path, required=True)
+    asyncio.run(serve(parser.parse_args()))

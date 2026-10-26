@@ -1,4 +1,11 @@
 --swiftversion 6.4
 --exclude .build,Vendor
 
---disable andOperator,blankLinesBetweenImports,blankLinesBetweenScopes,conditionalAssignment,elseOnSameLine,hoistPatternLet,hoistTry,indent,numberFormatting,opaqueGenericParameters,redundantReturn,redundantSelf,redundantSendable,redundantVariable,sortImports,spaceAroundOperators,trailingCommas,unusedArguments,wrapFunctionBodies,wrapLoopBodies,wrapMultilineStatementBraces,wrapPropertyBodies
+--disable andOperator,blankLinesBetweenImports,blankLinesBetweenScopes,conditionalAssignment,hoistTry,indent,numberFormatting,opaqueGenericParameters,redundantReturn,redundantSelf,redundantSendable,redundantVariable,sortImports,spaceAroundOperators,trailingCommas,unusedArguments,wrapFunctionBodies,wrapLoopBodies,wrapMultilineStatementBraces,wrapPropertyBodies
+
+--max-width 120
+--wrap-arguments before-first
+--wrap-parameters before-first
+--wrap-collections before-first
+--allow-partial-wrapping false
+--enable wrapMultilineFunctionChains

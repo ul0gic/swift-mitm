@@ -137,8 +137,12 @@ public final class ResourceAdmissionController: Sendable {
             case .connection(let destination):
                 state.connections -= 1
                 if let destination, let count = state.destinations[destination] {
-                    if count == 1 { state.destinations.removeValue(forKey: destination) }
-                    else { state.destinations[destination] = count - 1 }
+                    if count == 1 {
+                        state.destinations.removeValue(forKey: destination)
+                    }
+                    else {
+                        state.destinations[destination] = count - 1
+                    }
                 }
             case .stream: state.streams -= 1
             case .retainedBytes(let bytes): state.retainedBytes -= bytes
@@ -150,7 +154,7 @@ public final class ResourceAdmissionController: Sendable {
 
 public final class ResourceRetainedByteAccount: Sendable {
     private let controller: ResourceAdmissionController
-    // Acquisition order is budget, account, controller; the controller never calls back into owners.
+    /// Acquisition order is budget, account, controller; the controller never calls back into owners.
     private let used = NIOLockedValueBox(0)
 
     fileprivate init(controller: ResourceAdmissionController) {
@@ -204,7 +208,9 @@ final class ResourceReservation: Sendable {
             released = true
             return true
         }
-        if shouldRelease { controller.release(kind) }
+        if shouldRelease {
+            controller.release(kind)
+        }
     }
 
     deinit { release() }

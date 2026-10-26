@@ -2,7 +2,7 @@
 
 HTTP/3 interception is unavailable in the current candidate. Do not configure this package as an HTTP/3 proxy or claim HTTP/3 capture, replay, editing or inspection.
 
-`Packages/SwiftMITMHTTP3` currently contains only `HTTP3DependencyProbe`; it exports no transport library and defines no `HTTP3ProxyServer`. The probe is not a usable HTTP/3 client or proxy. It does not establish leaf identity conversion, verified upstream interoperability, streaming, HTTP/3 feature behavior or runtime compatibility.
+`Packages/SwiftMITMHTTP3` contains two experimental executables: `HTTP3DependencyProbe` checks the combined dependency graph, and `HTTP3TransportProbe` exercises a fixed-route, two-leg HTTP/3 connection against independent peers. It exports no transport library and defines no public `HTTP3ProxyServer`. These development probes are not the package’s supported HTTP/3 API.
 
 The researched Apple SwiftNIO QUIC and HTTP/3 revisions require Crypto 5, while the core currently depends on Crypto 4. The companion package isolates dependency resolution from core-only consumers, but combining both packages still requires one compatible Crypto graph. Core support remains macOS 26; the researched HTTP/3 handlers require macOS 27. The probe does not establish a core deployment-floor increase or a Crypto major-version change.
 

@@ -37,34 +37,78 @@ func release022AssertIdentity(
                 try channel.pipeline.syncOperations.addHandler(Release022WireHandler(received))
             })
             try phase4BoundedWait(channel.writeAndFlush(ByteBuffer(string: "GET /identity HTTP/1.1\r\nHost: localhost\r\n\r\n")))
-            _ = try sink.wait { $0.contains { if case .responseEnd = $0 { true } else { false } } }
+            _ = try sink.wait { $0.contains {
+                if case .responseEnd = $0 {
+                    true
+                } else {
+                    false
+                }
+            } }
             let request = try XCTUnwrap(sink.events.compactMap { event -> CapturedRequestHead? in
-                if case .requestHead(let head) = event { head } else { nil }
+                if case .requestHead(let head) = event {
+                    head
+                } else {
+                    nil
+                }
             }.first)
             XCTAssertEqual(request.target?.destination.address, "127.0.0.1")
             XCTAssertEqual(request.target?.destination.port, origin.localPort)
             XCTAssertEqual(request.target?.tlsServerName, serverName)
-            XCTAssertFalse(sink.events.contains { if case .connectionFailure = $0 { true } else { false } })
+            XCTAssertFalse(sink.events.contains {
+                if case .connectionFailure = $0 {
+                    true
+                } else {
+                    false
+                }
+            })
         } else {
             do {
                 _ = try phase4BoundedWait(tls.handshake)
                 XCTFail("A trusted chain for the wrong selected identity must fail interception")
             } catch {
-                _ = try sink.wait { $0.contains { if case .connectionFailure = $0 { true } else { false } } }
+                _ = try sink.wait { $0.contains {
+                    if case .connectionFailure = $0 {
+                        true
+                    } else {
+                        false
+                    }
+                } }
             }
             try phase4BoundedWait(channel.closeFuture)
         }
-        if channel.isActive { try await channel.close().get() }
+        if channel.isActive {
+            try await channel.close().get()
+        }
         try await proxy.stop()
         if !succeeds {
-            XCTAssertEqual(sink.events.filter { if case .connectionFailure = $0 { true } else { false } }.count, 1)
-            XCTAssertFalse(sink.events.contains { if case .opaqueOpen = $0 { true } else { false } })
-            XCTAssertFalse(sink.events.contains { if case .requestHead = $0 { true } else { false } })
+            XCTAssertEqual(sink.events.filter {
+                if case .connectionFailure = $0 {
+                    true
+                } else {
+                    false
+                }
+            }.count, 1)
+            XCTAssertFalse(sink.events.contains {
+                if case .opaqueOpen = $0 {
+                    true
+                } else {
+                    false
+                }
+            })
+            XCTAssertFalse(sink.events.contains {
+                if case .requestHead = $0 {
+                    true
+                } else {
+                    false
+                }
+            })
         }
         origin.stop()
         try await group.shutdownGracefully()
     } catch {
-        if let client, client.isActive { try? await client.close().get() }
+        if let client, client.isActive {
+            try? await client.close().get()
+        }
         try? await proxy.stop()
         origin.stop()
         try? await group.shutdownGracefully()

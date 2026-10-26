@@ -70,7 +70,7 @@ final class Stage2HTTPOrigin: Sendable {
 
     func stop() async throws {
         let channels = state.withLockedValue { state in
-            let channels = state.children + [state.listener].compactMap { $0 }
+            let channels = state.children + [state.listener].compactMap(\.self)
             state.children.removeAll()
             state.listener = nil
             return channels
@@ -149,7 +149,7 @@ struct Stage2HTTPContext {
 
 func stage2WithHTTPOrigin(
     runtime: HTTPControlRuntime? = nil,
-    controlSink: (any HTTPControlEventSink)? = nil,
+    controlSink: any HTTPControlEventSink? = nil,
     admission: ResourceAdmissionController? = nil,
     reuse: HTTP1ReusePolicy? = nil,
     egressPolicy: EgressPolicy = .init(allowInternal: true),
@@ -174,7 +174,7 @@ func stage2WithHTTPOrigin(
         try await origin.start()
         let port = try await proxy.start(port: 0)
         try await body(Stage2HTTPContext(origin: origin, proxy: proxy, proxyPort: port, group: group,
-                                        raw: raw, inspected: inspected, inspector: inspector))
+                                         raw: raw, inspected: inspected, inspector: inspector))
         try await proxy.stop()
         try await origin.stop()
         let shutdown = await inspector.shutdown()
@@ -203,7 +203,7 @@ func stage2Await(_ predicate: () -> Bool) async throws {
 func stage2AwaitAsync(_ predicate: () async -> Bool) async throws {
     let clock = ContinuousClock()
     let deadline = clock.now.advanced(by: .seconds(5))
-    while !(await predicate()) {
+    while await !predicate() {
         guard clock.now < deadline else { throw Phase2FixtureError.deadlineExceeded }
         try await Task.sleep(for: .milliseconds(10))
     }

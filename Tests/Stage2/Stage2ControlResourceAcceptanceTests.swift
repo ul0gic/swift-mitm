@@ -10,7 +10,7 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
         for size in [4, 5] {
             let runtime = HTTPControlRuntime(configuration: try HTTPControlConfiguration(rules: [
                 HTTPRule(id: "body", match: HTTPRuleMatch(phase: .request, path: "/replace"),
-                     action: .replaceBody(Data("edited".utf8), maximumInputBytes: 4,
+                         action: .replaceBody(Data("edited".utf8), maximumInputBytes: 4,
                                               contentEncoding: nil, overrideNoTransform: false))
             ], limits: HTTPControlLimits()))
             let events = Stage2ControlEvents()
@@ -30,10 +30,16 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
                     try received.waitForClose()
                     XCTAssertTrue(peer.origin.requests.isEmpty)
                     XCTAssertTrue(events.events.contains { event in
-                        if case .failure(_, .bodyLimitExceeded) = event { true } else { false }
+                        if case .failure(_, .bodyLimitExceeded) = event {
+                            true
+                        } else {
+                            false
+                        }
                     })
                 }
-                if client.isActive { try await client.close().get() }
+                if client.isActive {
+                    try await client.close().get()
+                }
             }
             let usage = await runtime.resourceUsage()
             XCTAssertEqual(usage.retainedBytes, 0)
@@ -48,7 +54,7 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
             do {
                 try await runtime.replaceConfiguration(HTTPControlConfiguration(rules: [
                     HTTPRule(id: "route", match: HTTPRuleMatch(phase: .request, path: "/map"),
-                     action: .route(authority: "127.0.0.1:\(second.port)", sensitiveHeaders: ["X-Private"]))
+                             action: .route(authority: "127.0.0.1:\(second.port)", sensitiveHeaders: ["X-Private"]))
                 ], limits: HTTPControlLimits()))
                 let received = Release022WireObservation()
                 let client = try release022WireClient(group: peer.group, port: peer.proxyPort, observation: received)
@@ -76,7 +82,7 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
         try await stage2WithHTTPOrigin(runtime: deniedRuntime, controlSink: controls, egressPolicy: .default) { peer in
             try await deniedRuntime.replaceConfiguration(HTTPControlConfiguration(rules: [
                 HTTPRule(id: "deny-map", match: HTTPRuleMatch(phase: .request, path: "/map"),
-                     action: .route(authority: "127.0.0.1:\(peer.origin.port)", sensitiveHeaders: []))
+                         action: .route(authority: "127.0.0.1:\(peer.origin.port)", sensitiveHeaders: []))
             ], limits: HTTPControlLimits()))
             let received = Release022WireObservation()
             let client = try release022WireClient(group: peer.group, port: peer.proxyPort, observation: received)
@@ -85,7 +91,11 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
             try received.waitForClose()
             XCTAssertEqual(peer.origin.acceptedConnections, 0)
             XCTAssertTrue(peer.raw.events.contains { event in
-                if case .connectionFailure(let failure) = event { failure.code == .egressDenied } else { false }
+                if case .connectionFailure(let failure) = event {
+                    failure.code == .egressDenied
+                } else {
+                    false
+                }
             })
         }
     }
@@ -130,8 +140,10 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
             try phase4BoundedWait(first.writeAndFlush(ByteBuffer(string:
                 "GET http://127.0.0.1:\(peer.origin.port)/two HTTP/1.1\r\nHost: localhost\r\n\r\n")))
             _ = try peer.raw.wait { release022ResponseEnds($0).count == 2 }
-            XCTAssertEqual(peer.origin.requests.map { $0.head.uri }, ["/one", "/two"])
-            if second.isActive { try await second.close().get() }
+            XCTAssertEqual(peer.origin.requests.map(\.head.uri), ["/one", "/two"])
+            if second.isActive {
+                try await second.close().get()
+            }
             try await first.close().get()
         }
         XCTAssertEqual(admission.usage.connections, 0)
@@ -190,9 +202,15 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
                     }
                 })
                 XCTAssertEqual(peer.inspected.events.filter { event in
-                    if case .end = event.payload, event.direction == .response { true } else { false }
+                    if case .end = event.payload, event.direction == .response {
+                        true
+                    } else {
+                        false
+                    }
                 }.count, index + 1)
-                if client.isActive { try await client.close().get() }
+                if client.isActive {
+                    try await client.close().get()
+                }
             }
             XCTAssertEqual(peer.origin.requests.count, 20)
         }
@@ -246,9 +264,10 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
             XCTAssertTrue(peer.raw.events.contains { event in
                 if case .responseTrailers(_, let headers) = event {
                     headers.contains { $0.name.lowercased() == "x-end" && $0.value == "complete" }
-                } else { false }
+                } else {
+                    false
+                }
             })
         }
     }
-
 }

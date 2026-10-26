@@ -202,7 +202,9 @@ struct ProtobufWireInterpreter {
             cursor += 1
             guard index != 9 || byte <= 1 else { throw ProtobufInspectionError.malformedWire }
             result |= UInt64(byte & 127) << (index * 7)
-            if byte & 128 == 0 { return result }
+            if byte & 128 == 0 {
+                return result
+            }
         }
         throw ProtobufInspectionError.malformedWire
     }

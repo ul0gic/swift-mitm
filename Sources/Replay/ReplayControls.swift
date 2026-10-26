@@ -4,13 +4,13 @@ import NIOCore
 final class ReplayControls: Sendable {
     let runtime: HTTPControlRuntime
     let snapshot: HTTPControlConfiguration
-    let sink: (any HTTPControlEventSink)?
+    let sink: any HTTPControlEventSink?
     let requestID: UUID
     let original: HTTPControlMessage
     private let reservation: HTTPControlByteReservation
 
     init(
-        runtime: HTTPControlRuntime, sink: (any HTTPControlEventSink)?, requestID: UUID,
+        runtime: HTTPControlRuntime, sink: any HTTPControlEventSink?, requestID: UUID,
         request: ReplayRequest, target: HTTPForwardTarget
     ) throws {
         self.runtime = runtime
@@ -83,7 +83,9 @@ final class ReplayControls: Sendable {
             (1...snapshot.limits.maximumBodyBytes).contains(maximum),
             body.count <= snapshot.limits.maximumBodyBytes
         else { throw HTTPControlError.unsupportedEdit }
-        if let input = message.body, input.count > maximum { throw HTTPControlError.bodyLimitExceeded }
+        if let input = message.body, input.count > maximum {
+            throw HTTPControlError.bodyLimitExceeded
+        }
         guard override || !message.headers.contains(where: {
             $0.name.lowercased() == "cache-control" && $0.value.lowercased().split(separator: ",").contains(where: {
                 $0.trimmingCharacters(in: .whitespaces) == "no-transform"
@@ -116,7 +118,9 @@ struct ReplayFaultPacer: Sendable {
             for index in schedules.indices { allowances.append(schedules[index].next(nowNanoseconds: now)) }
             guard !allowances.contains(where: { $0.reset != nil }) else { throw HTTPControlError.cancelled }
             let wait = allowances.map(\.waitNanoseconds).max() ?? 0
-            if wait == 0 { return }
+            if wait == 0 {
+                return
+            }
             try await Task.sleep(nanoseconds: wait)
         }
     }
@@ -166,7 +170,9 @@ struct ReplayResponseControls: Sendable {
 
     var completesAtHead: Bool {
         guard let decision else { return false }
-        if case .respond = decision.action { return true }
+        if case .respond = decision.action {
+            return true
+        }
         return false
     }
 
@@ -201,7 +207,9 @@ struct ReplayResponseControls: Sendable {
             let resolved = try await controls.resolve(decision, message: message)
             if case .replaceBody(_, let maximum, _, _) = resolved.action {
                 try collect(maximum: maximum, decision: resolved, controls: controls)
-            } else { try await apply(resolved, head: head) }
+            } else {
+                try await apply(resolved, head: head)
+            }
         }
     }
 

@@ -138,7 +138,9 @@ struct FirstCapture {
             output.emit(listening)
             for await number in signals.stream {
                 cancelDelivery = number == SIGTERM
-                if cancelDelivery, options.asynchronous { output.finishDelivery(cancel: true) }
+                if cancelDelivery, options.asynchronous {
+                    output.finishDelivery(cancel: true)
+                }
                 break
             }
         } catch {

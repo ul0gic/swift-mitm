@@ -41,24 +41,46 @@ final class Release022IndependentGRPCCompatibilityTests: XCTestCase {
             FileHandle.standardError.write(Data("CLIENT-MATRIX \(result)".utf8))
             XCTAssertTrue(result.contains("trailers-only"))
             let events = try sink.wait {
-                $0.filter { if case .responseEnd = $0 { true } else { false } }.count == 5
+                $0.filter {
+                    if case .responseEnd = $0 {
+                        true
+                    } else {
+                        false
+                    }
+                }.count == 5
             }
-            let requests = events.compactMap { event -> CapturedRequestHead? in
-                if case .requestHead(let head) = event { head } else { nil }
-            }
-            XCTAssertEqual(Set(requests.map(\.path)), Set([
-                "/independent.Transport/Unary", "/independent.Transport/ServerStream",
-                "/independent.Transport/ClientStream", "/independent.Transport/Bidi",
-                "/independent.Transport/Denied"
-            ]))
-            XCTAssertTrue(requests.allSatisfy { $0.version == .http2 })
-            XCTAssertFalse(events.contains { if case .streamError = $0 { true } else { false } })
+            assertIndependentGRPCEvents(events)
             try await server.stop()
             try await group.shutdownGracefully()
         } catch {
-            if let proxy { try? await proxy.stop() }
+            if let proxy {
+                try? await proxy.stop()
+            }
             try? await group.shutdownGracefully()
             throw error
         }
+    }
+
+    private func assertIndependentGRPCEvents(_ events: [CaptureEvent]) {
+        let requests = events.compactMap { event -> CapturedRequestHead? in
+            if case .requestHead(let head) = event {
+                head
+            } else {
+                nil
+            }
+        }
+        XCTAssertEqual(Set(requests.map(\.path)), Set([
+            "/independent.Transport/Unary", "/independent.Transport/ServerStream",
+            "/independent.Transport/ClientStream", "/independent.Transport/Bidi",
+            "/independent.Transport/Denied"
+        ]))
+        XCTAssertTrue(requests.allSatisfy { $0.version == .http2 })
+        XCTAssertFalse(events.contains {
+            if case .streamError = $0 {
+                true
+            } else {
+                false
+            }
+        })
     }
 }

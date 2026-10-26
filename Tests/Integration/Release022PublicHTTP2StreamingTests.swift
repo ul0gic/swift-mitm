@@ -44,14 +44,42 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
                 (":status", "200"), ("content-type", "application/grpc"),
                 ("grpc-status", "7"), ("grpc-message", "permission%20denied")
             ]), endStream: true)))
-            try client.wait { $0.contains { if case .headers(let h) = $0 { h.endStream } else { false } } }
-            _ = try sink.wait { $0.contains { if case .responseEnd = $0 { true } else { false } } }
+            try client.wait { $0.contains {
+                if case .headers(let h) = $0 {
+                    h.endStream
+                } else {
+                    false
+                }
+            } }
+            _ = try sink.wait { $0.contains {
+                if case .responseEnd = $0 {
+                    true
+                } else {
+                    false
+                }
+            } }
             let heads = sink.events.compactMap { event -> CapturedResponseHead? in
-                if case .responseHead(let head) = event { head } else { nil }
+                if case .responseHead(let head) = event {
+                    head
+                } else {
+                    nil
+                }
             }
             XCTAssertEqual(heads.first?.headers.first { $0.name == "grpc-status" }?.value, "7")
-            XCTAssertFalse(sink.events.contains { if case .responseBodyChunk = $0 { true } else { false } })
-            XCTAssertFalse(sink.events.contains { if case .streamError = $0 { true } else { false } })
+            XCTAssertFalse(sink.events.contains {
+                if case .responseBodyChunk = $0 {
+                    true
+                } else {
+                    false
+                }
+            })
+            XCTAssertFalse(sink.events.contains {
+                if case .streamError = $0 {
+                    true
+                } else {
+                    false
+                }
+            })
         }
     }
 
@@ -72,14 +100,36 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
             let bytes: [UInt8] = [0, 0, 0, 0, 1, 42]
             try second.write(.data(.init(data: .byteBuffer(ByteBuffer(bytes: bytes)))))
             try second.write(.headers(.init(headers: HPACKHeaders([("grpc-status", "0")]), endStream: true)))
-            try control.wait { $0.contains { if case .headers(let h) = $0 { h.endStream } else { false } } }
+            try control.wait { $0.contains {
+                if case .headers(let h) = $0 {
+                    h.endStream
+                } else {
+                    false
+                }
+            } }
             XCTAssertEqual(self.dataBytes(control.frames), bytes)
-            _ = try sink.wait { events in events.contains { if case .responseEnd = $0 { true } else { false } } }
+            _ = try sink.wait { events in events.contains {
+                if case .responseEnd = $0 {
+                    true
+                } else {
+                    false
+                }
+            } }
             let requests = sink.events.compactMap { event -> CapturedRequestHead? in
-                if case .requestHead(let head) = event { head } else { nil }
+                if case .requestHead(let head) = event {
+                    head
+                } else {
+                    nil
+                }
             }
             let controlID = try XCTUnwrap(requests.first { $0.path == "/rpc/control" }?.id)
-            XCTAssertFalse(sink.events.contains { if case .streamError(let id, _) = $0 { id == controlID } else { false } })
+            XCTAssertFalse(sink.events.contains {
+                if case .streamError(let id, _) = $0 {
+                    id == controlID
+                } else {
+                    false
+                }
+            })
         }
     }
 
@@ -91,14 +141,44 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
             try upstream.wait { !$0.isEmpty }
             try upstream.write(.headers(.init(headers: HPACKHeaders([(":status", "200")]))))
             try upstream.write(.data(.init(data: .byteBuffer(ByteBuffer(string: "done")), endStream: true)))
-            try client.wait { $0.contains { if case .data(let data) = $0 { data.endStream } else { false } } }
-            _ = try sink.wait { $0.contains { if case .responseEnd = $0 { true } else { false } } }
+            try client.wait { $0.contains {
+                if case .data(let data) = $0 {
+                    data.endStream
+                } else {
+                    false
+                }
+            } }
+            _ = try sink.wait { $0.contains {
+                if case .responseEnd = $0 {
+                    true
+                } else {
+                    false
+                }
+            } }
             try client.write(.windowUpdate(windowSizeIncrement: 1024))
             try client.write(.data(.init(data: .byteBuffer(ByteBuffer(string: "still-open")), endStream: true)))
             try upstream.wait { self.dataBytes($0) == Array("still-open".utf8) }
-            let events = try sink.wait { $0.contains { if case .requestEnd = $0 { true } else { false } } }
-            XCTAssertFalse(events.contains { if case .streamError = $0 { true } else { false } })
-            XCTAssertFalse(upstream.frames.contains { if case .windowUpdate = $0 { true } else { false } })
+            let events = try sink.wait { $0.contains {
+                if case .requestEnd = $0 {
+                    true
+                } else {
+                    false
+                }
+            } }
+            XCTAssertFalse(events.contains {
+                if case .streamError = $0 {
+                    true
+                } else {
+                    false
+                }
+            })
+            XCTAssertFalse(upstream.frames.contains {
+                if case .windowUpdate = $0 {
+                    true
+                } else {
+                    false
+                }
+            })
         }
     }
 
@@ -117,10 +197,22 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
                 let expected = released
                 try client.wait { self.dataBytes($0) == expected }
                 _ = try sink.wait { self.responseBytes($0) == expected }
-                XCTAssertFalse(sink.events.contains { if case .responseEnd = $0 { true } else { false } })
+                XCTAssertFalse(sink.events.contains {
+                    if case .responseEnd = $0 {
+                        true
+                    } else {
+                        false
+                    }
+                })
             }
             try upstream.write(.data(.init(data: .byteBuffer(ByteBuffer()), endStream: true)))
-            _ = try sink.wait { $0.contains { if case .responseEnd = $0 { true } else { false } } }
+            _ = try sink.wait { $0.contains {
+                if case .responseEnd = $0 {
+                    true
+                } else {
+                    false
+                }
+            } }
         }
     }
 
@@ -138,41 +230,85 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
             ]))))
             for (index, bytes) in requestMessages.enumerated() {
                 try client.write(.data(.init(data: .byteBuffer(ByteBuffer(bytes: bytes)))))
-                let expected = requestMessages.prefix(index + 1).flatMap { $0 }
+                let expected = requestMessages.prefix(index + 1).flatMap(\.self)
                 try upstream.wait { self.dataBytes($0) == expected }
                 if interleave, index < responseMessages.count {
                     try upstream.write(.data(.init(data: .byteBuffer(ByteBuffer(bytes: responseMessages[index])))))
-                    let expectedResponse = responseMessages.prefix(index + 1).flatMap { $0 }
+                    let expectedResponse = responseMessages.prefix(index + 1).flatMap(\.self)
                     try client.wait { self.dataBytes($0) == expectedResponse }
                     _ = try sink.wait { self.responseBytes($0) == expectedResponse }
-                    XCTAssertFalse(sink.events.contains { if case .requestEnd = $0 { true } else { false } })
+                    XCTAssertFalse(sink.events.contains {
+                        if case .requestEnd = $0 {
+                            true
+                        } else {
+                            false
+                        }
+                    })
                 }
             }
             try client.write(.headers(.init(headers: HPACKHeaders([("client-bin", "AQI=")]), endStream: true)))
-            try upstream.wait { $0.contains { if case .headers(let h) = $0 { h.endStream } else { false } } }
+            try upstream.wait { $0.contains {
+                if case .headers(let h) = $0 {
+                    h.endStream
+                } else {
+                    false
+                }
+            } }
             let released = interleave ? min(requestMessages.count, responseMessages.count) : 0
             for (index, bytes) in responseMessages.enumerated().dropFirst(released) {
                 try upstream.write(.data(.init(data: .byteBuffer(ByteBuffer(bytes: bytes)))))
-                let expected = responseMessages.prefix(index + 1).flatMap { $0 }
+                let expected = responseMessages.prefix(index + 1).flatMap(\.self)
                 try client.wait { self.dataBytes($0) == expected }
                 _ = try sink.wait { self.responseBytes($0) == expected }
-                XCTAssertFalse(sink.events.contains { if case .responseEnd = $0 { true } else { false } })
+                XCTAssertFalse(sink.events.contains {
+                    if case .responseEnd = $0 {
+                        true
+                    } else {
+                        false
+                    }
+                })
             }
             try upstream.write(.headers(.init(headers: HPACKHeaders([("grpc-status", "0"), ("grpc-message", "ok"), ("trailer-bin", "//4=")]), endStream: true)))
-            try client.wait { $0.contains { if case .headers(let h) = $0 { h.endStream } else { false } } }
-            let events = try sink.wait { $0.contains { if case .responseEnd = $0 { true } else { false } } }
-            XCTAssertEqual(self.dataBytes(client.frames), responseMessages.flatMap { $0 })
-            XCTAssertEqual(self.responseBytes(events), responseMessages.flatMap { $0 })
+            try client.wait { $0.contains {
+                if case .headers(let h) = $0 {
+                    h.endStream
+                } else {
+                    false
+                }
+            } }
+            let events = try sink.wait { $0.contains {
+                if case .responseEnd = $0 {
+                    true
+                } else {
+                    false
+                }
+            } }
+            XCTAssertEqual(self.dataBytes(client.frames), responseMessages.flatMap(\.self))
+            XCTAssertEqual(self.responseBytes(events), responseMessages.flatMap(\.self))
             let requestBytes = events.flatMap { event -> [UInt8] in
-                if case .requestBodyChunk(_, let bytes, _) = event { bytes } else { [] }
+                if case .requestBodyChunk(_, let bytes, _) = event {
+                    bytes
+                } else {
+                    []
+                }
             }
-            XCTAssertEqual(requestBytes, requestMessages.flatMap { $0 })
+            XCTAssertEqual(requestBytes, requestMessages.flatMap(\.self))
             let trailers = events.flatMap { event -> [HTTPHeaderField] in
-                if case .responseTrailers(_, let headers) = event { headers } else { [] }
+                if case .responseTrailers(_, let headers) = event {
+                    headers
+                } else {
+                    []
+                }
             }
             XCTAssertEqual(trailers.first { $0.name == "grpc-status" }?.value, "0")
             XCTAssertEqual(trailers.first { $0.name == "trailer-bin" }?.value, "//4=")
-            XCTAssertFalse(events.contains { if case .streamError = $0 { true } else { false } })
+            XCTAssertFalse(events.contains {
+                if case .streamError = $0 {
+                    true
+                } else {
+                    false
+                }
+            })
         }
     }
 
@@ -193,12 +329,22 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
 
     private func dataBytes(_ frames: [HTTP2Frame.FramePayload]) -> [UInt8] {
         frames.flatMap { frame in
-            if case .data(let data) = frame, case .byteBuffer(let buffer) = data.data { Array(buffer.readableBytesView) } else { [] }
+            if case .data(let data) = frame, case .byteBuffer(let buffer) = data.data {
+                Array(buffer.readableBytesView)
+            } else {
+                []
+            }
         }
     }
 
     private func responseBytes(_ events: [CaptureEvent]) -> [UInt8] {
-        events.flatMap { if case .responseBodyChunk(_, let bytes, _) = $0 { bytes } else { [] } }
+        events.flatMap {
+            if case .responseBodyChunk(_, let bytes, _) = $0 {
+                bytes
+            } else {
+                []
+            }
+        }
     }
 
     private func withHTTP2(
@@ -229,12 +375,16 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
             let future = try XCTUnwrap(tls.multiplexer)
             let multiplexer = try XCTUnwrap(try phase4BoundedWait(future))
             try body(origin, multiplexer, sink)
-            if channel.isActive { try await channel.close().get() }
+            if channel.isActive {
+                try await channel.close().get()
+            }
             try await proxy.stop()
             origin.stop()
             try await group.shutdownGracefully()
         } catch {
-            if let client, client.isActive { try? await client.close().get() }
+            if let client, client.isActive {
+                try? await client.close().get()
+            }
             try? await proxy.stop()
             origin.stop()
             try? await group.shutdownGracefully()

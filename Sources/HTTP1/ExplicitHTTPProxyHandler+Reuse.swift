@@ -5,7 +5,7 @@ extension ExplicitHTTPProxyHandler {
     func reuseKey(_ exchange: Exchange) -> HTTP1ReuseKey? {
         guard reusePool != nil, !typedHTTP2, fixedDestination == nil, exchange.controlSnapshot == nil,
               let target = exchange.target, target.scheme == "http" else { return nil }
-        let credentials: Set<String> = ["authorization", "proxy-authorization", "cookie"]
+        let credentials: Set = ["authorization", "proxy-authorization", "cookie"]
         return HTTP1ReuseKey(downstreamID: connectionID, authority: target.authority, scheme: target.scheme,
                              credentialScope: Self.fields(exchange.effectiveHead.headers).filter { credentials.contains($0.name.lowercased()) })
     }
@@ -29,7 +29,7 @@ extension ExplicitHTTPProxyHandler {
                     return
                 }
                 handler.configureOrigin(HTTPForwardConnection(channel: channel,
-                    target: ResolvedTarget(unresolved: unresolved, connectedAddress: remote).capturedTarget), exchange: exchange)
+                                                              target: ResolvedTarget(unresolved: unresolved, connectedAddress: remote).capturedTarget), exchange: exchange)
             case .failure:
                 channel.close(promise: nil)
                 handler.reject(status: .badGateway, message: "HTTP reuse checkout failed")

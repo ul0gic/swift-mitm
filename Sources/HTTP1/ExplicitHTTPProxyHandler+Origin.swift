@@ -14,7 +14,9 @@ extension ExplicitHTTPProxyHandler {
         }
         do {
             try installOriginCodecs(connection, exchange: exchange, target: target)
-            if !exchange.published { captureRequestHead(exchange, target: connection.target) }
+            if !exchange.published {
+                captureRequestHead(exchange, target: connection.target)
+            }
             let head = originHead(exchange, target: target)
             if let fault = exchange.requestFault {
                 exchange.requestFaultWriter = HTTPControlFaultWriter(
@@ -109,9 +111,13 @@ extension ExplicitHTTPProxyHandler {
                 do {
                     if exchange.requestEnded, exchange.controlSnapshot != nil {
                         try writer.enqueueRepresentation(buffer)
-                    } else { try writer.enqueue(buffer) }
+                    } else {
+                        try writer.enqueue(buffer)
+                    }
                 } catch { controlFailed(exchange, error: error) }
-            } else { writeRequestBody(buffer, exchange: exchange, to: channel) }
+            } else {
+                writeRequestBody(buffer, exchange: exchange, to: channel)
+            }
         case .end(let trailers):
             let end = HTTPClientRequestPart.end(trailers.map {
                 Self.hopHeaders(
@@ -129,35 +135,45 @@ extension ExplicitHTTPProxyHandler {
                     (self.sink as? ObservationCaptureSink)?.receiveEffective(.requestEnd(requestID: exchange.id, truncated: false))
                 }
                 if self.typedHTTP2, exchange.responseEnded {
-                    channel.writeAndFlush(NIOAny(end)).assumeIsolated().whenComplete { result in
+                    channel.writeAndFlush(end).assumeIsolated().whenComplete { result in
                         switch result {
                         case .success: self.finish(exchange)
                         case .failure: self.abort(message: "HTTP/2 upload completion failed")
                         }
                     }
-                } else { channel.writeAndFlush(NIOAny(end), promise: nil) }
+                } else {
+                    channel.writeAndFlush(end, promise: nil)
+                }
             }
             if let writer = exchange.requestFaultWriter {
                 writer.finish(complete)
-            } else { complete() }
+            } else {
+                complete()
+            }
         }
     }
 
     func writeRequestBody(_ buffer: ByteBuffer, exchange: Exchange, to channel: Channel) {
         if exchange.controlSnapshot != nil {
-            (sink as? ObservationCaptureSink)?.receiveBody(requestID: exchange.id, direction: .request,
-                bytes: buffer.readableBytesView, representation: .effective)
+            (sink as? ObservationCaptureSink)?.receiveBody(
+                requestID: exchange.id,
+                direction: .request,
+                representation: .effective,
+                bytes: buffer.readableBytesView
+            )
         }
-        channel.writeAndFlush(NIOAny(HTTPClientRequestPart.body(.byteBuffer(buffer))), promise: nil)
+        channel.writeAndFlush(HTTPClientRequestPart.body(.byteBuffer(buffer)), promise: nil)
     }
 
     func writeOriginHead(_ head: HTTPRequestHead, exchange: Exchange, channel: Channel) {
-        channel.write(NIOAny(HTTPClientRequestPart.head(head)), promise: nil)
+        channel.write(HTTPClientRequestPart.head(head), promise: nil)
         let pending = exchange.pending
         exchange.pending.removeAll()
         exchange.pendingByteCount = 0
         for part in pending {
-            if exchange.controlSnapshot == nil { captureRequest(part, exchange: exchange) }
+            if exchange.controlSnapshot == nil {
+                captureRequest(part, exchange: exchange)
+            }
             write(part, exchange: exchange, to: channel)
         }
         channel.flush()

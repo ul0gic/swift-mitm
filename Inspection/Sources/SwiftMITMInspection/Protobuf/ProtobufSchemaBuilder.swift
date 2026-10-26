@@ -40,7 +40,7 @@ struct ProtobufSchemaBuilder {
         }
         var dependencies = Dictionary(uniqueKeysWithValues: set.file.map { ($0.name, Set($0.dependency)) })
         while !dependencies.isEmpty {
-            let ready = Set(dependencies.filter { $0.value.isEmpty }.map(\.key))
+            let ready = Set(dependencies.filter(\.value.isEmpty).map(\.key))
             guard !ready.isEmpty else { throw ProtobufInspectionError.invalidDescriptor }
             for name in ready { dependencies.removeValue(forKey: name) }
             for name in dependencies.keys { dependencies[name]?.subtract(ready) }
@@ -62,7 +62,9 @@ struct ProtobufSchemaBuilder {
                         throw ProtobufInspectionError.invalidDescriptor
                     }
                     let next = imported.dependency[Int(index)]
-                    if visible.insert(next).inserted { pending.append(next) }
+                    if visible.insert(next).inserted {
+                        pending.append(next)
+                    }
                 }
             }
             visible.insert(file.name)
@@ -121,7 +123,9 @@ struct ProtobufSchemaBuilder {
             for field in schema.fields.values {
                 let target = try field.typeName.map { try resolve($0, scope: name) }
                 if let target, let owner = symbolFiles[name], let targetOwner = symbolFiles[target],
-                   visibleFiles[owner]?.contains(targetOwner) != true { throw ProtobufInspectionError.missingImport }
+                   visibleFiles[owner]?.contains(targetOwner) != true {
+                       throw ProtobufInspectionError.missingImport
+                   }
                 resolved[field.number] = ProtobufField(
                     name: field.name,
                     number: field.number,
@@ -142,7 +146,9 @@ struct ProtobufSchemaBuilder {
                     guard let name = field.typeName, let target = messages[name] else {
                         throw ProtobufInspectionError.invalidDescriptor
                     }
-                    if target.mapEntry && !field.repeated { throw ProtobufInspectionError.invalidDescriptor }
+                    if target.mapEntry && !field.repeated {
+                        throw ProtobufInspectionError.invalidDescriptor
+                    }
                 } else if field.type == 14 {
                     guard let name = field.typeName, enums[name] != nil else {
                         throw ProtobufInspectionError.invalidDescriptor
@@ -182,7 +188,9 @@ struct ProtobufSchemaBuilder {
         var parent = scope
         while true {
             let candidate = parent + "." + name
-            if messages[candidate] != nil || enums[candidate] != nil { return candidate }
+            if messages[candidate] != nil || enums[candidate] != nil {
+                return candidate
+            }
             guard let dot = parent.lastIndex(of: ".") else { break }
             parent = String(parent[..<dot])
         }
@@ -222,7 +230,9 @@ private extension ProtobufSchemaBuilder {
             guard values[value.number] == nil || descriptor.options.allowAlias else {
                 throw ProtobufInspectionError.invalidDescriptor
             }
-            if values[value.number] == nil { values[value.number] = value.name }
+            if values[value.number] == nil {
+                values[value.number] = value.name
+            }
         }
         enums[name] = values
     }

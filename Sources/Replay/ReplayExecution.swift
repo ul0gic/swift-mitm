@@ -9,16 +9,6 @@ struct ReplayExecution: Sendable {
     let channel: NIOAsyncChannel<HTTPClientResponsePart, HTTPClientRequestPart>
     private let timing = ReplayTimingRecorder()
 
-    init(
-        server: ProxyServer, invocation: ReplayInvocation, connection: HTTPForwardConnection,
-        channel: NIOAsyncChannel<HTTPClientResponsePart, HTTPClientRequestPart>
-    ) {
-        self.server = server
-        self.invocation = invocation
-        self.connection = connection
-        self.channel = channel
-    }
-
     func run() async throws -> ReplayResult {
         captureOriginal()
         do {
@@ -30,7 +20,9 @@ struct ReplayExecution: Sendable {
                 requestID: invocation.identity.requestID, message: "Replay exchange did not complete"
             )
             server.sink.receive(failure)
-            if invocation.controls != nil { observation?.receiveEffective(failure) }
+            if invocation.controls != nil {
+                observation?.receiveEffective(failure)
+            }
             throw error
         }
     }
@@ -46,7 +38,9 @@ struct ReplayExecution: Sendable {
             var reader = ReplayResponseReader(execution: self, timing: timing)
             for try await part in inbound {
                 try Task.checkCancellation()
-                if case .head(let head) = part, head.status.code >= 200 { uploads.cancelAll() }
+                if case .head(let head) = part, head.status.code >= 200 {
+                    uploads.cancelAll()
+                }
                 if let result = try await reader.receive(part) {
                     uploads.cancelAll()
                     channel.channel.close(promise: nil)

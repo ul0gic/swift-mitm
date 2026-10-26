@@ -144,10 +144,8 @@ struct HTTP2ExtendedConnectStreamCoordinator {
         ]
         let requiredNames = Set([":method", ":protocol", ":scheme", ":path", ":authority"])
         guard pseudoHeaders.count == requiredNames.count,
-            Set(pseudoHeaders.map(\.0)) == requiredNames else {
-            return false
-        }
-        guard !headers.contains(where: { name, _, _ in
+            Set(pseudoHeaders.map(\.0)) == requiredNames,
+              !headers.contains(where: { name, _, _ in
             let normalizedName = name.lowercased()
             return normalizedName == "connection" || normalizedName == "upgrade"
         }) else {

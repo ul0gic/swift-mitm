@@ -9,7 +9,9 @@ public enum HARExporter {
         for try await entry in entries {
             try Task.checkCancellation()
             try validate(entry, configuration: configuration)
-            if !first { try await output.raw(",") }
+            if !first {
+                try await output.raw(",")
+            }
             first = false
             try await output.entry(entry, configuration: configuration)
         }

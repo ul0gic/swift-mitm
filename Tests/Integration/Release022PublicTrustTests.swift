@@ -45,7 +45,11 @@ final class Release022PublicTrustTests: XCTestCase {
             XCTAssertLessThan(start.duration(to: clock.now), .milliseconds(2250))
             try await proxy.stop()
             let failures = sink.events.compactMap { event -> CapturedConnectionFailure? in
-                if case .connectionFailure(let failure) = event { failure } else { nil }
+                if case .connectionFailure(let failure) = event {
+                    failure
+                } else {
+                    nil
+                }
             }
             XCTAssertEqual(failures.count, 1)
             XCTAssertEqual(failures.first?.reason, .timedOut)
@@ -54,7 +58,9 @@ final class Release022PublicTrustTests: XCTestCase {
             origin.stop()
             try await group.shutdownGracefully()
         } catch {
-            if let client, client.isActive { try? await client.close().get() }
+            if let client, client.isActive {
+                try? await client.close().get()
+            }
             try? await proxy.stop()
             origin.stop()
             try? await group.shutdownGracefully()
@@ -83,16 +89,34 @@ final class Release022PublicTrustTests: XCTestCase {
             XCTAssertEqual(count, 8)
             try await server.stop()
             let flows = sink.events.compactMap { event -> CapturedOpaqueFlow? in
-                if case .opaqueOpen(let flow) = event { flow } else { nil }
+                if case .opaqueOpen(let flow) = event {
+                    flow
+                } else {
+                    nil
+                }
             }
             XCTAssertEqual(flows.count, 1)
             XCTAssertEqual(flows.first?.reason, .policySelected)
-            XCTAssertFalse(sink.events.contains { if case .requestHead = $0 { true } else { false } })
-            XCTAssertFalse(sink.events.contains { if case .connectionFailure = $0 { true } else { false } })
+            XCTAssertFalse(sink.events.contains {
+                if case .requestHead = $0 {
+                    true
+                } else {
+                    false
+                }
+            })
+            XCTAssertFalse(sink.events.contains {
+                if case .connectionFailure = $0 {
+                    true
+                } else {
+                    false
+                }
+            })
             origin.stop()
             try await group.shutdownGracefully()
         } catch {
-            if let proxy { try? await proxy.stop() }
+            if let proxy {
+                try? await proxy.stop()
+            }
             origin.stop()
             try? await group.shutdownGracefully()
             throw error
@@ -124,14 +148,20 @@ final class Release022PublicTrustTests: XCTestCase {
             try phase4BoundedWait(channel.closeFuture)
             try origin.received.waitForClose()
             let failures = sink.events.compactMap { event -> CapturedConnectionFailure? in
-                if case .connectionFailure(let failure) = event { failure } else { nil }
+                if case .connectionFailure(let failure) = event {
+                    failure
+                } else {
+                    nil
+                }
             }
             XCTAssertEqual(failures.count, 1)
             XCTAssertEqual(failures.first?.code, .serverStopping)
             origin.stop()
             try await group.shutdownGracefully()
         } catch {
-            if let client, client.isActive { try? await client.close().get() }
+            if let client, client.isActive {
+                try? await client.close().get()
+            }
             try? await proxy.stop()
             origin.stop()
             try? await group.shutdownGracefully()
@@ -162,18 +192,34 @@ final class Release022PublicTrustTests: XCTestCase {
             try received.waitForClose()
             try await server.stop()
             let failures = sink.events.compactMap { event -> CapturedConnectionFailure? in
-                if case .connectionFailure(let failure) = event { failure } else { nil }
+                if case .connectionFailure(let failure) = event {
+                    failure
+                } else {
+                    nil
+                }
             }
             XCTAssertEqual(failures.count, 1)
             XCTAssertEqual(failures.first?.code, .egressDenied)
             XCTAssertEqual(origin.acceptedConnections, 0)
-            XCTAssertFalse(sink.events.contains { if case .opaqueOpen = $0 { true } else { false } })
-            if channel.isActive { try await channel.close().get() }
+            XCTAssertFalse(sink.events.contains {
+                if case .opaqueOpen = $0 {
+                    true
+                } else {
+                    false
+                }
+            })
+            if channel.isActive {
+                try await channel.close().get()
+            }
             origin.stop()
             try await group.shutdownGracefully()
         } catch {
-            if let client, client.isActive { try? await client.close().get() }
-            if let proxy { try? await proxy.stop() }
+            if let client, client.isActive {
+                try? await client.close().get()
+            }
+            if let proxy {
+                try? await proxy.stop()
+            }
             origin.stop()
             try? await group.shutdownGracefully()
             throw error
@@ -218,19 +264,32 @@ final class Release022PublicTrustTests: XCTestCase {
             try await channel.close().get()
             try await server.stop()
             let reasons = sink.events.compactMap { event -> OpaqueForwardingReason? in
-                if case .opaqueOpen(let flow) = event { flow.reason } else { nil }
+                if case .opaqueOpen(let flow) = event {
+                    flow.reason
+                } else {
+                    nil
+                }
             }
             XCTAssertEqual(reasons, [.policySelected])
-            XCTAssertFalse(sink.events.contains { if case .requestHead = $0 { true } else { false } })
+            XCTAssertFalse(sink.events.contains {
+                if case .requestHead = $0 {
+                    true
+                } else {
+                    false
+                }
+            })
             origin.stop()
             try await group.shutdownGracefully()
         } catch {
-            if let client, client.isActive { try? await client.close().get() }
-            if let proxy { try? await proxy.stop() }
+            if let client, client.isActive {
+                try? await client.close().get()
+            }
+            if let proxy {
+                try? await proxy.stop()
+            }
             origin.stop()
             try? await group.shutdownGracefully()
             throw error
         }
     }
-
 }

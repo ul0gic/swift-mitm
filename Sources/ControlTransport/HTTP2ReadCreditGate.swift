@@ -56,7 +56,9 @@ final class HTTP2ReadCreditGate: ChannelDuplexHandler {
     }
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
-        if let closed = event as? StreamClosedEvent { streams.removeValue(forKey: closed.streamID) }
+        if let closed = event as? StreamClosedEvent {
+            streams.removeValue(forKey: closed.streamID)
+        }
         context.fireUserInboundEventTriggered(event)
     }
 
@@ -99,7 +101,9 @@ final class HTTP2StreamReadCreditHandler: ChannelDuplexHandler {
     }
 
     func read(context: ChannelHandlerContext) {
-        if let streamID { gate.value.read(streamID) }
+        if let streamID {
+            gate.value.read(streamID)
+        }
         context.read()
     }
 }

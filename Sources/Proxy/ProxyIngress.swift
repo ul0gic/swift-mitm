@@ -254,7 +254,6 @@ extension Duration {
     }
 }
 
-
 public struct HTTP2PriorKnowledgeIngress: Sendable {
     public let authority: String
 

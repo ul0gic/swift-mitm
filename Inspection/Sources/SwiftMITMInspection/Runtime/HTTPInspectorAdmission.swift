@@ -70,11 +70,15 @@ extension HTTPInspector {
                 state.items.append(Item(key: key, input: create(), charge: charge))
                 state.queuedBytes += charge
             }
-            if state.running { return false }
+            if state.running {
+                return false
+            }
             state.running = true
             return true
         }
-        if schedule { queue.async { self.runTurn() } }
+        if schedule {
+            queue.async { self.runTurn() }
+        }
     }
 
     private func admitExchange(_ key: Key, state: inout Ingress) -> Admission {
@@ -83,7 +87,9 @@ extension HTTPInspector {
             state.observationLossDetected = true
             guard state.losses.count < configuration.maximumQueuedItems else { return .rejected(schedule: false) }
             state.losses[key] = .capacityExceeded
-            if state.running { return .rejected(schedule: false) }
+            if state.running {
+                return .rejected(schedule: false)
+            }
             state.running = true
             return .rejected(schedule: true)
         }

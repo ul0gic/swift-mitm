@@ -14,21 +14,29 @@ extension HTTPInspector {
             return
         }
         applyLosses(&state)
-        if state.current == nil { state.current = takeInput() }
+        if state.current == nil {
+            state.current = takeInput()
+        }
         processCurrent(&state)
         let continuing = state.current != nil
         cleanupTerminals(&state)
         worker.withLock { $0 = state }
         let schedule = ingress.withLock { value in
-            if continuing || !value.items.isEmpty || !value.losses.isEmpty || value.stopping { return true }
+            if continuing || !value.items.isEmpty || !value.losses.isEmpty || value.stopping {
+                return true
+            }
             value.running = false
             return false
         }
-        if schedule { queue.async { self.runTurn() } }
+        if schedule {
+            queue.async { self.runTurn() }
+        }
     }
 
     private func stopWorker(_ state: inout Worker) {
-        if let current = state.current { configuration.budget.release(current.charge) }
+        if let current = state.current {
+            configuration.budget.release(current.charge)
+        }
         for exchange in state.exchanges.values { configuration.budget.release(exchange.charge) }
         state = Worker()
         sequences.withLock { $0 = [:] }
@@ -52,11 +60,17 @@ extension HTTPInspector {
             return result
         }
         for (key, diagnostic) in losses {
-            if let body = state.bodies.removeValue(forKey: key) { body.fail(diagnostic) }
-            else { emit(key.context, wire: 0..<0, decoded: 0..<0, chain: [], payload: .diagnostic(diagnostic)) }
+            if let body = state.bodies.removeValue(forKey: key) {
+                body.fail(diagnostic)
+            }
+            else {
+                emit(key.context, wire: 0..<0, decoded: 0..<0, chain: [], payload: .diagnostic(diagnostic))
+            }
             state.sockets.removeValue(forKey: key)?.terminate()
             if state.current?.key == key {
-                if let current = state.current { configuration.budget.release(current.charge) }
+                if let current = state.current {
+                    configuration.budget.release(current.charge)
+                }
                 state.current = nil
                 state.bodyAccepted = false
                 state.wsConsumed = 0
@@ -98,7 +112,9 @@ extension HTTPInspector {
             value.active.filter { id in
                 guard state.current?.key.id != id,
                     !value.items.contains(where: { $0.key.id == id }) else { return false }
-                if value.closedSockets.contains(id) { return true }
+                if value.closedSockets.contains(id) {
+                    return true
+                }
                 guard value.ended.contains(self.makeKey(id, .request)),
                     value.ended.contains(self.makeKey(id, .response)) else { return false }
                 return state.exchanges.keys.filter { $0.id == id }.allSatisfy { key in
@@ -157,8 +173,12 @@ extension HTTPInspector {
         case is InspectionBudgetError: diagnostic = .capacityExceeded
         default: diagnostic = .incompleteTransport
         }
-        if let body = state.bodies.removeValue(forKey: key) { body.fail(diagnostic) }
-        else { emit(key.context, wire: 0..<0, decoded: 0..<0, chain: [], payload: .diagnostic(diagnostic)) }
+        if let body = state.bodies.removeValue(forKey: key) {
+            body.fail(diagnostic)
+        }
+        else {
+            emit(key.context, wire: 0..<0, decoded: 0..<0, chain: [], payload: .diagnostic(diagnostic))
+        }
         state.sockets.removeValue(forKey: key)?.terminate()
         ingress.withLock { $0.failed.insert(key) }
     }
@@ -171,17 +191,20 @@ extension HTTPInspector {
             unavailable(item.key, state: &state)
             return true
         case .capture(let event): return try processCapture(event, key: item.key, state: &state)
-        case let .wsStart(direction, opcode, fin, compressed, byteCount):
+        case .wsStart(let frame):
             if state.sockets[item.key] == nil {
                 state.sockets[item.key] = try WebSocketMessageDecoder(
-                    direction: direction,
+                    direction: frame.direction,
                     negotiatedExtensions: state.exchanges[exchangeKey(item.key)]?.extensions ?? [],
                     budget: configuration.budget,
                     maximumMessageBytes: configuration.maximumMessageBytes
                 )
             }
             try state.sockets[item.key]?.startFrame(
-                opcode: opcode, fin: fin, compressed: compressed, byteCount: byteCount
+                opcode: frame.opcode,
+                fin: frame.fin,
+                compressed: frame.compressed,
+                byteCount: frame.byteCount
             )
             return true
         case .wsBytes(_, _, let bytes):
@@ -207,8 +230,12 @@ extension HTTPInspector {
     }
 
     private func unavailable(_ key: Key, state: inout Worker) {
-        if let body = state.bodies.removeValue(forKey: key) { body.fail(.unavailableInput) }
-        else { emit(key.context, wire: 0..<0, decoded: 0..<0, chain: [], payload: .diagnostic(.unavailableInput)) }
+        if let body = state.bodies.removeValue(forKey: key) {
+            body.fail(.unavailableInput)
+        }
+        else {
+            emit(key.context, wire: 0..<0, decoded: 0..<0, chain: [], payload: .diagnostic(.unavailableInput))
+        }
         ingress.withLock { $0.failed.insert(key) }
     }
 
@@ -223,7 +250,9 @@ extension HTTPInspector {
             }
         }
         state.wsConsumed += progress.consumedBytes
-        if !progress.outputLimit { offsets.wire += UInt64(bytes.count) }
+        if !progress.outputLimit {
+            offsets.wire += UInt64(bytes.count)
+        }
         state.offsets[key] = offsets
         return !progress.outputLimit && state.wsConsumed == bytes.count
     }

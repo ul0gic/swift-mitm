@@ -20,24 +20,28 @@ struct DescriptorAdmission {
             let tag = try varint(&cursor, end: range.upperBound)
             let number = Int(tag >> 3)
             guard number > 0, number <= 536_870_911 else { throw ProtobufInspectionError.invalidDescriptor }
-            switch tag & 7 {
-            case 0: _ = try varint(&cursor, end: range.upperBound)
-            case 1:
-                guard range.upperBound - cursor >= 8 else { throw ProtobufInspectionError.invalidDescriptor }
-                cursor += 8
-            case 5:
-                guard range.upperBound - cursor >= 4 else { throw ProtobufInspectionError.invalidDescriptor }
-                cursor += 4
-            case 2:
-                let length = try varint(&cursor, end: range.upperBound)
-                guard length <= UInt64(range.upperBound - cursor) else {
-                    throw ProtobufInspectionError.invalidDescriptor
-                }
-                let nested = cursor..<(cursor + Int(length))
-                cursor = nested.upperBound
-                if let next = child(kind: kind, field: number) { try scan(nested, kind: next, depth: depth + 1) }
-            default: throw ProtobufInspectionError.unsupportedSchema
+            try scanValue(tag: tag, cursor: &cursor, end: range.upperBound, kind: kind, depth: depth)
+        }
+    }
+
+    private mutating func scanValue(tag: UInt64, cursor: inout Int, end: Int, kind: Int, depth: Int) throws {
+        switch tag & 7 {
+        case 0: _ = try varint(&cursor, end: end)
+        case 1:
+            guard end - cursor >= 8 else { throw ProtobufInspectionError.invalidDescriptor }
+            cursor += 8
+        case 5:
+            guard end - cursor >= 4 else { throw ProtobufInspectionError.invalidDescriptor }
+            cursor += 4
+        case 2:
+            let length = try varint(&cursor, end: end)
+            guard length <= UInt64(end - cursor) else { throw ProtobufInspectionError.invalidDescriptor }
+            let nested = cursor..<(cursor + Int(length))
+            cursor = nested.upperBound
+            if let next = child(kind: kind, field: Int(tag >> 3)) {
+                try scan(nested, kind: next, depth: depth + 1)
             }
+        default: throw ProtobufInspectionError.unsupportedSchema
         }
     }
 
@@ -117,7 +121,9 @@ struct DescriptorAdmission {
             cursor += 1
             guard index != 9 || byte <= 1 else { throw ProtobufInspectionError.invalidDescriptor }
             value |= UInt64(byte & 127) << (index * 7)
-            if byte < 128 { return value }
+            if byte < 128 {
+                return value
+            }
         }
         throw ProtobufInspectionError.invalidDescriptor
     }

@@ -301,7 +301,9 @@ extension ProxyServer {
         }
         if egressPolicy.deniesLiteral(target.connectionHost) {
             reservation?.release()
-            if suppliedToken == nil { setupToken.complete() }
+            if suppliedToken == nil {
+                setupToken.complete()
+            }
             return loop.makeFailedFuture(ProxyConnectionError.egressBlocked(target.connectionHost))
         }
         let resolver = EgressFilteringResolver(
@@ -344,7 +346,9 @@ extension ProxyServer {
                 ))
             }
             .always { _ in
-                if suppliedToken == nil { setupToken.complete() }
+                if suppliedToken == nil {
+                    setupToken.complete()
+                }
             }
     }
 }

@@ -6,22 +6,26 @@ import XCTest
 import SwiftMITM
 
 final class Release022CorrelationResourceTests: XCTestCase {
-    private typealias Scenario = (methodLength: Int, count: Int, cycles: Int)
+    private struct Scenario {
+        let methodLength: Int
+        let count: Int
+        let cycles: Int
+    }
 
     func testCountCeilingThenOneOverFailsAllOutstandingIDs() async throws {
-        try await correlation((3, 1024, 0))
+        try await correlation(Scenario(methodLength: 3, count: 1024, cycles: 0))
     }
 
     func testMethodByteCeilingThenOneOverFailsAllOutstandingIDs() async throws {
-        try await correlation((131_072, 8, 0))
+        try await correlation(Scenario(methodLength: 131_072, count: 8, cycles: 0))
     }
 
     func testCombinedCeilingsThenOneOverFailsAllOutstandingIDs() async throws {
-        try await correlation((1024, 1024, 0))
+        try await correlation(Scenario(methodLength: 1024, count: 1024, cycles: 0))
     }
 
     func testMaximumCorrelationDrainsAndRefillsOneHundredCycles() async throws {
-        try await correlation((1024, 1024, 100))
+        try await correlation(Scenario(methodLength: 1024, count: 1024, cycles: 100))
     }
 
     private func correlation(_ scenario: Scenario) async throws {
@@ -61,7 +65,9 @@ final class Release022CorrelationResourceTests: XCTestCase {
                 + "beforeRSS=\(before) stalledRSS=\(stalled) afterRSS=\(after) unfinishedIDs=0\n"
             FileHandle.standardError.write(Data(report.utf8))
         } catch {
-            if let client, client.isActive { try? await client.close().get() }
+            if let client, client.isActive {
+                try? await client.close().get()
+            }
             try? await proxy.stop()
             origin.stop()
             try? await group.shutdownGracefully()
@@ -124,7 +130,11 @@ final class Release022CorrelationResourceTests: XCTestCase {
         XCTAssertEqual(Set(errors(events)), Set(heads(events).map(\.id)))
         XCTAssertTrue(ends(events).isEmpty)
         let failures = events.compactMap { event -> CapturedConnectionFailure? in
-            if case .connectionFailure(let failure) = event { failure } else { nil }
+            if case .connectionFailure(let failure) = event {
+                failure
+            } else {
+                nil
+            }
         }
         XCTAssertEqual(failures.count, 1)
         XCTAssertEqual(failures.first?.code, .resourceLimit)
@@ -132,14 +142,32 @@ final class Release022CorrelationResourceTests: XCTestCase {
     }
 
     private func heads(_ events: [CaptureEvent]) -> [CapturedRequestHead] {
-        events.compactMap { if case .requestHead(let head) = $0 { head } else { nil } }
+        events.compactMap {
+            if case .requestHead(let head) = $0 {
+                head
+            } else {
+                nil
+            }
+        }
     }
 
     private func ends(_ events: [CaptureEvent]) -> [UUID] {
-        events.compactMap { if case .responseEnd(let id, _) = $0 { id } else { nil } }
+        events.compactMap {
+            if case .responseEnd(let id, _) = $0 {
+                id
+            } else {
+                nil
+            }
+        }
     }
 
     private func errors(_ events: [CaptureEvent]) -> [UUID] {
-        events.compactMap { if case .streamError(let id, _) = $0 { id } else { nil } }
+        events.compactMap {
+            if case .streamError(let id, _) = $0 {
+                id
+            } else {
+                nil
+            }
+        }
     }
 }

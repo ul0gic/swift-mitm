@@ -16,7 +16,9 @@ final class ConsoleOutput: Sendable {
             return
         }
         delivery.offer(data)
-        if let failure = delivery.failure { reportLoss(failure) }
+        if let failure = delivery.failure {
+            reportLoss(failure)
+        }
     }
 
     func consume() async {
@@ -60,6 +62,8 @@ final class ConsoleOutput: Sendable {
             value = true
             return true
         }
-        if first { stdout.reportLoss(delivery.failure ?? failure) }
+        if first {
+            stdout.reportLoss(delivery.failure ?? failure)
+        }
     }
 }

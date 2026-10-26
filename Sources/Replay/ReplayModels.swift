@@ -138,7 +138,9 @@ final class ReplayAttemptReservation: Sendable {
             guard !value else { return false }
             value = true
             return true
-        }) { coordinator.release() }
+        }) {
+            coordinator.release()
+        }
     }
 
     deinit { release() }
@@ -160,7 +162,9 @@ final class ReplayCancellation: Sendable {
             state.channel = channel
             return state.cancelled
         }
-        if cancelled { channel.close(promise: nil) }
+        if cancelled {
+            channel.close(promise: nil)
+        }
         setup.complete()
     }
 

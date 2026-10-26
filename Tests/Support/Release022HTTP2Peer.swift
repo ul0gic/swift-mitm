@@ -107,6 +107,8 @@ final class Release022HTTP2Origin: @unchecked Sendable {
 
     func stop() {
         for child in children.withLockedValue({ $0 }) { try? phase4BoundedWait(child.close()) }
-        if let listener { try? phase4BoundedWait(listener.close()) }
+        if let listener {
+            try? phase4BoundedWait(listener.close())
+        }
     }
 }

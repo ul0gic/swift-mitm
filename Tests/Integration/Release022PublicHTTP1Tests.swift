@@ -81,7 +81,11 @@ final class Release022PublicHTTP1Tests: XCTestCase {
                 }
                 _ = try sink.wait { events in
                     events.reduce(0) { total, event in
-                        if case .responseBodyChunk(_, _, let count) = event { total + count } else { total }
+                        if case .responseBodyChunk(_, _, let count) = event {
+                            total + count
+                        } else {
+                            total
+                        }
                     } == expectedBody.count
                 }
                 XCTAssertEqual(release022ResponseBodyBytes(sink.events), Array(expectedBody.prefix(8)))
@@ -108,21 +112,67 @@ final class Release022PublicHTTP1Tests: XCTestCase {
             ).utf8)
             try origin.write(response)
             _ = try received.waitForBytes(response.count)
-            _ = try sink.wait { $0.contains { if case .webSocketOpen = $0 { true } else { false } } }
+            _ = try sink.wait { $0.contains {
+                if case .webSocketOpen = $0 {
+                    true
+                } else {
+                    false
+                }
+            } }
             try phase4BoundedWait(client.writeAndFlush(ByteBuffer(bytes: WebSocketWire.clientFrames)))
             _ = try origin.received.waitForBytes(request.count + WebSocketWire.clientFrames.count)
-            _ = try sink.wait { $0.filter { if case .webSocketFrame = $0 { true } else { false } }.count == 2 }
-            XCTAssertFalse(sink.events.contains { if case .webSocketClose = $0 { true } else { false } })
+            _ = try sink.wait { $0.filter {
+                if case .webSocketFrame = $0 {
+                    true
+                } else {
+                    false
+                }
+            }.count == 2 }
+            XCTAssertFalse(sink.events.contains {
+                if case .webSocketClose = $0 {
+                    true
+                } else {
+                    false
+                }
+            })
             try origin.write(WebSocketWire.serverFrames + WebSocketWire.serverBinaryFrame)
             let byteCount = response.count + WebSocketWire.serverFrames.count + WebSocketWire.serverBinaryFrame.count
             _ = try received.waitForBytes(byteCount)
-            _ = try sink.wait { $0.contains { if case .webSocketClose = $0 { true } else { false } } }
+            _ = try sink.wait { $0.contains {
+                if case .webSocketClose = $0 {
+                    true
+                } else {
+                    false
+                }
+            } }
             let events = sink.events
-            XCTAssertEqual(events.filter { if case .webSocketClose = $0 { true } else { false } }.count, 1)
-            let terminal = try XCTUnwrap(events.firstIndex { if case .webSocketClose = $0 { true } else { false } })
-            XCTAssertEqual(events[..<terminal].filter { if case .webSocketFrame = $0 { true } else { false } }.count, 4)
+            XCTAssertEqual(events.filter {
+                if case .webSocketClose = $0 {
+                    true
+                } else {
+                    false
+                }
+            }.count, 1)
+            let terminal = try XCTUnwrap(events.firstIndex {
+                if case .webSocketClose = $0 {
+                    true
+                } else {
+                    false
+                }
+            })
+            XCTAssertEqual(events[..<terminal].filter {
+                if case .webSocketFrame = $0 {
+                    true
+                } else {
+                    false
+                }
+            }.count, 4)
             XCTAssertFalse(events.suffix(from: terminal + 1).contains {
-                if case .webSocketFrame = $0 { true } else { false }
+                if case .webSocketFrame = $0 {
+                    true
+                } else {
+                    false
+                }
             })
         }
     }

@@ -52,13 +52,17 @@ extension ProxyServer {
         do {
             context = try tlsRuntime.upstreamContext(applicationProtocols: applicationProtocols)
         } catch {
-            if suppliedSetupToken == nil { setupToken.complete() }
+            if suppliedSetupToken == nil {
+                setupToken.complete()
+            }
             return loop.makeFailedFuture(error)
         }
         let egressPolicy = egressPolicy
         failureHandler?.value.updateStage(.routing)
         if egressPolicy.deniesLiteral(target.connectionHost) {
-            if suppliedSetupToken == nil { setupToken.complete() }
+            if suppliedSetupToken == nil {
+                setupToken.complete()
+            }
             return loop.makeFailedFuture(ProxyConnectionError.egressBlocked(target.connectionHost))
         }
         failureHandler?.value.updateStage(.connect)
@@ -94,7 +98,9 @@ extension ProxyServer {
                 ) { $0.connection.channel.close() }
             }
             .always { _ in
-                if suppliedSetupToken == nil { setupToken.complete() }
+                if suppliedSetupToken == nil {
+                    setupToken.complete()
+                }
             }
     }
 

@@ -108,9 +108,15 @@ final class HTTPInspectionBody {
     }
 
     private static func grpcFormat(_ media: String) -> GRPCWireFormat? {
-        if media == "application/grpc" || media.hasPrefix("application/grpc+") { return .native }
-        if media == "application/grpc-web" || media.hasPrefix("application/grpc-web+") { return .webBinary }
-        if media == "application/grpc-web-text" || media.hasPrefix("application/grpc-web-text+") { return .webText }
+        if media == "application/grpc" || media.hasPrefix("application/grpc+") {
+            return .native
+        }
+        if media == "application/grpc-web" || media.hasPrefix("application/grpc-web+") {
+            return .webBinary
+        }
+        if media == "application/grpc-web-text" || media.hasPrefix("application/grpc-web-text+") {
+            return .webText
+        }
         return nil
     }
 
@@ -147,7 +153,9 @@ final class HTTPInspectionBody {
         while work < 1_048_576 {
             work += unaccountedWork
             unaccountedWork = 0
-            if work >= 1_048_574 { return false }
+            if work >= 1_048_574 {
+                return false
+            }
             if let grpc, grpc.hasPendingWork || grpcPosition < grpcCarry.count {
                 work += drainGRPC(grpc, allowance: min(65_536, 1_048_576 - work))
                 continue
@@ -158,12 +166,16 @@ final class HTTPInspectionBody {
                 work += try feedStage(stage, allowance: min(65_536, (1_048_576 - work) / 3))
                 continue
             }
-            if !ending { return true }
+            if !ending {
+                return true
+            }
             if let stage = finished.firstIndex(of: false) {
                 work += try finishStage(stage, allowance: min(65_536, (1_048_576 - work) / 3))
                 continue
             }
-            if let sse, case .unfinishedRecord = sse.finish() { output(.diagnostic(.unfinishedSSERecord)) }
+            if let sse, case .unfinishedRecord = sse.finish() {
+                output(.diagnostic(.unfinishedSSERecord))
+            }
             grpc?.finish(trailers: trailers.map { ($0.name, $0.value) })
             output(.end)
             terminal = true
@@ -198,8 +210,12 @@ final class HTTPInspectionBody {
             ) { output in try self.produced(output, stage: stage) }
         }
         positions[stage] += progress.consumedBytes
-        if case .outputLimit = progress.state { drainNeeded[stage] = true }
-        else { drainNeeded[stage] = false }
+        if case .outputLimit = progress.state {
+            drainNeeded[stage] = true
+        }
+        else {
+            drainNeeded[stage] = false
+        }
         if positions[stage] == pending[stage].count {
             pending[stage] = []
             positions[stage] = 0
@@ -216,7 +232,9 @@ final class HTTPInspectionBody {
         let progress = try decoders[stage].finish(maximumOutputBytes: allowance) {
             try self.produced($0, stage: stage)
         }
-        if case .complete = progress.state { finished[stage] = true }
+        if case .complete = progress.state {
+            finished[stage] = true
+        }
         return max(1, progress.producedBytes)
     }
 
@@ -229,7 +247,9 @@ final class HTTPInspectionBody {
 
 private extension HTTPInspectionBody {
     func produced(_ bytes: UnsafeRawBufferPointer, stage: Int) throws {
-        if stage + 1 == decoders.count { try consume(bytes) }
+        if stage + 1 == decoders.count {
+            try consume(bytes)
+        }
         else {
             let charge = bytes.count * 2
             guard configuration.budget.reserve(charge) else { throw InspectionBudgetError.capacityExceeded }

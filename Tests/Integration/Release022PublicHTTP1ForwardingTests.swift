@@ -59,14 +59,24 @@ final class Release022PublicHTTP1ForwardingTests: XCTestCase {
             let head = try origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
             try origin.write(Array("HTTP/1.1 100 Continue\r\n\r\n".utf8))
             _ = try received.wait { String(decoding: $0, as: UTF8.self).contains("100 Continue") }
-            XCTAssertFalse(sink.events.contains { if case .requestEnd = $0 { true } else { false } })
+            XCTAssertFalse(sink.events.contains {
+                if case .requestEnd = $0 {
+                    true
+                } else {
+                    false
+                }
+            })
             try phase4BoundedWait(client.writeAndFlush(ByteBuffer(string: "abc")))
             let wire = try origin.received.waitForBytes(head.count + 3)
             XCTAssertEqual(Array(wire.suffix(3)), Array("abc".utf8))
             try origin.write(Array("HTTP/1.1 201 Created\r\nContent-Length: 0\r\n\r\n".utf8))
             _ = try sink.wait { release022ResponseEnds($0).count == 1 }
             let statuses = sink.events.compactMap { event -> Int? in
-                if case .responseHead(let head) = event { head.status } else { nil }
+                if case .responseHead(let head) = event {
+                    head.status
+                } else {
+                    nil
+                }
             }
             XCTAssertEqual(statuses, [100, 201])
         }
@@ -83,7 +93,13 @@ final class Release022PublicHTTP1ForwardingTests: XCTestCase {
             _ = try received.wait { String(decoding: $0, as: UTF8.self).contains("413") }
             let events = try sink.wait { release022ResponseEnds($0).count == 1 }
             XCTAssertEqual(release022Requests(events).count, 1)
-            XCTAssertFalse(events.contains { if case .requestEnd = $0 { true } else { false } })
+            XCTAssertFalse(events.contains {
+                if case .requestEnd = $0 {
+                    true
+                } else {
+                    false
+                }
+            })
         }
     }
 
@@ -126,7 +142,9 @@ final class Release022PublicHTTP1ForwardingTests: XCTestCase {
             second.stop()
             try await group.shutdownGracefully()
         } catch {
-            if let client, client.isActive { try? await client.close().get() }
+            if let client, client.isActive {
+                try? await client.close().get()
+            }
             try? await proxy.stop()
             first.stop()
             second.stop()
@@ -153,7 +171,11 @@ final class Release022PublicHTTP1ForwardingTests: XCTestCase {
             try received.waitForClose()
             XCTAssertEqual(origin.acceptedConnections, 0)
             let failures = sink.events.compactMap { event -> CapturedConnectionFailure? in
-                if case .connectionFailure(let failure) = event { failure } else { nil }
+                if case .connectionFailure(let failure) = event {
+                    failure
+                } else {
+                    nil
+                }
             }
             XCTAssertEqual(failures.count, 1)
             XCTAssertEqual(failures.first?.code, .egressDenied)

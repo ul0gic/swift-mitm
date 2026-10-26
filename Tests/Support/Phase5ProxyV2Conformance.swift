@@ -82,10 +82,8 @@ struct Phase5ProxyV2ConformanceDocument: Codable, Sendable {
               schemaVersion == 1,
               contractVersion == "1.0.0",
               maximumHeaderBytes == 4_096,
-              !vectors.isEmpty else {
-            throw Phase5ProxyV2ConformanceError.invalidDocument
-        }
-        guard Set(vectors.map(\.id)).count == vectors.count, vectors.allSatisfy({ !$0.id.isEmpty }) else {
+              !vectors.isEmpty,
+              Set(vectors.map(\.id)).count == vectors.count, vectors.allSatisfy({ !$0.id.isEmpty }) else {
             throw Phase5ProxyV2ConformanceError.invalidDocument
         }
         for vector in vectors {

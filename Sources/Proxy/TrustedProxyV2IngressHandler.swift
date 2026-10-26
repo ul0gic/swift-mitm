@@ -21,7 +21,7 @@ final class TrustedProxyV2IngressHandler: ChannelInboundHandler, RemovableChanne
     private let configuration: TrustedProxyV2Ingress
     private let peerAddressProvider: PeerAddressProvider
     private let acceptanceHandler: AcceptanceHandler
-    private let stageObserver: (any TransparentIngressStageObserver)?
+    private let stageObserver: any TransparentIngressStageObserver?
     private var parser: ProxyV2Parser
     private var deadlineTask: Scheduled<Void>?
     private var pendingStageObserved = false
@@ -30,7 +30,7 @@ final class TrustedProxyV2IngressHandler: ChannelInboundHandler, RemovableChanne
     init(
         configuration: TrustedProxyV2Ingress,
         peerAddressProvider: @escaping PeerAddressProvider = { $0.remoteAddress },
-        stageObserver: (any TransparentIngressStageObserver)? = nil,
+        stageObserver: any TransparentIngressStageObserver? = nil,
         acceptanceHandler: @escaping AcceptanceHandler
     ) {
         self.configuration = configuration

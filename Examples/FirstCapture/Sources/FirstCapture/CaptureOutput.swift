@@ -87,12 +87,14 @@ struct OutputRecord: Encodable, Sendable {
     private mutating func payload(_ bytes: [UInt8], count: Int) {
         byteCount = count
         retainedBytes = bytes.count
-        if !bytes.isEmpty { payloadBase64 = Data(bytes).base64EncodedString() }
+        if !bytes.isEmpty {
+            payloadBase64 = Data(bytes).base64EncodedString()
+        }
     }
 }
 
-extension CaptureEvent {
-    fileprivate var outputSummary: (String, UUID) {
+private extension CaptureEvent {
+    var outputSummary: (String, UUID) {
         switch self {
         case .requestHead(let head): ("requestHead", head.id)
         case .requestBodyChunk(let id, _, _): ("requestBodyChunk", id)
@@ -146,7 +148,9 @@ final class CaptureOutput: CaptureEventSink {
             let data = try JSONEncoder().encode(OutputRecord(event))
             if let delivery {
                 delivery.offer(data)
-                if let failure = delivery.failure { reportLoss(failure) }
+                if let failure = delivery.failure {
+                    reportLoss(failure)
+                }
             } else {
                 write(data)
             }
@@ -160,7 +164,9 @@ final class CaptureOutput: CaptureEventSink {
             let data = try JSONEncoder().encode(record)
             if let delivery {
                 delivery.offer(data)
-                if let failure = delivery.failure { reportLoss(failure) }
+                if let failure = delivery.failure {
+                    reportLoss(failure)
+                }
             } else {
                 write(data)
             }

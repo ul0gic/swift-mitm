@@ -41,7 +41,9 @@ struct ReplayResponseReader: Sendable {
             status: Int(received.status.code), version: .http11,
             headers: ExplicitHTTPProxyHandler.fields(received.headers)
         )
-        if received.status.code >= 200 { status = Int(received.status.code) }
+        if received.status.code >= 200 {
+            status = Int(received.status.code)
+        }
         execution.server.sink.receive(.responseHead(response))
         try await controls.head(response)
         guard controls.completesAtHead else { return nil }

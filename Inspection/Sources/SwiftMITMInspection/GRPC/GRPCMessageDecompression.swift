@@ -8,8 +8,7 @@ public enum GRPCMessageDecompression {
         case "deflate": coding = .deflate
         default: throw GRPCDiagnostic.unsupportedCompression
         }
-        guard (0...(16 * 1024 * 1024)).contains(maximumDecodedBytes) else { throw GRPCDiagnostic.limitExceeded }
-        guard budget.reserve(maximumDecodedBytes * 2) else { throw GRPCDiagnostic.limitExceeded }
+        guard (0...(16 * 1024 * 1024)).contains(maximumDecodedBytes), budget.reserve(maximumDecodedBytes * 2) else { throw GRPCDiagnostic.limitExceeded }
         defer { budget.release(maximumDecodedBytes * 2) }
         let decoder = try ContentDecoder(coding: coding, budget: budget)
         var output: [UInt8] = []
@@ -20,7 +19,9 @@ public enum GRPCMessageDecompression {
         try feedInput(bytes, decoder: decoder, emit: collect)
         while true {
             let progress = try decoder.finish(maximumOutputBytes: 1024 * 1024, emit: collect)
-            if progress.state == .complete { return output }
+            if progress.state == .complete {
+                return output
+            }
             guard progress.producedBytes > 0 else { throw GRPCDiagnostic.malformedEnvelope }
         }
     }
@@ -86,7 +87,9 @@ final class GRPCMessageDecompressionSession {
                 offset += progress.consumedBytes
             } else {
                 progress = try decoder.finish(maximumOutputBytes: maximumOutputBytes - produced, emit: collect)
-                if case .complete = progress.state { return (produced + progress.producedBytes, true) }
+                if case .complete = progress.state {
+                    return (produced + progress.producedBytes, true)
+                }
             }
             produced += progress.producedBytes
             guard progress.consumedBytes > 0 || progress.producedBytes > 0 else {

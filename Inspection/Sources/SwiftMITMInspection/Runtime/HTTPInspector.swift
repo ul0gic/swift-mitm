@@ -20,11 +20,19 @@ public final class HTTPInspector: HTTPObservationSink, WebSocketObservationSink 
         }
     }
 
+    struct FrameStart: Sendable {
+        let direction: WebSocketDirection
+        let opcode: WebSocketOpcode
+        let fin: Bool
+        let compressed: Bool
+        let byteCount: Int
+    }
+
     enum Input: Sendable {
         case capture(CaptureEvent)
         case body(HTTPBodyObservation, [UInt8])
         case unavailable(HTTPBodyObservation)
-        case wsStart(WebSocketDirection, WebSocketOpcode, Bool, Bool, Int)
+        case wsStart(FrameStart)
         case wsBytes(UUID, WebSocketDirection, [UInt8])
         case wsEnd(UUID, WebSocketDirection)
     }
@@ -89,10 +97,14 @@ public final class HTTPInspector: HTTPObservationSink, WebSocketObservationSink 
     deinit {
         ingress.withLock { state in
             for item in state.items { configuration.budget.release(item.charge) }
-            if state.baseReservationActive { configuration.budget.release(reservedStorageBytes) }
+            if state.baseReservationActive {
+                configuration.budget.release(reservedStorageBytes)
+            }
         }
         worker.withLock { state in
-            if let current = state.current { configuration.budget.release(current.charge) }
+            if let current = state.current {
+                configuration.budget.release(current.charge)
+            }
             for exchange in state.exchanges.values { configuration.budget.release(exchange.charge) }
         }
     }
@@ -132,7 +144,13 @@ public final class HTTPInspector: HTTPObservationSink, WebSocketObservationSink 
         byteCount: Int
     ) {
         admit(key: socketKey(connectionID, direction), charge: 256) {
-            .wsStart(direction, opcode, fin, compressed, byteCount)
+            .wsStart(FrameStart(
+                direction: direction,
+                opcode: opcode,
+                fin: fin,
+                compressed: compressed,
+                byteCount: byteCount
+            ))
         }
     }
 
@@ -171,7 +189,9 @@ public final class HTTPInspector: HTTPObservationSink, WebSocketObservationSink 
                     observationLossDetected: state.observationLossDetected
                 )
             }
-            if result.drained || clock.now >= deadline { return result }
+            if result.drained || clock.now >= deadline {
+                return result
+            }
             do { try await Task.sleep(for: .milliseconds(10)) }
             catch { return result }
         }
@@ -185,11 +205,15 @@ public final class HTTPInspector: HTTPObservationSink, WebSocketObservationSink 
             state.items = []
             state.queuedBytes = 0
             state.losses = [:]
-            if state.running { return false }
+            if state.running {
+                return false
+            }
             state.running = true
             return true
         }
-        if schedule { queue.async { self.runTurn() } }
+        if schedule {
+            queue.async { self.runTurn() }
+        }
         return await drain(timeout: timeout)
     }
 

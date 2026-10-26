@@ -56,7 +56,11 @@ final class Stage2HTTP2FaultCompatibilityTests: XCTestCase {
             let slow = try XCTUnwrap(release022Requests(capture.events).first { $0.path == "/stage2.Fault/Slow" })
             XCTAssertEqual(slow.version, .http2)
             XCTAssertFalse(capture.events.contains {
-                if case .streamError(let id, _) = $0 { id == slow.id } else { false }
+                if case .streamError(let id, _) = $0 {
+                    id == slow.id
+                } else {
+                    false
+                }
             })
             try await stage2AwaitAsync {
                 let usage = await runtime.resourceUsage()

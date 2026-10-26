@@ -76,7 +76,7 @@ final class Release022RunnerTrust {
     }
 
     func restore() throws {
-        var failure: (any Error)?
+        var failure: any Error?
         if trusted {
             do {
                 _ = try security(["remove-trusted-cert", certificate.path])
@@ -86,13 +86,23 @@ final class Release022RunnerTrust {
         if created {
             do {
                 _ = try security(["list-keychains", "-d", "user", "-s"] + previousKeychains)
-            } catch { if failure == nil { failure = error } }
+            } catch {
+                if failure == nil {
+                    failure = error
+                }
+            }
             do {
                 _ = try security(["delete-keychain", keychain.path])
                 created = false
-            } catch { if failure == nil { failure = error } }
+            } catch {
+                if failure == nil {
+                    failure = error
+                }
+            }
         }
-        if let failure { throw failure }
+        if let failure {
+            throw failure
+        }
     }
 
     private func security(_ arguments: [String]) throws -> String {

@@ -30,4 +30,3 @@ func writeError(_ value: String) {
     do { try FileHandle.standardError.write(contentsOf: Data((value + "\n").utf8)) }
     catch { exit(1) }
 }
-

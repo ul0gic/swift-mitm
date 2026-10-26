@@ -53,7 +53,9 @@ final class WebSocketInflater {
             stream.deallocate()
             output.deallocate()
             budget.release(Self.storageBytes)
-            if status == Z_MEM_ERROR { throw InspectionBudgetError.capacityExceeded }
+            if status == Z_MEM_ERROR {
+                throw InspectionBudgetError.capacityExceeded
+            }
             throw WebSocketMessageError.malformedCompression
         }
         initialized = true
@@ -94,12 +96,16 @@ final class WebSocketInflater {
             let before = stream.pointee.avail_in
             let status = inflate(stream, Z_BLOCK)
             guard status == Z_OK || status == Z_BUF_ERROR else {
-                if status == Z_MEM_ERROR { throw InspectionBudgetError.capacityExceeded }
+                if status == Z_MEM_ERROR {
+                    throw InspectionBudgetError.capacityExceeded
+                }
                 throw WebSocketMessageError.malformedCompression
             }
             let written = capacity - Int(stream.pointee.avail_out)
             produced += written
-            if written > 0 { try emit(UnsafeRawBufferPointer(start: output, count: written)) }
+            if written > 0 {
+                try emit(UnsafeRawBufferPointer(start: output, count: written))
+            }
             if before == stream.pointee.avail_in, written == 0 {
                 guard stream.pointee.avail_in == 0 else { throw WebSocketMessageError.malformedCompression }
                 return WebSocketInflationProgress(

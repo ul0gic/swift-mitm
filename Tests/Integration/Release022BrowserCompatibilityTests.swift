@@ -54,7 +54,9 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
             webView?.stopLoading()
             webView?.configuration.userContentController.removeScriptMessageHandler(forName: "result")
             webView?.navigationDelegate = nil
-            if let proxy { try? await proxy.stop() }
+            if let proxy {
+                try? await proxy.stop()
+            }
             try? await group.shutdownGracefully()
             throw error
         }
@@ -93,9 +95,13 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
             try runnerTrust.restore()
             try await group.shutdownGracefully()
         } catch {
-            if let proxy { try? await proxy.stop() }
+            if let proxy {
+                try? await proxy.stop()
+            }
             try? await group.shutdownGracefully()
-            if let trust { try trust.restore() }
+            if let trust {
+                try trust.restore()
+            }
             throw error
         }
     }
@@ -119,20 +125,52 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
 
     private func assertBrowserCapture(_ sink: Release022Events) throws {
         let events = try sink.wait {
-            $0.contains { if case .webSocketClose = $0 { true } else { false } }
+            $0.contains {
+                if case .webSocketClose = $0 {
+                    true
+                } else {
+                    false
+                }
+            }
         }
         let requests = events.compactMap { event -> CapturedRequestHead? in
-            if case .requestHead(let head) = event { head } else { nil }
+            if case .requestHead(let head) = event {
+                head
+            } else {
+                nil
+            }
         }
         XCTAssertTrue(requests.contains { $0.path == "/events" })
         XCTAssertTrue(requests.contains { $0.path == "/socket" })
         let sseID = try XCTUnwrap(requests.first { $0.path == "/events" }?.id)
         let body = events.flatMap { event -> [UInt8] in
-            if case .responseBodyChunk(let id, let bytes, _) = event, id == sseID { bytes } else { [] }
+            if case .responseBodyChunk(let id, let bytes, _) = event, id == sseID {
+                bytes
+            } else {
+                []
+            }
         }
         XCTAssertEqual(body, Array(": heartbeat\n\ndata: €-first\n\ndata: second\n\n".utf8))
-        XCTAssertEqual(events.filter { if case .webSocketOpen = $0 { true } else { false } }.count, 1)
-        XCTAssertEqual(events.filter { if case .webSocketClose = $0 { true } else { false } }.count, 1)
-        XCTAssertFalse(events.contains { if case .streamError = $0 { true } else { false } })
+        XCTAssertEqual(events.filter {
+            if case .webSocketOpen = $0 {
+                true
+            } else {
+                false
+            }
+        }.count, 1)
+        XCTAssertEqual(events.filter {
+            if case .webSocketClose = $0 {
+                true
+            } else {
+                false
+            }
+        }.count, 1)
+        XCTAssertFalse(events.contains {
+            if case .streamError = $0 {
+                true
+            } else {
+                false
+            }
+        })
     }
 }

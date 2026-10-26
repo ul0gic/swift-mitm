@@ -81,10 +81,16 @@ public actor HTTPControlRuntime {
         var waiter: CheckedContinuation<HTTPControlDecision, any Error>?
     }
 
+    private struct ByteReservation {
+        let requestID: UUID
+        let bytes: Int
+        let global: ResourceReservation?
+    }
+
     private var configuration: HTTPControlConfiguration
     private var holds: [UUID: Hold] = [:]
     private var callbacks: [UUID: Callback] = [:]
-    private var byteReservations: [UUID: (requestID: UUID, bytes: Int, global: ResourceReservation?)] = [:]
+    private var byteReservations: [UUID: ByteReservation] = [:]
     private nonisolated let budget: HTTPControlBudget
     private var retainedBytes: Int { budget.state.withLockedValue { $0.bytes } }
     private var stopped = false
@@ -103,10 +109,7 @@ public actor HTTPControlRuntime {
         let hasActorWork = !holds.isEmpty || !callbacks.isEmpty || !byteReservations.isEmpty
         try budget.state.withLockedValue { state in
             let hasWork = state.bytes > 0 || hasActorWork
-            guard !hasAdmissionBinding || sameAdmission || (stopped && !hasWork) else {
-                throw HTTPControlError.invalidConfiguration
-            }
-            guard hasAdmissionBinding || sameAdmission || !hasWork else {
+            guard !hasAdmissionBinding || sameAdmission || (stopped && !hasWork), hasAdmissionBinding || sameAdmission || !hasWork else {
                 throw HTTPControlError.invalidConfiguration
             }
             admissionController = admission
@@ -185,7 +188,11 @@ public actor HTTPControlRuntime {
 
     private func reserveGlobalBytes(_ bytes: Int) throws -> ResourceReservation? {
         var committed = false
-        defer { if !committed { budget.release(bytes) } }
+        defer {
+            if !committed {
+                budget.release(bytes)
+            }
+        }
         do {
             let reservation = try admissionController?.acquire(.retainedBytes(bytes))
             committed = true
@@ -202,12 +209,14 @@ public actor HTTPControlRuntime {
         let id = UUID()
         try budget.charge(bytes)
         let global = try reserveGlobalBytes(bytes)
-        byteReservations[id] = (requestID, bytes, global)
+        byteReservations[id] = ByteReservation(requestID: requestID, bytes: bytes, global: global)
         return id
     }
 
     public func releaseBytes(reservationID: UUID) {
-        if let reservation = byteReservations.removeValue(forKey: reservationID) { budget.release(reservation.bytes) }
+        if let reservation = byteReservations.removeValue(forKey: reservationID) {
+            budget.release(reservation.bytes)
+        }
     }
 
     public func pause(
@@ -265,7 +274,7 @@ public actor HTTPControlRuntime {
         guard !Task.isCancelled else { throw HTTPControlError.cancelled }
         guard (message.body?.count ?? 0) <= configuration.limits.maximumBodyBytes else { throw HTTPControlError.bodyLimitExceeded }
         let bytes = message.retainedBytes + (retainedSnapshot ?? configuration).retainedBytes
-            + (retainedDecision.map { $0.retainedBytes } ?? 0)
+            + (retainedDecision.map(\.retainedBytes) ?? 0)
         let id = UUID()
         if let owningBreakpointID {
             guard holds[owningBreakpointID]?.requestID == message.requestID,
@@ -280,7 +289,7 @@ public actor HTTPControlRuntime {
             try await withCheckedThrowingContinuation { continuation in
                 let task = Task.detached {
                     let result: Result<HTTPControlDecision, any Error>
-                    do { result = .success(try await handler(message)) } catch { result = .failure(error) }
+                    do { result = await .success(try handler(message)) } catch { result = .failure(error) }
                     await self.finishCallback(id: id, result: result)
                 }
                 let timer = Task {
@@ -291,7 +300,9 @@ public actor HTTPControlRuntime {
                     requestID: message.requestID, breakpointID: owningBreakpointID, bytes: bytes,
                     globalReservation: global, task: task, timer: timer, waiter: continuation
                 )
-                if Task.isCancelled { cancelCallback(id: id, error: .cancelled) }
+                if Task.isCancelled {
+                    cancelCallback(id: id, error: .cancelled)
+                }
             }
         } onCancel: {
             Task { await self.cancelCallback(id: id, error: .cancelled) }
@@ -336,5 +347,4 @@ public actor HTTPControlRuntime {
         return HTTPControlStopReport(abandonedCallbacks: callbacks.count,
                                      retainedCallbackBytes: callbacks.values.reduce(0) { $0 + $1.bytes })
     }
-
 }

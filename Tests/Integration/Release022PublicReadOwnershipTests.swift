@@ -21,7 +21,13 @@ final class Release022PublicReadOwnershipTests: XCTestCase {
             let upstreamHead = try origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
             try origin.write(WebSocketWire.responseHead)
             let downstreamHead = try received.wait { $0.suffix(4) == [13, 10, 13, 10] }
-            _ = try sink.wait { $0.contains { if case .webSocketOpen = $0 { true } else { false } } }
+            _ = try sink.wait { $0.contains {
+                if case .webSocketOpen = $0 {
+                    true
+                } else {
+                    false
+                }
+            } }
             for count in 1 ... 2 {
                 try phase4BoundedWait(client.writeAndFlush(ByteBuffer(bytes: WebSocketWire.clientTextFrame)))
                 let bytes = try origin.received.waitForBytes(
@@ -44,13 +50,31 @@ final class Release022PublicReadOwnershipTests: XCTestCase {
             }
             try phase4BoundedWait(client.writeAndFlush(ByteBuffer(bytes: WebSocketWire.clientCloseFrame)))
             _ = try sink.wait { self.frames($0).count == 5 }
-            XCTAssertFalse(sink.events.contains { if case .webSocketClose = $0 { true } else { false } })
+            XCTAssertFalse(sink.events.contains {
+                if case .webSocketClose = $0 {
+                    true
+                } else {
+                    false
+                }
+            })
             try origin.write(WebSocketWire.serverCloseFrame)
-            let events = try sink.wait { $0.contains { if case .webSocketClose = $0 { true } else { false } } }
+            let events = try sink.wait { $0.contains {
+                if case .webSocketClose = $0 {
+                    true
+                } else {
+                    false
+                }
+            } }
             XCTAssertEqual(self.frames(events).map(\.direction), [
                 .clientToServer, .clientToServer, .serverToClient, .serverToClient, .clientToServer, .serverToClient
             ])
-            XCTAssertEqual(events.filter { if case .webSocketClose = $0 { true } else { false } }.count, 1)
+            XCTAssertEqual(events.filter {
+                if case .webSocketClose = $0 {
+                    true
+                } else {
+                    false
+                }
+            }.count, 1)
             XCTAssertTrue(release022Errors(events).isEmpty)
         }
     }
@@ -90,16 +114,24 @@ final class Release022PublicReadOwnershipTests: XCTestCase {
             let events = sink.events
             XCTAssertEqual(release022Requests(events).map(\.path), ["/held"])
             let requestEnds = events.compactMap { event -> UUID? in
-                if case .requestEnd(let id, _) = event { id } else { nil }
+                if case .requestEnd(let id, _) = event {
+                    id
+                } else {
+                    nil
+                }
             }
             XCTAssertEqual(requestEnds, release022Requests(events).map(\.id))
             XCTAssertEqual(release022Errors(events), release022Requests(events).map(\.id))
             XCTAssertTrue(release022ResponseEnds(events).isEmpty)
-            if channel.isActive { try await channel.close().get() }
+            if channel.isActive {
+                try await channel.close().get()
+            }
             origin.stop()
             try await group.shutdownGracefully()
         } catch {
-            if let client, client.isActive { try? await client.close().get() }
+            if let client, client.isActive {
+                try? await client.close().get()
+            }
             try? await proxy.stop()
             origin.stop()
             try? await group.shutdownGracefully()
@@ -108,6 +140,12 @@ final class Release022PublicReadOwnershipTests: XCTestCase {
     }
 
     private func frames(_ events: [CaptureEvent]) -> [CapturedWebSocketFrame] {
-        events.compactMap { if case .webSocketFrame(let frame) = $0 { frame } else { nil } }
+        events.compactMap {
+            if case .webSocketFrame(let frame) = $0 {
+                frame
+            } else {
+                nil
+            }
+        }
     }
 }

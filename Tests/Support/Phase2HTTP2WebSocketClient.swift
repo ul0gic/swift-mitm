@@ -190,12 +190,7 @@ private final class Phase2HTTP2WebSocketClientStreamHandler: ChannelDuplexHandle
     }
 
     private func receive(_ data: IOData, context: ChannelHandlerContext) {
-        guard accepted else {
-            responseCompletion.complete(.failure(Phase2FixtureError.unexpectedBytes))
-            context.close(promise: nil)
-            return
-        }
-        guard case .byteBuffer(let buffer) = data else {
+        guard accepted, case .byteBuffer(let buffer) = data else {
             responseCompletion.complete(.failure(Phase2FixtureError.unexpectedBytes))
             context.close(promise: nil)
             return

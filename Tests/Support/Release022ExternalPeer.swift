@@ -68,7 +68,9 @@ final class Release022ExternalPeer: @unchecked Sendable {
             process.terminate()
             let deadline = Date().addingTimeInterval(3)
             while process.isRunning, Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
-            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            if process.isRunning {
+                kill(process.processIdentifier, SIGKILL)
+            }
             process.waitUntilExit()
         }
         try? output?.close()

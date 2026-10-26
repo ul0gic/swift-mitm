@@ -55,8 +55,7 @@ final class HTTPControlFaultWriter {
     }
 
     func drain() {
-        guard !cancelled, timer == nil, channel.isWritable else { return }
-        guard refillRepresentation() else { return }
+        guard !cancelled, timer == nil, channel.isWritable, refillRepresentation() else { return }
         let now = NIODeadline.now().uptimeNanoseconds
         let allowance = schedule.next(nowNanoseconds: now)
         if let scope = allowance.reset {
@@ -108,7 +107,9 @@ final class HTTPControlFaultWriter {
             onReset(.stream)
             return
         }
-        if first.readableBytes > 0 { pending.insert(first, at: 0) }
+        if first.readableBytes > 0 {
+            pending.insert(first, at: 0)
+        }
         do { try schedule.didForward(bytes: count, nowNanoseconds: now) } catch {
             cancel()
             onReset(.stream)

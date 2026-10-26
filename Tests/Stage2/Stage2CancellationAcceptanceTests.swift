@@ -25,7 +25,9 @@ private final class Stage2BlockedControlSink: HTTPControlEventSink {
             state.released = true
             return true
         }
-        if signal { releaseSignal.signal() }
+        if signal {
+            releaseSignal.signal()
+        }
     }
 }
 
@@ -109,7 +111,7 @@ final class Stage2CancellationAcceptanceTests: XCTestCase {
             try phase4BoundedWait(next.writeAndFlush(ByteBuffer(string:
                 "GET http://127.0.0.1:\(peer.origin.port)/healthy HTTP/1.1\r\nHost: localhost\r\n\r\n")))
             _ = try received.wait { String(decoding: $0, as: UTF8.self).hasPrefix("HTTP/1.1 200 ") }
-            XCTAssertEqual(peer.origin.requests.map { $0.head.uri }, ["/healthy"])
+            XCTAssertEqual(peer.origin.requests.map(\.head.uri), ["/healthy"])
             try await next.close().get()
             try await peer.proxy.stop()
             XCTAssertGreaterThan(admission.usage.retainedBytes, 0)

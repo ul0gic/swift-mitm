@@ -42,7 +42,9 @@ extension HARJSONWriter {
     private mutating func query(_ items: [URLQueryItem]) async throws {
         try await raw("[")
         for (index, item) in items.enumerated() {
-            if index > 0 { try await raw(",") }
+            if index > 0 {
+                try await raw(",")
+            }
             try await raw("{\"name\":")
             try await string(item.name)
             try await raw(",\"value\":")
@@ -107,7 +109,9 @@ extension HARJSONWriter {
             ("connect", timings.connect), ("ssl", timings.ssl)
         ]
         for (name, value) in optional {
-            if let value { try await raw(",\"" + name + "\":" + String(value)) }
+            if let value {
+                try await raw(",\"" + name + "\":" + String(value))
+            }
         }
         try await raw("}")
     }
@@ -144,7 +148,9 @@ extension HARJSONWriter {
         ]
         try await raw("[")
         for (index, name) in names.enumerated() {
-            if index > 0 { try await raw(",") }
+            if index > 0 {
+                try await raw(",")
+            }
             try await string(name)
         }
         try await raw("]")

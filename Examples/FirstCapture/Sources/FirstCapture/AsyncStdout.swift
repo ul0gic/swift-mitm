@@ -25,10 +25,7 @@ final class AsyncStdout: Sendable {
         }
 
         func configure() throws {
-            guard fcntl(descriptor, F_SETNOSIGPIPE, 1) == 0 else {
-                throw OutputError.configuration(errno)
-            }
-            guard fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) == 0 else {
+            guard fcntl(descriptor, F_SETNOSIGPIPE, 1) == 0, fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) == 0 else {
                 throw OutputError.configuration(errno)
             }
         }
@@ -37,8 +34,12 @@ final class AsyncStdout: Sendable {
             let flagResult = fcntl(descriptor, F_SETFL, flags)
             let flagError = errno
             let signalResult = fcntl(descriptor, F_SETNOSIGPIPE, noSignalPipe)
-            if flagResult < 0 { throw OutputError.configuration(flagError) }
-            if signalResult < 0 { throw OutputError.configuration(errno) }
+            if flagResult < 0 {
+                throw OutputError.configuration(flagError)
+            }
+            if signalResult < 0 {
+                throw OutputError.configuration(errno)
+            }
         }
     }
 
@@ -78,7 +79,9 @@ final class AsyncStdout: Sendable {
     deinit {
         state.withLock { state in
             if !state.closed {
-                if !state.active { source.resume() }
+                if !state.active {
+                    source.resume()
+                }
                 source.cancel()
             }
         }
@@ -117,7 +120,9 @@ final class AsyncStdout: Sendable {
             state.pending = nil
             state.waiter?.resume(throwing: failure)
             state.waiter = nil
-            if !state.active { source.resume() }
+            if !state.active {
+                source.resume()
+            }
             state.active = false
             source.cancel()
             state.closed = true
@@ -133,7 +138,9 @@ final class AsyncStdout: Sendable {
                 "{\"type\":\"deliveryLoss\",\"reason\":\"\(failure.rawValue)\","
                     + "\"allActiveCapturesIncomplete\":true}\n"
             ).utf8)
-            if state.offset == 0 { Self.bestEffort(record, descriptor: STDOUT_FILENO) }
+            if state.offset == 0 {
+                Self.bestEffort(record, descriptor: STDOUT_FILENO)
+            }
             Self.bestEffort(record, descriptor: STDERR_FILENO)
         }
     }
@@ -142,7 +149,9 @@ final class AsyncStdout: Sendable {
         state.withLock { state in
             if state.failure == nil {
                 state.failure = .cancelled
-                if !state.active { source.resume() }
+                if !state.active {
+                    source.resume()
+                }
                 source.cancel()
                 state.closed = true
                 state.active = false
@@ -178,7 +187,9 @@ final class AsyncStdout: Sendable {
             } while state.draining
             return false
         }
-        if cancelDrain { cancel(.cancelled) }
+        if cancelDrain {
+            cancel(.cancelled)
+        }
     }
 
     private func writePart(_ data: Data, offset: Int) -> Int {

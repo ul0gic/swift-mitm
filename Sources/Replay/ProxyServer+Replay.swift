@@ -126,7 +126,9 @@ extension ProxyServer {
                 configuration: .init(backPressureStrategy: .init(lowWatermark: 1, highWatermark: 1))
             )
         }.get()
-        if let release = connection.releaseBufferedReads { try await release().get() }
+        if let release = connection.releaseBufferedReads {
+            try await release().get()
+        }
         return asyncChannel
     }
 }

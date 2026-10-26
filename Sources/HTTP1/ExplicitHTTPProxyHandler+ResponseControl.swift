@@ -190,7 +190,9 @@ extension ExplicitHTTPProxyHandler {
                     controlFailed(exchange, error: error)
                     return
                 }
-            } else { writeResponseBody(buffer, exchange: exchange, context: context) }
+            } else {
+                writeResponseBody(buffer, exchange: exchange, context: context)
+            }
         }
         exchange.responseControlBody.removeAll(keepingCapacity: false)
         if exchange.responseControlEnded {
@@ -198,8 +200,12 @@ extension ExplicitHTTPProxyHandler {
                 (self.sink as? ObservationCaptureSink)?.receiveEffective(.responseEnd(requestID: exchange.id, truncated: false))
                 context.writeAndFlush(self.wrapOutboundOut(.end(exchange.responseControlTrailers))).assumeIsolated().whenComplete { _ in self.finish(exchange) }
             }
-            if let writer = exchange.responseFaultWriter { writer.finish(complete) }
-            else { complete() }
+            if let writer = exchange.responseFaultWriter {
+                writer.finish(complete)
+            }
+            else {
+                complete()
+            }
         } else if replacement != nil {
             controlFailed(exchange, error: HTTPControlError.unsupportedEdit)
         } else {
@@ -209,18 +215,26 @@ extension ExplicitHTTPProxyHandler {
 
     func writeResponseBody(_ body: ByteBuffer, exchange: Exchange, context: ChannelHandlerContext) {
         if exchange.controlSnapshot != nil {
-            (sink as? ObservationCaptureSink)?.receiveBody(requestID: exchange.id, direction: .response,
-                bytes: body.readableBytesView, representation: .effective)
+            (sink as? ObservationCaptureSink)?.receiveBody(
+                requestID: exchange.id,
+                direction: .response,
+                representation: .effective,
+                bytes: body.readableBytesView
+            )
         }
         context.writeAndFlush(wrapOutboundOut(.body(.byteBuffer(body))), promise: nil)
     }
 
     func resetControlFault(_ scope: HTTPFaultResetScope, direction: HTTPFaultDirection, exchange: Exchange) {
         if scope == .transport {
-            if direction == .request, exchange.upstreamHTTP2 { upstream?.parent?.close(promise: nil) }
-            if direction == .response, typedHTTP2 { context?.channel.parent?.close(promise: nil) }
+            if direction == .request, exchange.upstreamHTTP2 {
+                upstream?.parent?.close(promise: nil)
+            }
+            if direction == .response, typedHTTP2 {
+                context?.channel.parent?.close(promise: nil)
+            }
         }
         controlEventSink?.receive(.failure(requestID: exchange.id, code: .cancelled))
-        abort(message: "Intentional HTTP fault reset")
+        self.abort(message: "Intentional HTTP fault reset")
     }
 }

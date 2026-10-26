@@ -53,7 +53,7 @@ jobs:
         run: |
           swift package resolve
           cp Package.resolved "$GITHUB_WORKSPACE/evidence/combined-Package.resolved"
-          swift build --force-resolved-versions -Xswiftc -warnings-as-errors
+          swift build --product HTTP3DependencyProbe --force-resolved-versions -Xswiftc -warnings-as-errors
           swift run --skip-build HTTP3DependencyProbe | tee "$GITHUB_WORKSPACE/evidence/combined-probe.txt"
       - name: Check core with the proposed graph
         run: |
@@ -95,6 +95,75 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: stage2-feasibility-${{ github.sha }}
+          path: evidence/
+          if-no-files-found: error
+
+  http3-transport:
+    name: Independent HTTP3 transport spike
+    needs: [combined-graph, crypto5-minimum-runtime]
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: stage2-feasibility-${{ github.sha }}
+          path: graph-evidence/
+      - name: Prepare the proven dependency graph
+        run: |
+          mkdir -p evidence
+          test "$(cat graph-evidence/candidate-sha.txt)" = "$GITHUB_SHA"
+          cp graph-evidence/candidate-sha.txt evidence/
+          xcodebuild -version > evidence/xcode.txt
+          swift --version > evidence/swift.txt
+          sw_vers > evidence/os.txt
+          grep -Fx 'Xcode 27.1' evidence/xcode.txt
+          grep -Fx 'Build version 27A9275' evidence/xcode.txt
+          python3 - <<'PY_MANIFEST'
+          from pathlib import Path
+          manifest = Path('Package.swift')
+          source = manifest.read_text()
+          old = '.package(url: "https://github.com/apple/swift-crypto.git", from: "4.0.0")'
+          new = '.package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.0")'
+          assert source.count(old) == 1
+          manifest.write_text(source.replace(old, new))
+          PY_MANIFEST
+          cp graph-evidence/combined-Package.resolved Packages/SwiftMITMHTTP3/Package.resolved
+          swift package --package-path Packages/SwiftMITMHTTP3 resolve
+          python3 - <<'PY_PINS'
+          import json
+          def pins(path):
+              with open(path) as source:
+                  return {pin['identity']: pin['state'] for pin in json.load(source)['pins']}
+          assert pins('graph-evidence/combined-Package.resolved') == pins('Packages/SwiftMITMHTTP3/Package.resolved')
+          PY_PINS
+      - name: Build the two-leg transport probe
+        run: |
+          swift build --package-path Packages/SwiftMITMHTTP3 --product HTTP3TransportProbe \
+            --force-resolved-versions -Xswiftc -warnings-as-errors 2>&1 | tee evidence/http3-build.log
+          binary_directory="$(swift build --package-path Packages/SwiftMITMHTTP3 --show-bin-path)"
+          echo "SWIFTMITM_HTTP3_PROBE=$binary_directory/HTTP3TransportProbe" >> "$GITHUB_ENV"
+      - name: Install isolated independent peers
+        run: |
+          peer_python="$(find "$RUNNER_TOOL_CACHE/Python" -path '*/3.14.*/arm64/bin/python3' -print -quit)"
+          test -n "$peer_python"
+          "$peer_python" --version | tee evidence/python.txt
+          "$peer_python" -m venv "$RUNNER_TEMP/http3-peers"
+          "$RUNNER_TEMP/http3-peers/bin/python" -m pip install --require-hashes --only-binary=:all: \
+            -r Tests/Clients/Stage2/HTTP3/requirements.txt
+          "$RUNNER_TEMP/http3-peers/bin/python" -m pip freeze > evidence/http3-peer-versions.txt
+      - name: Exercise verified TLS and independent HTTP3 streams
+        timeout-minutes: 10
+        run: |
+          "$RUNNER_TEMP/http3-peers/bin/python" Tests/Clients/Stage2/HTTP3/verify.py \
+            --binary "$SWIFTMITM_HTTP3_PROBE" --output evidence/http3-results.json
+      - name: Retain transport spike evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: stage2-http3-transport-${{ github.sha }}
           path: evidence/
           if-no-files-found: error
 

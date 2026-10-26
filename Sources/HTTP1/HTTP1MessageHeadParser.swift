@@ -36,11 +36,7 @@ extension HTTP1MessageParser {
         emit: (HTTP1ParserOutput) -> Void
     ) {
         let parts = startLine.split(separator: " ", omittingEmptySubsequences: true)
-        guard parts.count >= 2 else {
-            fail(emit: emit)
-            return
-        }
-        guard let framing = requestFraming(headers: headers) else {
+        guard parts.count >= 2, let framing = requestFraming(headers: headers) else {
             fail(emit: emit)
             return
         }

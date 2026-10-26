@@ -36,11 +36,19 @@ final class Stage2ProvenanceAcceptanceTests: XCTestCase {
             XCTAssertNil(original.headers.first { $0.name.lowercased() == "x-response" })
             try await stage2Await {
                 controls.events.contains {
-                    if case .effectiveHead(let id, .request, _, _) = $0 { id == original.id } else { false }
+                    if case .effectiveHead(let id, .request, _, _) = $0 {
+                        id == original.id
+                    } else {
+                        false
+                    }
                 }
             }
             let requests = controls.events.compactMap { event -> [HTTPHeaderField]? in
-                if case .effectiveHead(let id, .request, let headers, _) = event, id == original.id { headers } else { nil }
+                if case .effectiveHead(let id, .request, let headers, _) = event, id == original.id {
+                    headers
+                } else {
+                    nil
+                }
             }
             XCTAssertEqual(requests.count, 1)
             let effective = try XCTUnwrap(requests.first)

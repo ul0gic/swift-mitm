@@ -137,7 +137,7 @@ final class TransparentApplicationClassifier: ChannelInboundHandler, RemovableCh
 
     private let configuration: TrustedProxyV2Ingress?
     private let decisionHandler: DecisionHandler
-    private let stageObserver: (any TransparentIngressStageObserver)?
+    private let stageObserver: any TransparentIngressStageObserver?
     private var inspectedByteCount = 0
     private var firstInspectedByte: UInt8?
     private var tlsInspector = IncrementalClientHelloInspector()
@@ -159,7 +159,7 @@ final class TransparentApplicationClassifier: ChannelInboundHandler, RemovableCh
 
     init(
         configuration: TrustedProxyV2Ingress,
-        stageObserver: (any TransparentIngressStageObserver)? = nil,
+        stageObserver: any TransparentIngressStageObserver? = nil,
         passThrough: Bool = false,
         decisionHandler: @escaping DecisionHandler
     ) {
@@ -198,8 +198,7 @@ final class TransparentApplicationClassifier: ChannelInboundHandler, RemovableCh
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let buffer = unwrapInboundIn(data)
         reads.append(buffer)
-        guard state == .classifying else { return }
-        guard let configuration else { return }
+        guard state == .classifying, let configuration else { return }
 
         let maximumBytes = configuration.classificationMaximumBytes
         let remainingCapacity = maximumBytes - inspectedByteCount

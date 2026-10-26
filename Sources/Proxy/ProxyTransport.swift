@@ -271,7 +271,7 @@ extension ProxyServer {
     }
 
     private func bridgeControlledHTTP1(inbound: Channel, upstream: NegotiatedUpstreamConnection,
-                                      authority: String, target: CapturedTarget, connectionID: UUID) -> EventLoopFuture<Void> {
+                                       authority: String, target: CapturedTarget, connectionID: UUID) -> EventLoopFuture<Void> {
         inbound.eventLoop.makeCompletedFuture {
             guard let destination = HTTPForwardTarget(scheme: "https", authority: authority, requestTarget: "/") else { throw HTTPControlError.invalidConfiguration }
             var configuration = BytePreservingHTTPResponseEncoder.Configuration()

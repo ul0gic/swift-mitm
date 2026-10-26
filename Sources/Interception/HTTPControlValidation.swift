@@ -16,7 +16,7 @@ extension HTTPControlConfiguration {
     static func actionBytes(_ action: HTTPControlAction, limits: HTTPControlLimits) throws -> Int {
         switch action {
         case .editHeaders(let remove, let append):
-            let reserved: Set<String> = [
+            let reserved: Set = [
                 "host", "content-length", "transfer-encoding", "connection", "upgrade", "trailer", "content-encoding"
             ]
             guard !remove.contains(where: { reserved.contains($0.lowercased()) }),
@@ -72,8 +72,7 @@ extension HTTPControlConfiguration {
             result.append(HTTPHeaderField(name: "host", value: authority))
             return result
         case .respond(let status, let fields, let body):
-            guard message.status != 101 else { throw HTTPControlError.unsupportedEdit }
-            guard message.method != "HEAD" || body.isEmpty else { throw HTTPControlError.unsupportedEdit }
+            guard message.status != 101, message.method != "HEAD" || body.isEmpty else { throw HTTPControlError.unsupportedEdit }
             var result = fields.filter { !["content-length", "transfer-encoding"].contains($0.name.lowercased()) }
             if ![204, 304].contains(status) {
                 result.append(HTTPHeaderField(name: "content-length", value: String(body.count)))
@@ -105,13 +104,15 @@ extension HTTPControlConfiguration {
     static func replacingBodyHeaders(
         _ headers: [HTTPHeaderField], length: Int, encoding: String?
     ) -> [HTTPHeaderField] {
-        let stale: Set<String> = [
+        let stale: Set = [
             "content-length", "transfer-encoding", "etag", "last-modified", "content-md5", "digest", "content-digest",
             "repr-digest", "content-encoding", "content-range", "accept-ranges", "trailer"
         ]
         var result = headers.filter { !stale.contains($0.name.lowercased()) }
         result.append(HTTPHeaderField(name: "content-length", value: String(length)))
-        if let encoding { result.append(HTTPHeaderField(name: "content-encoding", value: encoding)) }
+        if let encoding {
+            result.append(HTTPHeaderField(name: "content-encoding", value: encoding))
+        }
         return result
     }
 }

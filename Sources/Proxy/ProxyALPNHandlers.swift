@@ -7,7 +7,9 @@ struct NegotiatedUpstreamConnection: Sendable {
     let alpnHandler: NIOLoopBound<UpstreamALPNHandler>?
 
     func releaseBufferedReads() -> EventLoopFuture<Void> {
-        if let alpnHandler { return alpnHandler.value.releaseBufferedReads() }
+        if let alpnHandler {
+            return alpnHandler.value.releaseBufferedReads()
+        }
         return channel.setOption(ChannelOptions.autoRead, value: true)
     }
 }
@@ -190,8 +192,7 @@ struct IncrementalClientHelloInspector {
 
     private mutating func inspectAvailableRecords() throws -> ClientHelloMetadata? {
         while true {
-            guard try beginRecordIfAvailable() else { return nil }
-            guard let recordEndIndex = pendingRecordEndIndex, recordEndIndex <= bytes.count else {
+            guard try beginRecordIfAvailable(), let recordEndIndex = pendingRecordEndIndex, recordEndIndex <= bytes.count else {
                 return nil
             }
             inspectHandshakeHeader(recordEndIndex: recordEndIndex)
@@ -286,7 +287,7 @@ final class PendingTLSReads: ChannelInboundHandler, RemovableChannelHandler {
     init(eventLoop: EventLoop) {
         clientHelloPromise = eventLoop.makePromise()
         clientHello = clientHelloPromise.futureResult
-        clientALPNOffer = clientHello.map { $0.compatibilityALPNOffer }
+        clientALPNOffer = clientHello.map(\.compatibilityALPNOffer)
     }
 
     func readClientHello(on channel: Channel) -> EventLoopFuture<ClientHelloMetadata> {

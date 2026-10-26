@@ -27,7 +27,9 @@ public final class InspectionMemoryBudget: Sendable {
         guard bytes >= 0 else { return false }
         return used.withLockedValue { count in
             guard bytes <= maximumBytes - count else { return false }
-            if let account, !account.reserve(bytes) { return false }
+            if let account, !account.reserve(bytes) {
+                return false
+            }
             count += bytes
             return true
         }

@@ -116,7 +116,9 @@ final class HTTP1ExchangeCorrelator: Sendable {
         }
         for exchange in exchanges {
             exchange.admissionReservation?.release()
-            if exchange.published { sink.receive(.streamError(requestID: exchange.id, message: message)) }
+            if exchange.published {
+                sink.receive(.streamError(requestID: exchange.id, message: message))
+            }
         }
     }
 

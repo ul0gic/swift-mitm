@@ -56,7 +56,9 @@ public final class GRPCStreamDecoder {
             repeat {
                 let progress = feedResumable(UnsafeRawBufferPointer(rebasing: input[offset...]))
                 offset += progress.consumedBytes
-                if terminal { break }
+                if terminal {
+                    break
+                }
             } while offset < input.count || hasPendingWork
         }
     }
@@ -105,14 +107,20 @@ public final class GRPCStreamDecoder {
         }
         let metadata = initialMetadata + webTrailers + trailers
         let statuses = metadata.filter { $0.0.lowercased() == "grpc-status" }.map(\.1)
-        if statuses.isEmpty { emit(.diagnostic(.missingStatus)) }
-        if statuses.count > 1 { emit(.diagnostic(.duplicateStatus)) }
+        if statuses.isEmpty {
+            emit(.diagnostic(.missingStatus))
+        }
+        if statuses.count > 1 {
+            emit(.diagnostic(.duplicateStatus))
+        }
         let code = (statuses.count == 1 ? statuses.first : nil).flatMap { value -> Int? in
             guard !value.isEmpty, value.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }),
                   let result = Int(value), (0...16).contains(result) else { return nil }
             return result
         }
-        if statuses.count == 1 && code == nil { emit(.diagnostic(.invalidStatus)) }
+        if statuses.count == 1 && code == nil {
+            emit(.diagnostic(.invalidStatus))
+        }
         let raw = metadata.first { $0.0.lowercased() == "grpc-message" }?.1
         emit(.status(GRPCStatus(
             httpStatus: httpStatus,
@@ -171,12 +179,18 @@ private extension GRPCStreamDecoder {
             return
         }
         if header.count < 5 {
-            if header.isEmpty { frameStart = transportOffset - (format == .webText ? 4 : 1) }
+            if header.isEmpty {
+                frameStart = transportOffset - (format == .webText ? 4 : 1)
+            }
             header.append(byte)
-            if header.count == 5 { beginFrame() }
+            if header.count == 5 {
+                beginFrame()
+            }
         } else {
             payload.append(byte)
-            if payload.count == expected { completeFrame() }
+            if payload.count == expected {
+                completeFrame()
+            }
         }
     }
 
@@ -198,7 +212,9 @@ private extension GRPCStreamDecoder {
         }
         reservation += charge
         payload.reserveCapacity(expected)
-        if expected == 0 { completeFrame() }
+        if expected == 0 {
+            completeFrame()
+        }
     }
 
     func completeFrame(decoded: [UInt8]? = nil) {

@@ -36,7 +36,7 @@ private final class Stage2ClearH2Origin: Sendable {
     }
 
     func stop() async throws {
-        let channels = state.withLockedValue { $0.channels + [$0.listener].compactMap { $0 } }
+        let channels = state.withLockedValue { $0.channels + [$0.listener].compactMap(\.self) }
         for channel in channels where channel.isActive { try await channel.close().get() }
     }
 }
@@ -88,9 +88,21 @@ final class Stage2PriorKnowledgeAcceptanceTests: XCTestCase {
             try stream.wait(until: stage2H2Ended)
             XCTAssertEqual(stage2H2Bytes(stream.frames), [0, 0, 0, 0, 1, 42])
             let inspected = try await events.wait { events in
-                events.contains { if case .grpc(.status(let status)) = $0.payload { status.code == 0 } else { false } }
+                events.contains {
+                    if case .grpc(.status(let status)) = $0.payload {
+                        status.code == 0
+                    } else {
+                        false
+                    }
+                }
             }
-            XCTAssertTrue(inspected.contains { if case .grpc(.message(let message)) = $0.payload { message.bytes == [42] } else { false } })
+            XCTAssertTrue(inspected.contains {
+                if case .grpc(.message(let message)) = $0.payload {
+                    message.bytes == [42]
+                } else {
+                    false
+                }
+            })
             XCTAssertEqual(origin.requests.count, 1)
             let bad = Release022H2Stream()
             let badChannel = try phase4BoundedWait(mux.createStreamChannel { channel in
@@ -108,7 +120,13 @@ final class Stage2PriorKnowledgeAcceptanceTests: XCTestCase {
             try await group.shutdownGracefully()
         } catch {
             let failure = error
-            do { if let client, client.isActive { try await client.close().get() }; if let proxy { try await proxy.stop() } }
+            do {
+                if let client, client.isActive {
+                    try await client.close().get()
+                }; if let proxy {
+                    try await proxy.stop()
+                }
+            }
             catch { XCTFail("Prior-knowledge proxy teardown failed: \(error)") }
             do { try await origin.stop() } catch { XCTFail("Prior-knowledge origin teardown failed: \(error)") }
             let shutdown = await inspector.shutdown()

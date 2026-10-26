@@ -233,15 +233,25 @@ public struct HTTPControlConfiguration: Sendable {
                 faults.append(fault)
             default:
                 let terminal = try Self.terminalHeaders(rule.action, headers: headers, message: message)
-                if message.phase == .request, case .respond = rule.action { synthetic = terminal }
-                else { headers = terminal }
+                if message.phase == .request, case .respond = rule.action {
+                    synthetic = terminal
+                }
+                else {
+                    headers = terminal
+                }
                 outcome = rule.action
-                if case .replaceBody(_, _, _, let explicit) = outcome { override = explicit }
+                if case .replaceBody(_, _, _, let explicit) = outcome {
+                    override = explicit
+                }
                 break rulesLoop
             }
         }
-        if !applied.isEmpty { _ = try Self.headerBytes(headers, multiplexed: message.isHTTP2OrLater) }
-        if let synthetic { _ = try Self.headerBytes(synthetic, multiplexed: message.isHTTP2OrLater) }
+        if !applied.isEmpty {
+            _ = try Self.headerBytes(headers, multiplexed: message.isHTTP2OrLater)
+        }
+        if let synthetic {
+            _ = try Self.headerBytes(synthetic, multiplexed: message.isHTTP2OrLater)
+        }
         return HTTPControlDecision(
             headers: headers, action: outcome, appliedRuleIDs: applied,
             faults: faults, overridesNoTransform: override, syntheticResponseHeaders: synthetic
@@ -286,12 +296,18 @@ public struct HTTPControlConfiguration: Sendable {
         for header in headers {
             try validateField(header, multiplexed: multiplexed)
             let name = header.name.lowercased()
-            if name == "content-length" { hasLength = true }
-            if name == "transfer-encoding" { transfer = true }
+            if name == "content-length" {
+                hasLength = true
+            }
+            if name == "transfer-encoding" {
+                transfer = true
+            }
             bytes += header.name.utf8.count + header.value.utf8.count
         }
         guard !hasLength || !transfer else { throw HTTPControlError.invalidHeaders }
-        if case .invalid = HTTP1MessageParser.contentLength(headers) { throw HTTPControlError.invalidHeaders }
+        if case .invalid = HTTP1MessageParser.contentLength(headers) {
+            throw HTTPControlError.invalidHeaders
+        }
         return bytes
     }
 

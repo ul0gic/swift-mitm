@@ -23,7 +23,9 @@ final class HTTPBreakpointCompletion: Sendable {
                 state.waiter = continuation
                 return nil
             }
-            if let immediate { continuation.resume(returning: immediate) }
+            if let immediate {
+                continuation.resume(returning: immediate)
+            }
         }
     }
 
@@ -32,8 +34,12 @@ final class HTTPBreakpointCompletion: Sendable {
             state.completed = true
             let waiter = state.waiter
             state.waiter = nil
-            if waiter == nil { state.result = resolution }
-            else { state.consumed = true }
+            if waiter == nil {
+                state.result = resolution
+            }
+            else {
+                state.consumed = true
+            }
             return waiter
         }
         waiter?.resume(returning: resolution)

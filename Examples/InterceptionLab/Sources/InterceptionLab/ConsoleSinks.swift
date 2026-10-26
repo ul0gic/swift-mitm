@@ -122,7 +122,9 @@ final class ReplayCaptureSink: CaptureEventSink {
     var requestHead: CapturedRequestHead? { captured.withLock { $0 } }
 
     func receive(_ event: CaptureEvent) {
-        if case .requestHead(let head) = event { captured.withLock { $0 = head } }
+        if case .requestHead(let head) = event {
+            captured.withLock { $0 = head }
+        }
         console.receive(event)
     }
 }

@@ -32,18 +32,34 @@ final class Release022PublicOpaqueDiagnosticTests: XCTestCase {
             try received.waitForClose()
             try await server.stop()
             let failures = sink.events.compactMap { event -> CapturedConnectionFailure? in
-                if case .connectionFailure(let failure) = event { failure } else { nil }
+                if case .connectionFailure(let failure) = event {
+                    failure
+                } else {
+                    nil
+                }
             }
             XCTAssertEqual(failures.count, 1)
             XCTAssertEqual(failures.first?.stage, .connect)
             XCTAssertEqual(failures.first?.code, .upstreamConnectFailed)
             XCTAssertEqual(failures.first?.target?.destination.port, originPort)
-            XCTAssertFalse(sink.events.contains { if case .opaqueOpen = $0 { true } else { false } })
-            if channel.isActive { try await channel.close().get() }
+            XCTAssertFalse(sink.events.contains {
+                if case .opaqueOpen = $0 {
+                    true
+                } else {
+                    false
+                }
+            })
+            if channel.isActive {
+                try await channel.close().get()
+            }
             try await group.shutdownGracefully()
         } catch {
-            if let client, client.isActive { try? await client.close().get() }
-            if let proxy { try? await proxy.stop() }
+            if let client, client.isActive {
+                try? await client.close().get()
+            }
+            if let proxy {
+                try? await proxy.stop()
+            }
             origin.stop()
             try? await group.shutdownGracefully()
             throw error

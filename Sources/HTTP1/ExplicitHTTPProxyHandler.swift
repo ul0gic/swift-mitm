@@ -15,7 +15,7 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
     let onCONNECT: @Sendable (Channel, String) -> Void
     let onResourceLimit: @Sendable () -> Void
     let controlRuntime: HTTPControlRuntime?
-    let controlEventSink: (any HTTPControlEventSink)?
+    let controlEventSink: any HTTPControlEventSink?
     let admission: ResourceAdmissionController?
     let fixedDestination: HTTPForwardTarget?
     let typedHTTP2: Bool
@@ -106,7 +106,9 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
                 return
             }
             captureRequest(part, exchange: exchange)
-            if retainControlledRequest(part, exchange: exchange) { return }
+            if retainControlledRequest(part, exchange: exchange) {
+                return
+            }
             forward(part, for: exchange)
         case .end(let trailers):
             receiveRequestEnd(trailers)
@@ -131,9 +133,13 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
             completeControlledRequest(exchange)
             return
         }
-        if !exchange.controlReady { return }
+        if !exchange.controlReady {
+            return
+        }
         if exchange.head.method == .CONNECT {
-            if active === exchange { establishCONNECT(exchange) }
+            if active === exchange {
+                establishCONNECT(exchange)
+            }
         } else {
             forward(.end(trailers), for: exchange)
         }
@@ -151,7 +157,7 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
     }
 
     func channelInactive(context: ChannelHandlerContext) {
-        abort(message: "HTTP/1 client closed before exchange completed")
+        self.abort(message: "HTTP/1 client closed before exchange completed")
         context.fireChannelInactive()
     }
 
@@ -202,13 +208,19 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
         count += 1
         receiving = exchange
         do {
-            if !typedHTTP2 { exchange.admissionReservation = try admission?.acquire(.stream) }
+            if !typedHTTP2 {
+                exchange.admissionReservation = try admission?.acquire(.stream)
+            }
         } catch {
             reject(status: .serviceUnavailable, message: "HTTP stream admission exceeded")
             return
         }
-        if !prepareControlledRequest(exchange) { return }
-        if active == nil { startNext() }
+        if !prepareControlledRequest(exchange) {
+            return
+        }
+        if active == nil {
+            startNext()
+        }
     }
 
     func validateAdmission(_ head: HTTPRequestHead, target: HTTPForwardTarget?) -> Bool {
@@ -243,10 +255,14 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
             return
         }
         guard let target = exchange.target else {
-            if exchange.requestEnded { establishCONNECT(exchange) }
+            if exchange.requestEnded {
+                establishCONNECT(exchange)
+            }
             return
         }
-        if takeReusableOrigin(exchange, target: target) { return }
+        if takeReusableOrigin(exchange, target: target) {
+            return
+        }
         connect(target, context.eventLoop).hop(to: context.eventLoop).assumeIsolated().whenComplete { result in
             switch result {
             case .failure(let error):
@@ -262,5 +278,4 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
             }
         }
     }
-
 }

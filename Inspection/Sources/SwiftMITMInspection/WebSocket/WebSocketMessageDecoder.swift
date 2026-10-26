@@ -81,8 +81,12 @@ public final class WebSocketMessageDecoder {
                 for parameter in parts.dropFirst() {
                     let (name, value) = try Self.parameter(parameter)
                     guard seen.insert(name).inserted else { throw WebSocketMessageError.unsupportedExtension }
-                    if name == prefix + "_no_context_takeover" { selectedNoContext = true }
-                    if name == prefix + "_max_window_bits" { selectedWindow = value }
+                    if name == prefix + "_no_context_takeover" {
+                        selectedNoContext = true
+                    }
+                    if name == prefix + "_max_window_bits" {
+                        selectedWindow = value
+                    }
                 }
             }
         }
@@ -143,7 +147,9 @@ public final class WebSocketMessageDecoder {
         utf8Remaining = 0
         if compressed {
             guard let windowBits else { throw WebSocketMessageError.unsupportedExtension }
-            if inflater == nil { inflater = try WebSocketInflater(windowBits: windowBits, budget: budget) }
+            if inflater == nil {
+                inflater = try WebSocketInflater(windowBits: windowBits, budget: budget)
+            }
         }
     }
 
@@ -215,7 +221,9 @@ public final class WebSocketMessageDecoder {
                     )
                 }
                 guard inflater.atBoundary else { throw WebSocketMessageError.malformedCompression }
-                if noContextTakeover { self.inflater = nil }
+                if noContextTakeover {
+                    self.inflater = nil
+                }
             }
             guard utf8Remaining == 0, let opcode else { throw WebSocketMessageError.invalidUTF8 }
             let result = WebSocketMessageSummary(
@@ -241,7 +249,9 @@ public final class WebSocketMessageDecoder {
 private extension WebSocketMessageDecoder {
     func output(_ bytes: UnsafeRawBufferPointer, emit: (UnsafeRawBufferPointer) throws -> Void) throws {
         guard bytes.count <= maximum - decoded else { throw WebSocketMessageError.messageLimit }
-        if opcode == .text { try validateUTF8(bytes) }
+        if opcode == .text {
+            try validateUTF8(bytes)
+        }
         decoded += bytes.count
         var offset = 0
         while offset < bytes.count {

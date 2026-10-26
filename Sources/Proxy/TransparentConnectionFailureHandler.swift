@@ -33,7 +33,9 @@ final class TransparentConnectionFailureHandler: ChannelInboundHandler, Removabl
     }
 
     func handoffFuture(on eventLoop: EventLoop) -> EventLoopFuture<Void> {
-        if let handoffPromise { return handoffPromise.futureResult }
+        if let handoffPromise {
+            return handoffPromise.futureResult
+        }
         let promise = eventLoop.makePromise(of: Void.self)
         handoffPromise = promise
         if let terminalError {
@@ -158,8 +160,12 @@ final class TransparentConnectionFailureHandler: ChannelInboundHandler, Removabl
             case .deadlineExceeded: return .setupTimedOut
             }
         }
-        if error is ProxyV2ParserError { return .invalidProxyMetadata }
-        if error is TransparentApplicationClassificationError { return .classificationFailed }
+        if error is ProxyV2ParserError {
+            return .invalidProxyMetadata
+        }
+        if error is TransparentApplicationClassificationError {
+            return .classificationFailed
+        }
         if let settingsError = error as? HTTP2InitialSettingsProbeError {
             return settingsError == .deadlineExceeded ? .setupTimedOut : .transportFailure
         }
@@ -171,12 +177,16 @@ final class TransparentConnectionFailureHandler: ChannelInboundHandler, Removabl
             case .channelClosedBeforeNegotiation: return .transportFailure
             }
         }
-        if error is NIOSSLExtraError || error is NIOSSLError { return .tlsHandshakeFailed }
+        if error is NIOSSLExtraError || error is NIOSSLError {
+            return .tlsHandshakeFailed
+        }
         return .upstreamConnectFailed
     }
 
     private static func connectionError(for error: Error) -> ProxyConnectionError? {
-        if let connectionError = error as? ProxyConnectionError { return connectionError }
+        if let connectionError = error as? ProxyConnectionError {
+            return connectionError
+        }
         guard let connectionError = error as? NIOConnectionError,
               connectionError.connectionErrors.isEmpty else { return nil }
         for dnsError in [connectionError.dnsAError, connectionError.dnsAAAAError] {

@@ -40,7 +40,7 @@ public final class ProxyServer: Sendable {
     let interceptionPolicy: ProxyInterceptionPolicy
     let controlRuntime: HTTPControlRuntime?
     private let controlRuntimeOwner = UUID()
-    let controlEventSink: (any HTTPControlEventSink)?
+    let controlEventSink: any HTTPControlEventSink?
     let admission: ResourceAdmissionController?
     let replayCoordinator: ReplayCoordinator
     let http1ReusePool: HTTP1ReusePool?
@@ -65,9 +65,9 @@ public final class ProxyServer: Sendable {
         opaqueCaptureByteLimit: Int = 0,
         correlationPolicy: HTTP1CorrelationPolicy = .default,
         interceptionPolicy: ProxyInterceptionPolicy = .default,
-        observationSink: (any HTTPObservationSink)? = nil,
+        observationSink: any HTTPObservationSink? = nil,
         controlRuntime: HTTPControlRuntime? = nil,
-        controlEventSink: (any HTTPControlEventSink)? = nil,
+        controlEventSink: any HTTPControlEventSink? = nil,
         admission: ResourceAdmissionController? = nil,
         replayConfiguration: ReplayConfiguration = .default,
         http1ReusePolicy: HTTP1ReusePolicy? = nil

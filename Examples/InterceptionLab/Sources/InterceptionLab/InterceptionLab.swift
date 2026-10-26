@@ -129,9 +129,15 @@ struct InterceptionLab {
                 emitStopped = true
             default: throw LabError.usage
             }
-            if arguments.command == "replay" { output.finish(cancel: false) }
+            if arguments.command == "replay" {
+                output.finish(cancel: false)
+            }
             await consumer.value
-            if emitStopped { try await output.complete() } else { try output.restoreFlags() }
+            if emitStopped {
+                try await output.complete()
+            } else {
+                try output.restoreFlags()
+            }
         } catch {
             output.finish(cancel: false)
             await consumer.value
@@ -162,7 +168,9 @@ struct InterceptionLab {
             var receivedSignal: Int32?
             for await number in signals.stream {
                 receivedSignal = number
-                if number == SIGTERM { output.finish(cancel: true) }
+                if number == SIGTERM {
+                    output.finish(cancel: true)
+                }
                 break
             }
             try await server.stop()
@@ -177,7 +185,9 @@ struct InterceptionLab {
                     + "retainedBytes=\(report.retainedBytes)"
             )
             signals.cancel()
-            if receivedSignal == SIGTERM { return false }
+            if receivedSignal == SIGTERM {
+                return false
+            }
             output.finish(cancel: false)
             return inspectionComplete
         } catch {
