@@ -39,7 +39,7 @@ final class EgressFilteringResolverTests: XCTestCase {
         XCTAssertEqual(try resolver.initiateAAAAQuery(host: "example.com", port: 443).wait(), [allowedV6])
     }
 
-    func testAllDeniedAnswersExposeNoConnectionCandidate() throws {
+    func testAllDeniedAnswersPreserveEgressDenial() throws {
         let loop = EmbeddedEventLoop()
         let resolver = EgressFilteringResolver(
             resolver: FakeResolver(
@@ -50,8 +50,12 @@ final class EgressFilteringResolverTests: XCTestCase {
             policy: .default
         )
 
-        XCTAssertEqual(try resolver.initiateAQuery(host: "internal.example", port: 443).wait(), [])
-        XCTAssertEqual(try resolver.initiateAAAAQuery(host: "internal.example", port: 443).wait(), [])
+        XCTAssertThrowsError(try resolver.initiateAQuery(host: "internal.example", port: 443).wait()) {
+            XCTAssertEqual($0 as? ProxyConnectionError, .egressBlocked("internal.example"))
+        }
+        XCTAssertThrowsError(try resolver.initiateAAAAQuery(host: "internal.example", port: 443).wait()) {
+            XCTAssertEqual($0 as? ProxyConnectionError, .egressBlocked("internal.example"))
+        }
     }
 
     func testAllowInternalBypassesResolverFiltering() throws {

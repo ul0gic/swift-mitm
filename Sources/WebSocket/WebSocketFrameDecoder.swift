@@ -40,8 +40,13 @@ final class WebSocketFrameDecoder {
     }
 
     @discardableResult
-    func decode<Bytes: Sequence>(_ bytes: Bytes, emit: (Frame) -> Void) -> Bool where Bytes.Element == UInt8 {
+    func decode<Bytes: Sequence>(
+        _ bytes: Bytes,
+        shouldContinue: () -> Bool = { true },
+        emit: (Frame) -> Void
+    ) -> Bool where Bytes.Element == UInt8 {
         for byte in bytes {
+            guard shouldContinue() else { return true }
             switch phase {
             case .header:
                 consumeHeaderByte(byte, emit: emit)

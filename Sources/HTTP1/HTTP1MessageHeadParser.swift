@@ -7,7 +7,7 @@ extension HTTP1MessageParser {
         emit: (HTTP1ParserOutput) -> Void
     ) {
         defer { headBytes.removeAll(keepingCapacity: true) }
-        let text = String(bytes: headBytes, encoding: .utf8) ?? ""
+        let text = Self.fieldText(headBytes)
         var lines = text.components(separatedBy: "\r\n")
         while lines.last?.isEmpty == true { lines.removeLast() }
         guard let startLine = lines.first, !startLine.isEmpty else {

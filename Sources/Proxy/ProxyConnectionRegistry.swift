@@ -20,6 +20,9 @@ final class ProxyConnectionSetupToken: Sendable {
 
     private struct State {
         var phase = Phase.pending
+        var cancelled = false
+        var completionRequested = false
+        var pendingOperations = 0
         var cancellations: [ScheduledCancellation] = []
         var terminalHandler: (@Sendable (UUID) -> Void)?
     }
@@ -27,7 +30,6 @@ final class ProxyConnectionSetupToken: Sendable {
     private struct CancellationTransition {
         let cancelled: Bool
         let cancellations: [ScheduledCancellation]
-        let terminalHandler: (@Sendable (UUID) -> Void)?
     }
 
     private let identifier: UUID
@@ -39,7 +41,7 @@ final class ProxyConnectionSetupToken: Sendable {
     }
 
     var isCancelled: Bool {
-        state.withLockedValue { $0.phase == .cancelled }
+        state.withLockedValue { $0.cancelled }
     }
 
     func onCancellation(on eventLoop: EventLoop, _ callback: @escaping @Sendable () -> Void) {
@@ -62,23 +64,43 @@ final class ProxyConnectionSetupToken: Sendable {
 
     @discardableResult
     func complete() -> Bool {
-        let terminalHandler = state.withLockedValue { state -> (@Sendable (UUID) -> Void)? in
-            guard state.phase == .pending else { return nil }
-            state.phase = .completed
-            state.cancellations.removeAll()
-            defer { state.terminalHandler = nil }
-            return state.terminalHandler
+        let result = state.withLockedValue { state -> (Bool, (@Sendable (UUID) -> Void)?) in
+            guard !state.completionRequested else { return (false, nil) }
+            state.completionRequested = true
+            return (!state.cancelled, Self.finishIfReady(&state))
         }
-        guard let terminalHandler else { return false }
-        terminalHandler(identifier)
-        return true
+        result.1?(identifier)
+        return result.0
+    }
+
+    func retainOperation() {
+        state.withLockedValue { state in
+            precondition(state.phase != .completed)
+            state.pendingOperations += 1
+        }
+    }
+
+    func releaseOperation() {
+        let terminalHandler = state.withLockedValue { state in
+            precondition(state.pendingOperations > 0)
+            state.pendingOperations -= 1
+            return Self.finishIfReady(&state)
+        }
+        terminalHandler?(identifier)
+    }
+
+    private static func finishIfReady(_ state: inout State) -> (@Sendable (UUID) -> Void)? {
+        guard state.completionRequested, state.pendingOperations == 0 else { return nil }
+        state.phase = .completed
+        state.cancellations.removeAll()
+        defer { state.terminalHandler = nil }
+        return state.terminalHandler
     }
 
     @discardableResult
     func cancel() -> Bool {
         let transition = cancelTransition()
         guard transition.cancelled else { return false }
-        transition.terminalHandler?(identifier)
         transition.cancellations.forEach { $0.schedule() }
         return true
     }
@@ -91,16 +113,15 @@ final class ProxyConnectionSetupToken: Sendable {
     private func cancelTransition() -> CancellationTransition {
         state.withLockedValue { state in
             guard state.phase == .pending else {
-                return CancellationTransition(cancelled: false, cancellations: [], terminalHandler: nil)
+                return CancellationTransition(cancelled: false, cancellations: [])
             }
             state.phase = .cancelled
+            state.cancelled = true
             let cancellations = state.cancellations
             state.cancellations.removeAll()
-            defer { state.terminalHandler = nil }
             return CancellationTransition(
                 cancelled: true,
-                cancellations: cancellations,
-                terminalHandler: state.terminalHandler
+                cancellations: cancellations
             )
         }
     }
@@ -172,7 +193,6 @@ final class ProxyConnectionRegistry: Sendable {
         let resources = state.withLockedValue { state -> ShutdownResources in
             state.phase = .shuttingDown
             let cancellations = state.setupTokens.values.flatMap { $0.cancelFromRegistry() }
-            state.setupTokens.removeAll()
             return ShutdownResources(
                 channels: Array(state.channels.values),
                 cancellations: cancellations,

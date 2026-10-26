@@ -8,7 +8,7 @@ import XCTest
 @testable import SwiftMITM
 
 final class TLSInterceptionTests: XCTestCase {
-    func testPerSNILeafMintingAndALPNNegotiation() async throws {
+    func testFixedVerifiedIdentityAndALPNNegotiation() async throws {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         let ca = try CertificateAuthority()
         let runtime = try await ProxyTLSRuntime.make(authority: ca, upstreamPolicy: .default)
@@ -45,17 +45,8 @@ final class TLSInterceptionTests: XCTestCase {
         )
         let loop = group.next()
         let baseIdentity = try identities.identity(forHost: "api.example.com", on: loop).wait()
-        let configuration = TLSTermination(
-            identities: identities,
-            defaultHost: "api.example.com"
-        ).makeServerConfiguration(baseIdentity: baseIdentity)
-        let callback = try XCTUnwrap(configuration.sslContextCallback)
-        let promise = loop.makePromise(of: NIOSSLContextConfigurationOverride.self)
-
-        callback(NIOSSLClientExtensionValues(serverHostname: nil), promise)
-
-        let override = try promise.futureResult.wait()
-        XCTAssertNil(override.certificateChain)
+        let configuration = TLSTermination().makeServerConfiguration(baseIdentity: baseIdentity)
+        XCTAssertNil(configuration.sslContextCallback)
         let leaf = try certificate(from: try XCTUnwrap(configuration.certificateChain.first))
         let san = try XCTUnwrap(leaf.extensions.subjectAlternativeNames)
         XCTAssertTrue(san.contains(.dnsName("api.example.com")))
@@ -90,7 +81,7 @@ final class TLSInterceptionTests: XCTestCase {
     ) async throws -> (String?, String?) {
         let serverContext = try await runtime
             .makeServerContext(
-                defaultHost: "fallback.example.com",
+                defaultHost: "example.com",
                 applicationProtocols: [.http2, .http11],
                 on: group.next()
             )

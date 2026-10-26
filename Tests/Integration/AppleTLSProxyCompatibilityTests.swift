@@ -22,6 +22,9 @@ final class AppleTLSProxyCompatibilityTests: XCTestCase {
             applicationProtocols: ["http/1.1"]
         )
         let authority = try CertificateAuthority.generate().authority
+        let certificate = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).pem")
+        try Data(authority.caCertificatePEM.utf8).write(to: certificate)
+        defer { try? FileManager.default.removeItem(at: certificate) }
         let proxy = ProxyServer(
             certificateAuthority: authority,
             sink: NoopSink(),
@@ -33,7 +36,7 @@ final class AppleTLSProxyCompatibilityTests: XCTestCase {
         do {
             try origin.start()
             let proxyPort = try await proxy.start(port: 0)
-            let result = try fetchThroughProxy(proxyPort: proxyPort, originPort: origin.localPort)
+            let result = try fetchThroughProxy(proxyPort: proxyPort, originPort: origin.localPort, certificate: certificate.path)
 
             XCTAssertEqual(result.terminationStatus, 0, result.standardError)
             XCTAssertEqual(result.standardOutput, "200")
@@ -48,7 +51,7 @@ final class AppleTLSProxyCompatibilityTests: XCTestCase {
         }
     }
 
-    private func fetchThroughProxy(proxyPort: Int, originPort: Int) throws -> ProcessResult {
+    private func fetchThroughProxy(proxyPort: Int, originPort: Int, certificate: String) throws -> ProcessResult {
         try runCurl(arguments: [
             "--silent",
             "--show-error",
@@ -56,7 +59,8 @@ final class AppleTLSProxyCompatibilityTests: XCTestCase {
             "",
             "--proxy",
             "http://127.0.0.1:\(proxyPort)",
-            "--insecure",
+            "--cacert",
+            certificate,
             "--tlsv1.2",
             "--tls-max",
             "1.2",

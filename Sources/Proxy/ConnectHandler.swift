@@ -6,16 +6,25 @@ final class ConnectHandler: ChannelInboundHandler, RemovableChannelHandler {
     typealias OutboundOut = HTTPServerResponsePart
 
     private let onEstablished: @Sendable (Channel, String) -> Void
+    private let onRejected: @Sendable (CapturedConnectionFailureReason, ConnectionFailureCode) -> Void
     private var authority: String?
+    private var terminal = false
+    private var inputClosed = false
 
-    init(onEstablished: @escaping @Sendable (Channel, String) -> Void) {
+    init(
+        onRejected: @escaping @Sendable (CapturedConnectionFailureReason, ConnectionFailureCode) -> Void = { _, _ in },
+        onEstablished: @escaping @Sendable (Channel, String) -> Void
+    ) {
         self.onEstablished = onEstablished
+        self.onRejected = onRejected
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+        guard !terminal else { return }
         switch unwrapInboundIn(data) {
         case .head(let head):
             guard head.method == .CONNECT else {
+                onRejected(.transportFailure, .unsupportedProtocol)
                 respond(context: context, status: .methodNotAllowed)
                 return
             }
@@ -24,6 +33,7 @@ final class ConnectHandler: ChannelInboundHandler, RemovableChannelHandler {
             break
         case .end:
             guard let authority, Self.isValidAuthority(authority) else {
+                onRejected(.destinationUnavailable, .destinationUnavailable)
                 respond(context: context, status: .badRequest)
                 return
             }
@@ -32,6 +42,7 @@ final class ConnectHandler: ChannelInboundHandler, RemovableChannelHandler {
     }
 
     private func establishTunnel(context: ChannelHandlerContext, authority: String) {
+        terminal = true
         let head = HTTPResponseHead(
             version: .http1_1,
             status: .custom(code: 200, reasonPhrase: "Connection Established")
@@ -39,14 +50,28 @@ final class ConnectHandler: ChannelInboundHandler, RemovableChannelHandler {
         context.write(wrapOutboundOut(.head(head)), promise: nil)
         let channel = context.channel
         let onEstablished = onEstablished
+        let onRejected = onRejected
+        let owner = NIOLoopBound(self, eventLoop: context.eventLoop)
         context.writeAndFlush(wrapOutboundOut(.end(nil)))
             .assumeIsolated()
             .flatMap { context.pipeline.syncOperations.removeHandler(context: context) }
             .nonisolated()
-            .whenComplete { _ in onEstablished(channel, authority) }
+            .whenComplete { result in
+                switch result {
+                case .success:
+                    onEstablished(channel, authority)
+                    if owner.value.inputClosed {
+                        channel.pipeline.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
+                    }
+                case .failure:
+                    onRejected(.transportFailure, .transportFailure)
+                    channel.close(promise: nil)
+                }
+            }
     }
 
     private func respond(context: ChannelHandlerContext, status: HTTPResponseStatus) {
+        terminal = true
         let head = HTTPResponseHead(version: .http1_1, status: status)
         context.write(wrapOutboundOut(.head(head)), promise: nil)
         let channel = context.channel
@@ -55,18 +80,31 @@ final class ConnectHandler: ChannelInboundHandler, RemovableChannelHandler {
         }
     }
 
+    func channelInactive(context: ChannelHandlerContext) {
+        if !terminal {
+            terminal = true
+            onRejected(.cancelled, .transportFailure)
+        }
+        context.fireChannelInactive()
+    }
+
+    func errorCaught(context: ChannelHandlerContext, error: Error) {
+        if !terminal {
+            terminal = true
+            onRejected(.transportFailure, .transportFailure)
+        }
+        context.close(promise: nil)
+    }
+
+    func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+        if let event = event as? ChannelEvent, case .inputClosed = event {
+            inputClosed = true
+        } else {
+            context.fireUserInboundEventTriggered(event)
+        }
+    }
+
     static func isValidAuthority(_ authority: String) -> Bool {
-        guard !authority.isEmpty,
-            !authority.utf8.contains(where: { $0 < 0x20 || $0 == 0x7F || $0 == UInt8(ascii: " ") }),
-            let separator = authority.lastIndex(of: ":")
-        else {
-            return false
-        }
-        let host = authority[authority.startIndex..<separator]
-        let port = authority[authority.index(after: separator)...]
-        guard !host.isEmpty, !port.isEmpty, let value = Int(port), (1...65535).contains(value) else {
-            return false
-        }
-        return true
+        ConnectionTarget(explicitConnectAuthority: authority) != nil
     }
 }

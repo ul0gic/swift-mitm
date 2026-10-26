@@ -26,11 +26,11 @@ final class ConnectionTargetTests: XCTestCase {
         XCTAssertEqual(target.leafIdentity, "192.0.2.1")
     }
 
-    func testBracketedIPv6ConnectTargetPreservesExistingLogicalAuthority() throws {
+    func testBracketedIPv6ConnectTargetPreservesBracketedLogicalAuthority() throws {
         let target = try XCTUnwrap(ConnectionTarget(explicitConnectAuthority: "[2001:db8::1]:443"))
 
         XCTAssertEqual(target.connectionHost, "2001:db8::1")
-        XCTAssertEqual(target.logicalAuthority, "2001:db8::1:443")
+        XCTAssertEqual(target.logicalAuthority, "[2001:db8::1]:443")
         XCTAssertNil(target.tlsServerName)
         XCTAssertEqual(target.leafIdentity, "2001:db8::1")
     }

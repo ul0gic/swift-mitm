@@ -2,7 +2,59 @@ import NIOCore
 
 public enum ProxyIngress: Sendable {
     case explicitConnect
+    case explicitHTTP
     case trustedProxyV2(TrustedProxyV2Ingress)
+}
+
+public struct HTTP1CorrelationPolicy: Sendable {
+    public let maximumPendingExchanges: Int
+    public let maximumPendingMethodBytes: Int
+
+    public static let `default` = HTTP1CorrelationPolicy(
+        maximumPendingExchanges: 128,
+        maximumPendingMethodBytes: 65_536,
+        validated: ()
+    )
+
+    public init?(maximumPendingExchanges: Int = 128, maximumPendingMethodBytes: Int = 65_536) {
+        guard (1...1_024).contains(maximumPendingExchanges),
+              (1...1_048_576).contains(maximumPendingMethodBytes) else { return nil }
+        self.maximumPendingExchanges = maximumPendingExchanges
+        self.maximumPendingMethodBytes = maximumPendingMethodBytes
+    }
+
+    private init(maximumPendingExchanges: Int, maximumPendingMethodBytes: Int, validated _: Void) {
+        self.maximumPendingExchanges = maximumPendingExchanges
+        self.maximumPendingMethodBytes = maximumPendingMethodBytes
+    }
+}
+
+public struct ProxyInterceptionPolicy: Sendable {
+    public let passThroughAuthorities: [String]
+    private let authorities: Set<String>
+
+    public static let `default` = ProxyInterceptionPolicy(authorities: [])
+
+    public init?(passThroughAuthorities: [String]) {
+        var normalized: Set<String> = []
+        for authority in passThroughAuthorities {
+            guard let target = ConnectionTarget(explicitConnectAuthority: authority) else { return nil }
+            normalized.insert(target.logicalAuthority)
+        }
+        self.init(authorities: normalized)
+    }
+
+    private init(authorities: Set<String>) {
+        self.authorities = authorities
+        passThroughAuthorities = authorities.sorted()
+    }
+
+    func allowsPassThrough(host: String, port: Int) -> Bool {
+        guard let target = ConnectionTarget(host: host, port: port, ingressProvenance: .explicitConnect) else {
+            return false
+        }
+        return authorities.contains(target.logicalAuthority)
+    }
 }
 
 public struct TrustedPeerPolicy: Sendable {

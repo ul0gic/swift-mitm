@@ -19,11 +19,13 @@ final class HTTP1CaptureTapHandler: ChannelInboundHandler {
     private let parser: HTTP1MessageParser
     private let captureBodyLimit: Int
     private let webSocketSession: WebSocketCaptureSession
+    private let onResourceLimit: @Sendable () -> Void
     private var currentID: UUID?
     private var upgradeRequestID: UUID?
     private var responseUpgradeRequested = false
     private var bodyBuffer: CaptureBodyBuffer
     private var permessageDeflate = false
+    private var resourceLimitReached = false
 
     init(
         direction: Direction,
@@ -33,7 +35,8 @@ final class HTTP1CaptureTapHandler: ChannelInboundHandler {
         correlator: HTTP1ExchangeCorrelator,
         sink: CaptureEventSink,
         captureBodyLimit: Int = 0,
-        webSocketSession: WebSocketCaptureSession = WebSocketCaptureSession()
+        webSocketSession: WebSocketCaptureSession = WebSocketCaptureSession(),
+        onResourceLimit: @escaping @Sendable () -> Void = {}
     ) {
         self.direction = direction
         self.authority = authority
@@ -43,6 +46,7 @@ final class HTTP1CaptureTapHandler: ChannelInboundHandler {
         self.sink = sink
         self.captureBodyLimit = captureBodyLimit
         self.webSocketSession = webSocketSession
+        self.onResourceLimit = onResourceLimit
         self.parser = HTTP1MessageParser(mode: direction == .request ? .request : .response)
         self.bodyBuffer = CaptureBodyBuffer(limit: captureBodyLimit)
     }
@@ -63,21 +67,43 @@ final class HTTP1CaptureTapHandler: ChannelInboundHandler {
                     )
                 }
             },
-            consumeMethod: { [self] in _ = correlator.dequeue() },
             emit: { [self] output in handle(output) },
             bodyBytes: { [self] chunk in captureBody(chunk) },
             tunnelBytes: { [self] chunk in captureWebSocket(chunk) }
         )
+        if resourceLimitReached {
+            context.close(promise: nil)
+            return
+        }
         context.fireChannelRead(data)
     }
 
     func channelInactive(context: ChannelHandlerContext) {
         parser.finish { [self] output in handle(output) }
+        correlator.failOutstanding(sink: sink, message: "HTTP/1 transport closed before exchange completed")
         webSocketSession.close()
         context.fireChannelInactive()
     }
 
+    func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+        if let error = event as? ProxyConnectionError, error == .serverStopping {
+            correlator.failOutstanding(sink: sink, message: "HTTP/1 proxy stopped before exchange completed")
+            webSocketSession.close()
+        }
+        if let event = event as? ChannelEvent, case .inputClosed = event {
+            parser.finish { [self] output in handle(output) }
+        }
+        context.fireUserInboundEventTriggered(event)
+    }
+
+    func errorCaught(context: ChannelHandlerContext, error: Error) {
+        correlator.failOutstanding(sink: sink, message: "HTTP/1 transport failed")
+        webSocketSession.close()
+        context.fireErrorCaught(error)
+    }
+
     private func handle(_ output: HTTP1ParserOutput) {
+        guard !correlator.isFailed else { return }
         switch output {
         case let .requestHead(method, path, headers):
             emitRequestHead(method: method, path: path, headers: headers)
@@ -100,18 +126,22 @@ final class HTTP1CaptureTapHandler: ChannelInboundHandler {
                     ? .requestEnd(requestID: id, truncated: truncated)
                     : .responseEnd(requestID: id, truncated: truncated)
             )
+            correlator.end(id: id, request: direction == .request)
             currentID = nil
         case .upgradeRequested:
             upgradeRequestID = currentID
         case .upgraded:
             handleWebSocketUpgrade()
         case .failed:
-            break
+            correlator.failOutstanding(sink: sink, message: "HTTP/1 capture parser failed")
         }
     }
 
     private func handleWebSocketUpgrade() {
         guard let id = currentID else { return }
+        sink.receive(.responseEnd(requestID: id, truncated: false))
+        correlator.end(id: id, request: false)
+        currentID = nil
         webSocketSession.open(
             id: id,
             sink: sink,
@@ -122,13 +152,19 @@ final class HTTP1CaptureTapHandler: ChannelInboundHandler {
 
     private func emitRequestHead(method: String, path: String, headers: [HTTPHeaderField]) {
         let id = UUID()
-        currentID = id
-        bodyBuffer = CaptureBodyBuffer(limit: captureBodyLimit)
-        correlator.enqueue(
+        guard correlator.enqueue(
             id: id,
             method: method,
-            webSocketUpgradeRequested: HTTP1MessageParser.isWebSocketUpgrade(headers)
-        )
+            webSocketUpgradeRequested: HTTP1MessageParser.isWebSocketUpgrade(headers),
+            requestEnded: false
+        ) else {
+            resourceLimitReached = true
+            correlator.failOutstanding(sink: sink, message: "HTTP/1 correlation resource limit exceeded")
+            onResourceLimit()
+            return
+        }
+        currentID = id
+        bodyBuffer = CaptureBodyBuffer(limit: captureBodyLimit)
         let host = headers.first { $0.name.lowercased() == "host" }?.value ?? authority
         sink.receive(
             .requestHead(
@@ -148,8 +184,7 @@ final class HTTP1CaptureTapHandler: ChannelInboundHandler {
     }
 
     private func emitResponseHead(status: Int, headers: [HTTPHeaderField]) {
-        let id = currentID ?? UUID()
-        currentID = id
+        guard let id = currentID else { return }
         bodyBuffer = CaptureBodyBuffer(limit: captureBodyLimit)
         permessageDeflate = Self.negotiatesPermessageDeflate(headers)
         resolveWebSocketUpgrade(status: status, headers: headers, id: id)
@@ -170,9 +205,9 @@ final class HTTP1CaptureTapHandler: ChannelInboundHandler {
         guard responseUpgradeRequested, !((100..<200).contains(status) && status != 101) else { return }
         if status == 101, HTTP1MessageParser.isWebSocketUpgrade(headers) {
             correlator.acceptWebSocketUpgrade(id: id)
-        } else {
-            sink.receive(.requestEnd(requestID: id, truncated: false))
         }
+        sink.receive(.requestEnd(requestID: id, truncated: false))
+        correlator.end(id: id, request: true)
         responseUpgradeRequested = false
     }
 
@@ -194,7 +229,7 @@ final class HTTP1CaptureTapHandler: ChannelInboundHandler {
     }
 
     private func captureBody<Bytes: Collection>(_ chunk: Bytes) where Bytes.Element == UInt8 {
-        guard let id = currentID else { return }
+        guard !correlator.isFailed, let id = currentID else { return }
         let fullSize = chunk.count
         let bytes = bodyBuffer.take(chunk)
         sink.receive(

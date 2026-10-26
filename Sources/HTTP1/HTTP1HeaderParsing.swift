@@ -1,6 +1,10 @@
 import Foundation
 
 extension HTTP1MessageParser {
+    static func fieldText<Bytes: Collection>(_ bytes: Bytes) -> String where Bytes.Element == UInt8 {
+        String(String.UnicodeScalarView(bytes.map { UnicodeScalar($0) }))
+    }
+
     enum ContentLengthResult {
         case none
         case value(Int)
@@ -17,9 +21,14 @@ extension HTTP1MessageParser {
     }
 
     static func isWebSocketUpgrade(_ headers: [HTTPHeaderField]) -> Bool {
-        let upgrade = headers.first { $0.name.lowercased() == "upgrade" }?.value.lowercased()
-        let connection = headers.first { $0.name.lowercased() == "connection" }?.value.lowercased()
-        return upgrade?.contains("websocket") == true && connection?.contains("upgrade") == true
+        tokens(headers, named: "upgrade").contains("websocket")
+            && tokens(headers, named: "connection").contains("upgrade")
+    }
+
+    static func tokens(_ headers: [HTTPHeaderField], named name: String) -> Set<String> {
+        Set(headers.filter { $0.name.lowercased() == name }.flatMap {
+            $0.value.split(separator: ",").map { $0.trimmingASCIIWhitespace().lowercased() }
+        })
     }
 
     static func isChunked(_ headers: [HTTPHeaderField]) -> Bool {

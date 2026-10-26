@@ -236,8 +236,8 @@ final class PublicProxyHTTP2WebSocketTests: XCTestCase {
             .webSocketFrame(direction: "clientToServer", opcode: 0x1),
             .webSocketFrame(direction: "serverToClient", opcode: 0x2),
             .webSocketFrame(direction: "clientToServer", opcode: 0x8),
-            .webSocketClose,
-            .webSocketFrame(direction: "serverToClient", opcode: 0x8)
+            .webSocketFrame(direction: "serverToClient", opcode: 0x8),
+            .webSocketClose
         ])
     }
 

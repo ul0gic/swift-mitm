@@ -10,12 +10,13 @@ import NIOTLS
 
 final class TLSOriginServer {
     let ca: CertificateAuthority
-    let hostname = "localhost"
+    let hostname: String
 
     private let group: EventLoopGroup
     private let bodySize: Int
     private let applicationProtocols: [String]
     private let performsTLSHandshake: Bool
+    private let cleartext: Bool
     private let activeChildren = NIOLockedValueBox<[ObjectIdentifier: Channel]>([:])
     private var channel: Channel?
 
@@ -23,8 +24,12 @@ final class TLSOriginServer {
         group: EventLoopGroup,
         bodySize: Int,
         applicationProtocols: [String] = ["h2", "http/1.1"],
-        performsTLSHandshake: Bool = true
+        performsTLSHandshake: Bool = true,
+        hostname: String = "localhost",
+        cleartext: Bool = false
     ) throws {
+        self.cleartext = cleartext
+        self.hostname = hostname
         self.group = group
         self.bodySize = bodySize
         self.applicationProtocols = applicationProtocols
@@ -47,6 +52,7 @@ final class TLSOriginServer {
         let bodySize = bodySize
         let activeChildren = activeChildren
         let performsTLSHandshake = performsTLSHandshake
+        let cleartext = cleartext
 
         channel = try ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
@@ -55,6 +61,9 @@ final class TLSOriginServer {
                 activeChildren.withLockedValue { $0[identifier] = channel }
                 channel.closeFuture.whenComplete { _ in
                     activeChildren.withLockedValue { _ = $0.removeValue(forKey: identifier) }
+                }
+                if cleartext {
+                    return Self.configureProtocol(result: .fallback, channel: channel, bodySize: bodySize)
                 }
                 guard performsTLSHandshake else {
                     return channel.eventLoop.makeSucceededVoidFuture()

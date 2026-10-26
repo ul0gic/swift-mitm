@@ -4,7 +4,7 @@ Embed an authorized explicit or trusted-transparent interception proxy with veri
 
 ## Overview
 
-SwiftMITM accepts explicit HTTP `CONNECT` tunnels by default. A separately configured trusted PROXY protocol v2 ingress accepts transparent connections only from actual peers admitted by the embedding application's policy. It forwards clear HTTP/1.1, TLS HTTP/1.1, TLS HTTP/2, and supported WebSocket traffic through structured capture. ECH, unsupported ALPN, and other unclassified traffic receive bounded opaque TCP forwarding.
+SwiftMITM accepts explicit HTTP `CONNECT` tunnels by default. Candidate source adds opt-in ordinary HTTP forwarding through `.explicitHTTP`. A separately configured trusted PROXY protocol v2 ingress accepts transparent connections only from actual peers admitted by the embedding application's policy. Supported traffic enters structured capture; ECH, unsupported ALPN, and other unclassified traffic receive bounded opaque TCP forwarding. Candidate acceptance and runtime support remain unverified.
 
 The package owns interception mechanics. The embedding application owns authorization, CA persistence, trust installation and removal, client proxy configuration, transparent forwarding, listener access control, event storage, redaction, filtering, and presentation.
 
@@ -25,6 +25,8 @@ The package owns interception mechanics. The embedding application owns authoriz
 - ``ProxyServer``
 - ``ProxyServer/UpstreamPolicy``
 - ``ProxyIngress``
+- ``HTTP1CorrelationPolicy``
+- ``ProxyInterceptionPolicy``
 - ``TrustedPeerPolicy``
 - ``TrustedProxyV2Ingress``
 - ``ProxyTimeoutPolicy``
@@ -51,6 +53,9 @@ The package owns interception mechanics. The embedding application owns authoriz
 - ``OpaqueFlowCloseReason``
 - ``CapturedConnectionFailure``
 - ``CapturedConnectionFailureReason``
+- ``ConnectionFailureStage``
+- ``ConnectionFailureCode``
+- ``OpaqueForwardingReason``
 - ``CapturedWebSocketFrame``
 - ``HTTPHeaderField``
 - ``HTTPProtocolVersion``

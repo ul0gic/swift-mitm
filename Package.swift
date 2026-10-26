@@ -1,14 +1,14 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.4
 import PackageDescription
 
 let package = Package(
     name: "SwiftMITM",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v26)],
     products: [
         .library(name: "SwiftMITM", targets: ["SwiftMITM"])
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-nio.git", from: "2.76.0"),
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.104.0"),
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.29.0"),
         .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.44.0"),
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.5.0"),
@@ -18,6 +18,7 @@ let package = Package(
         .target(
             name: "SwiftMITM",
             dependencies: [
+                .target(name: "SwiftMITMHTTP1Codec"),
                 .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
                 .product(name: "NIOCore", package: "swift-nio"),
@@ -30,6 +31,23 @@ let package = Package(
                 .product(name: "X509", package: "swift-certificates")
             ],
             path: "Sources"
+        ),
+        .target(
+            name: "CSwiftMITMLLHTTP",
+            path: "Vendor/CSwiftMITMLLHTTP",
+            exclude: ["LICENSE.txt", "LICENSE-SwiftNIO.txt", "NOTICE-SwiftNIO.txt", "UPSTREAM.md"],
+            publicHeadersPath: "include",
+            cSettings: [.define("_GNU_SOURCE"), .define("LLHTTP_STRICT_MODE")]
+        ),
+        .target(
+            name: "SwiftMITMHTTP1Codec",
+            dependencies: [
+                .target(name: "CSwiftMITMLLHTTP"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio")
+            ],
+            path: "Vendor/SwiftMITMHTTP1Codec",
+            exclude: ["LICENSE.txt", "NOTICE-SwiftNIO.txt", "UPSTREAM.md"]
         ),
         .testTarget(
             name: "SwiftMITMTests",
@@ -47,7 +65,8 @@ let package = Package(
                 .product(name: "NIOTLS", package: "swift-nio"),
                 .product(name: "X509", package: "swift-certificates")
             ],
-            path: "Tests"
+            path: "Tests",
+            exclude: ["Clients"]
         )
     ]
 )

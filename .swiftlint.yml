@@ -6,6 +6,7 @@ excluded:
   - .build
   - .project
   - .codex
+  - Vendor
 
 opt_in_rules:
   - array_init

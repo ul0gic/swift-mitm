@@ -4,7 +4,7 @@ import NIOCore
 import NIOPosix
 import XCTest
 
-@testable import SwiftMITM
+import SwiftMITM
 
 final class CountingSink: CaptureEventSink, @unchecked Sendable {
     private let lock = NIOLock()
@@ -71,91 +71,114 @@ private final class StreamingRSSSampler: @unchecked Sendable {
 }
 
 final class StreamingBackpressureTests: XCTestCase {
-    func testBackpressureBoundsMemoryWhileStalledThenDeliversInFull() throws {
+    func testBackpressureBoundsMemoryWhileStalledThenDeliversInFull() async throws {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         defer { try? group.syncShutdownGracefully() }
 
         let bodySize = 256 * 1024 * 1024
-        let origin = TestOriginServer(group: group, bodySize: bodySize)
+        let origin = try TLSOriginServer(group: group, bodySize: bodySize)
         try origin.start()
         defer { origin.stop() }
         let originPort = origin.localPort
 
         let sink = CountingSink()
-        let proxy = HTTP2ProxyBridge(
+        let authority = try CertificateAuthority.generate().authority
+        let proxy = ProxyServer(
+            certificateAuthority: authority,
+            sink: sink,
             group: group,
-            upstream: .init(host: "127.0.0.1", port: originPort),
-            sink: sink
+            upstreamPolicy: .init(additionalTrustRootsPEM: [origin.caCertificatePEM]),
+            egressPolicy: .init(allowInternal: true)
         )
-        let proxyChannel = try proxy.start().wait()
-        defer { try? proxyChannel.close().wait() }
-        let proxyPort = try XCTUnwrap(proxyChannel.localAddress?.port)
+        let proxyPort = try await proxy.start(port: 0)
 
-        let client = TestHTTP2Client(group: group)
-        defer { client.shutdown() }
-        let authority = "127.0.0.1:\(originPort)"
-        try client.connectAndRequest(
-            host: "127.0.0.1",
-            port: proxyPort,
-            authority: authority,
-            startPaused: true
-        )
-
-        Thread.sleep(forTimeInterval: 0.3)
-        let baseline = try MachMemory.residentBytes()
-        var peak = baseline
-        let deadline = Date().addingTimeInterval(1.5)
-        while Date() < deadline {
-            peak = max(peak, try MachMemory.residentBytes())
-            Thread.sleep(forTimeInterval: 0.02)
+        let fetch: ProxyStalledFetch
+        do {
+            fetch = try ProxyTestClient(group: group).beginStalledFetch(
+                proxyPort: proxyPort,
+                originHost: origin.hostname,
+                originPort: originPort,
+                mitmCACertificatePEM: authority.caCertificatePEM,
+                alpn: "h2",
+                timeout: .seconds(120)
+            )
+        } catch {
+            try? await proxy.stop()
+            throw error
         }
-        let stalledDelta = MachMemory.growth(from: baseline, to: peak)
-        XCTAssertLessThan(
-            stalledDelta,
-            UInt64(32 * 1024 * 1024),
-            "RSS grew \(stalledDelta) bytes while the consumer was stalled on a \(bodySize)-byte body — "
-                + "backpressure is not holding across the two proxy legs"
-        )
+        do {
+            try await Task.sleep(for: .milliseconds(300))
+            let baseline = try MachMemory.residentBytes()
+            var peak = baseline
+            let deadline = Date().addingTimeInterval(1.5)
+            while Date() < deadline {
+                peak = max(peak, try MachMemory.residentBytes())
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let stalledDelta = MachMemory.growth(from: baseline, to: peak)
+            XCTAssertLessThan(
+                stalledDelta,
+                UInt64(32 * 1024 * 1024),
+                "RSS grew \(stalledDelta) bytes while the consumer was stalled on a \(bodySize)-byte body — "
+                    + "backpressure is not holding across the two proxy legs"
+            )
 
-        client.resume()
-        let received = try client.completion.wait()
-        XCTAssertEqual(received, bodySize, "stream did not deliver in full after resume (possible deadlock)")
-        XCTAssertEqual(sink.capturedResponseBytes, bodySize, "capture tap byte total disagrees with client")
-        XCTAssertGreaterThan(sink.capturedRequestHeads, 0)
-        XCTAssertEqual(sink.capturedErrors, 0)
+            try await fetch.resume()
+            let received = try await fetch.completion.get()
+            XCTAssertEqual(received, bodySize, "stream did not deliver in full after resume (possible deadlock)")
+            XCTAssertEqual(sink.capturedResponseBytes, bodySize, "capture tap byte total disagrees with client")
+            XCTAssertGreaterThan(sink.capturedRequestHeads, 0)
+            XCTAssertEqual(sink.capturedErrors, 0)
+            await fetch.shutdown()
+            try await proxy.stop()
+        } catch {
+            await fetch.shutdown()
+            try? await proxy.stop()
+            throw error
+        }
     }
 
-    func testFullSpeedTransferStaysBoundedAndRecordsThroughput() throws {
+    func testFullSpeedTransferStaysBoundedAndRecordsThroughput() async throws {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         defer { try? group.syncShutdownGracefully() }
 
         let bodySize = 256 * 1024 * 1024
-        let origin = TestOriginServer(group: group, bodySize: bodySize)
+        let origin = try TLSOriginServer(group: group, bodySize: bodySize)
         try origin.start()
         defer { origin.stop() }
         let originPort = origin.localPort
 
         let sink = CountingSink()
-        let proxy = HTTP2ProxyBridge(
+        let authority = try CertificateAuthority.generate().authority
+        let proxy = ProxyServer(
+            certificateAuthority: authority,
+            sink: sink,
             group: group,
-            upstream: .init(host: "127.0.0.1", port: originPort),
-            sink: sink
+            upstreamPolicy: .init(additionalTrustRootsPEM: [origin.caCertificatePEM]),
+            egressPolicy: .init(allowInternal: true)
         )
-        let proxyChannel = try proxy.start().wait()
-        defer { try? proxyChannel.close().wait() }
-        let proxyPort = try XCTUnwrap(proxyChannel.localAddress?.port)
+        let proxyPort = try await proxy.start(port: 0)
 
         let baseline = try MachMemory.residentBytes()
         let sampler = StreamingRSSSampler(baseline: baseline)
         sampler.start()
         defer { _ = try? sampler.stop() }
 
-        let client = TestHTTP2Client(group: group)
-        defer { client.shutdown() }
-        let authority = "127.0.0.1:\(originPort)"
         let start = Date()
-        try client.connectAndRequest(host: "127.0.0.1", port: proxyPort, authority: authority)
-        let received = try client.completion.wait()
+        let received: Int
+        do {
+            received = try ProxyTestClient(group: group).fetch(
+                proxyPort: proxyPort,
+                originHost: origin.hostname,
+                originPort: originPort,
+                mitmCACertificatePEM: authority.caCertificatePEM,
+                alpn: "h2"
+            )
+            try await proxy.stop()
+        } catch {
+            try? await proxy.stop()
+            throw error
+        }
         let elapsed = Date().timeIntervalSince(start)
         let peakDelta = MachMemory.growth(from: baseline, to: try sampler.stop())
         let throughputMBps = Double(bodySize) / 1_000_000 / elapsed

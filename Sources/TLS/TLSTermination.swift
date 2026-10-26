@@ -6,9 +6,6 @@ enum ALPNProtocol: String, Sendable {
 }
 
 struct TLSTermination: Sendable {
-    let identities: LeafIdentityCache
-    let defaultHost: String
-
     func makeServerConfiguration(
         baseIdentity: MintedIdentity,
         applicationProtocols: [ALPNProtocol] = [.http2, .http11]
@@ -19,22 +16,6 @@ struct TLSTermination: Sendable {
         )
         configuration.applicationProtocols = applicationProtocols.map(\.rawValue)
 
-        let identities = identities
-        let defaultHost = defaultHost
-        configuration.sslContextCallback = { values, promise in
-            guard let host = values.serverHostname, host.lowercased() != defaultHost.lowercased() else {
-                promise.succeed(.noChanges)
-                return
-            }
-            identities.identity(forHost: host, on: promise.futureResult.eventLoop)
-                .map { identity in
-                var override = NIOSSLContextConfigurationOverride()
-                    override.certificateChain = identity.certificateChain
-                    override.privateKey = identity.privateKey
-                    return override
-                }
-                .cascade(to: promise)
-        }
         return configuration
     }
 }

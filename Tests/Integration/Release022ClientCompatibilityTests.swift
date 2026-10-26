@@ -1,0 +1,155 @@
+import Foundation
+import Network
+import NIOPosix
+import NIOSSL
+import Security
+import XCTest
+
+import SwiftMITM
+
+final class Release022ClientCompatibilityTests: XCTestCase {
+    func testCurlHTTPAndHTTPSWithExplicitTrust() async throws {
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 2)
+        let clear = try TLSOriginServer(group: group, bodySize: 32, cleartext: true)
+        let secure = try TLSOriginServer(group: group, bodySize: 32, applicationProtocols: ["http/1.1"])
+        let authority = try CertificateAuthority.generate().authority
+        let sink = Release022Events()
+        let proxy = ProxyServer(
+            certificateAuthority: authority, sink: sink, group: group,
+            upstreamPolicy: .init(additionalTrustRootsPEM: [secure.caCertificatePEM]),
+            egressPolicy: .init(allowInternal: true), ingress: .explicitHTTP
+        )
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let certificate = directory.appendingPathComponent("proxy-ca.pem")
+        try Data(authority.caCertificatePEM.utf8).write(to: certificate)
+        do {
+            try clear.start()
+            try secure.start()
+            let port = try await proxy.start(port: 0)
+            let version = try curl(["--version"])
+            FileHandle.standardError.write(Data("CLIENT-MATRIX curl=\(version.output) os=\(ProcessInfo.processInfo.operatingSystemVersionString)\n".utf8))
+            for url in ["http://localhost:\(clear.localPort)/", "https://localhost:\(secure.localPort)/"] {
+                let result = try curl([
+                    "--silent", "--show-error", "--fail", "--max-time", "10", "--noproxy", "",
+                    "--proxy", "http://127.0.0.1:\(port)", "--cacert", certificate.path, url
+                ])
+                XCTAssertEqual(result.status, 0, result.error)
+                XCTAssertEqual(result.output, String(repeating: "A", count: 32))
+            }
+            let events = try sink.wait { $0.filter { if case .responseEnd = $0 { true } else { false } }.count == 2 }
+            let schemes = events.compactMap { event -> String? in
+                if case .requestHead(let head) = event { head.scheme } else { nil }
+            }
+            XCTAssertEqual(schemes, ["http", "https"])
+            try await proxy.stop()
+            clear.stop()
+            secure.stop()
+            try await group.shutdownGracefully()
+        } catch {
+            try? await proxy.stop()
+            clear.stop()
+            secure.stop()
+            try? await group.shutdownGracefully()
+            throw error
+        }
+    }
+
+    func testURLSessionHTTP11WithExplicitTrustAndProxy() async throws {
+        try await urlSession(protocolName: "http/1.1", version: .http11)
+    }
+
+    func testURLSessionHTTP2WithExplicitTrustAndProxy() async throws {
+        try await urlSession(protocolName: "h2", version: .http2)
+    }
+
+    private func urlSession(protocolName: String, version: HTTPProtocolVersion) async throws {
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 2)
+        let origin = try TLSOriginServer(group: group, bodySize: 32, applicationProtocols: [protocolName])
+        let authority = try CertificateAuthority.generate().authority
+        let sink = Release022Events()
+        let proxy = ProxyServer(
+            certificateAuthority: authority, sink: sink, group: group,
+            upstreamPolicy: .init(additionalTrustRootsPEM: [origin.caCertificatePEM]),
+            egressPolicy: .init(allowInternal: true), ingress: .explicitHTTP
+        )
+        var session: URLSession?
+        do {
+            try origin.start()
+            let port = try await proxy.start(port: 0)
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.timeoutIntervalForRequest = 10
+            let proxyPort = try XCTUnwrap(UInt16(exactly: port))
+            let endpointPort = try XCTUnwrap(NWEndpoint.Port(rawValue: proxyPort))
+            configuration.proxyConfigurations = [
+                ProxyConfiguration(httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: endpointPort))
+            ]
+            let der = try NIOSSLCertificate(bytes: Array(authority.caCertificatePEM.utf8), format: .pem).toDERBytes()
+            let root = try XCTUnwrap(SecCertificateCreateWithData(nil, Data(der) as CFData))
+            let delegate = Release022URLSessionTrust(root: root)
+            let client = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+            session = client
+            let url = try XCTUnwrap(URL(string: "https://localhost:\(origin.localPort)/"))
+            let (data, response) = try await client.data(from: url)
+            XCTAssertEqual(data, Data(repeating: 0x41, count: 32))
+            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+            let events = try sink.wait { $0.contains { if case .responseEnd = $0 { true } else { false } } }
+            let heads = events.compactMap { event -> CapturedRequestHead? in
+                if case .requestHead(let head) = event { head } else { nil }
+            }
+            XCTAssertEqual(heads.count, 1)
+            XCTAssertEqual(heads.first?.version, version)
+            FileHandle.standardError.write(Data("CLIENT-MATRIX URLSession protocol=\(protocolName) os=\(ProcessInfo.processInfo.operatingSystemVersionString) trusted=true\n".utf8))
+            client.invalidateAndCancel()
+            try await proxy.stop()
+            origin.stop()
+            try await group.shutdownGracefully()
+        } catch {
+            session?.invalidateAndCancel()
+            try? await proxy.stop()
+            origin.stop()
+            try? await group.shutdownGracefully()
+            throw error
+        }
+    }
+
+    private func curl(_ arguments: [String]) throws -> (status: Int32, output: String, error: String) {
+        let process = Process()
+        let output = Pipe()
+        let error = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+        process.arguments = arguments
+        process.standardOutput = output
+        process.standardError = error
+        try process.run()
+        process.waitUntilExit()
+        return (
+            process.terminationStatus,
+            String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self),
+            String(decoding: error.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        )
+    }
+}
+
+private final class Release022URLSessionTrust: NSObject, URLSessionDelegate, @unchecked Sendable {
+    let root: SecCertificate
+
+    init(root: SecCertificate) { self.root = root }
+
+    func urlSession(
+        _ session: URLSession,
+        didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let trust = challenge.protectionSpace.serverTrust,
+              SecTrustSetAnchorCertificates(trust, [root] as CFArray) == errSecSuccess,
+              SecTrustSetAnchorCertificatesOnly(trust, true) == errSecSuccess,
+              SecTrustEvaluateWithError(trust, nil) else {
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+        completionHandler(.useCredential, URLCredential(trust: trust))
+    }
+}

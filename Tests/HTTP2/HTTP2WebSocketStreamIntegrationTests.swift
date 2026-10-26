@@ -143,7 +143,7 @@ final class HTTP2WebSocketStreamIntegrationTests: XCTestCase {
         XCTAssertTrue(webSocketFrames(sink.events).isEmpty)
     }
 
-    func testCloseFrameResetAndInactivityAreClosureDedupeSignals() throws {
+    func testResetDuringCloseHandshakeEmitsOneErrorAndOneTerminal() throws {
         let sink = RecordingSink()
         let channels = makeChannels(requestID: UUID(), sink: sink, captureLimit: 8)
 
@@ -155,7 +155,7 @@ final class HTTP2WebSocketStreamIntegrationTests: XCTestCase {
         _ = try? channels.response.finish()
 
         XCTAssertEqual(webSocketCloseCount(sink.events), 1)
-        XCTAssertEqual(streamErrorCount(sink.events), 0)
+        XCTAssertEqual(streamErrorCount(sink.events), 1)
     }
 
     func testResetBeforeWebSocketCloseEmitsStreamErrorAndTerminalClose() throws {
@@ -194,6 +194,7 @@ final class HTTP2WebSocketStreamIntegrationTests: XCTestCase {
         try channels.request.writeInbound(extendedConnectHeaders())
         try channels.response.writeInbound(responseHeaders(status: 200, endStream: false))
         try channels.request.writeInbound(data([0x88, 0x02, 0x03, 0xE8], endStream: false))
+        try channels.response.writeInbound(data([0x88, 0x02, 0x03, 0xE8], endStream: false))
         channels.request.pipeline.fireErrorCaught(ExpectedError.teardown)
         _ = try? channels.request.finish()
         _ = try? channels.response.finish()

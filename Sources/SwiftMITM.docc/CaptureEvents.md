@@ -13,7 +13,7 @@ Consume bounded HTTP, WebSocket, opaque-flow, and connection-failure events with
 | Stream failure | One `streamError` carrying the affected request ID and a non-payload diagnostic message |
 | WebSocket | `webSocketOpen`, zero or more `webSocketFrame`, then one `webSocketClose` |
 | Opaque TCP | `opaqueOpen`, zero or more `opaqueData` in each direction, one `opaqueDirectionEnd` per cleanly ended direction, then `opaqueClose` |
-| Connection failure | One `connectionFailure` when transparent setup fails before a structured or opaque flow takes ownership |
+| Connection failure | One `connectionFailure` when setup fails before a structured or opaque flow takes ownership |
 
 Ordering is guaranteed within one HTTP stream, WebSocket connection, or opaque flow. Independent connections and HTTP/2 streams may call the same ``CaptureEventSink`` concurrently; no global ordering exists.
 
@@ -24,10 +24,12 @@ Ordering is guaranteed within one HTTP stream, WebSocket connection, or opaque f
 - `destination`: physical remote address and port used for upstream routing
 - `logicalAuthority`: authority associated with the connection
 - `tlsServerName`: TLS SNI when present
-- `ingressProvenance`: explicit `CONNECT` or trusted PROXY v2
+- `ingressProvenance`: explicit `CONNECT`, explicit HTTP forwarding, or trusted PROXY v2
 - `originalClient`: PROXY v2 source endpoint when trusted transparent ingress supplied it
 
 In transparent mode, the physical destination is authoritative for routing. SNI changes TLS identity selection, not the route.
+
+The explicit HTTP forwarding path uses an in-repository codec fork. It maps permitted received header and trailer octets back to equal octets during serialization. It does not preserve original whitespace or complete wire formatting. Compilation, linkage, and runtime fidelity remain unverified. The raw interception path continues forwarding original HTTP octets.
 
 ## Interpret retained bytes and counts
 
@@ -37,11 +39,21 @@ For HTTP body chunks, ``CapturedWebSocketFrame``, and opaque data, `bytes` is th
 
 Each `opaqueDirectionEnd` reports the direction's complete observed count and whether the configured opaque-retention limit truncated bytes. A clean flow emits exactly one close only after both directions have ended. An opaque transport failure emits exactly one `opaqueError`; no later direction-end or close event follows. Cancellation emits exactly one `opaqueClose` with `.cancelled`.
 
-## Handle transparent failures
+## Handle setup failures
 
-``CapturedConnectionFailure`` identifies a failed transparent connection with an ID, timestamp, typed reason, and target metadata when the target was known. Reasons cover peer admission, PROXY metadata and transport, classification, destination and upstream setup, TLS, transport, timeout, and cancellation failures. These events contain no payload bytes or free-form diagnostic text.
+``CapturedConnectionFailure`` identifies a failed connection with an ID, timestamp, typed reason, and target metadata when the target was known. Its optional `stage` is one of `admission`, `routing`, `connect`, `upstreamTLS`, `downstreamTLS`, `negotiation`, or `capture`. Its optional `code` is one of `egressDenied`, `setupTimedOut`, `serverStopping`, `invalidProxyMetadata`, `untrustedPeer`, `destinationUnavailable`, `classificationFailed`, `malformedClientHello`, `unsupportedProtocol`, `protocolMismatch`, `upstreamConnectFailed`, `tlsHandshakeFailed`, `transportFailure`, or `resourceLimit`. These events contain no payload bytes or free-form diagnostic text. Platform error strings are not part of the public diagnostic contract.
 
 After opaque forwarding begins, failures use `opaqueError` for that flow instead of `connectionFailure`. A consumer can therefore treat `connectionFailure` as a pre-flow terminal and `opaqueError` as an opaque-flow terminal.
+
+``CapturedOpaqueFlow/reason`` distinguishes `.policySelected` pass-through from `.classificationFallback`; `.unspecified` remains the initializer default for consumer-constructed values. A policy-selected opaque flow keeps application traffic encrypted end-to-end and does not produce structured HTTP events.
+
+## Correlate HTTP/1 exchanges
+
+The candidate's `HTTP1CorrelationPolicy` bounds pending exchange count and retained method bytes per connection. Defaults are 128 exchanges and 65,536 method bytes; the accepted ranges are 1–1,024 and 1–1,048,576 respectively. Exceeding either limit closes the affected connection and fails outstanding unfinished captures. It does not produce a successful terminal event for an exchange that did not complete.
+
+## Interpret streaming protocols
+
+The candidate's HTTP/1.1 SSE and HTTP/2 gRPC paths capture incremental raw body chunks and HTTP trailers. It does not decode SSE records, protobuf messages, gRPC message boundaries, or compressed payloads, and does not claim gRPC-Web support. Consumer receive timestamps are arrival observations, not packet or kernel timestamps. Configured curl, URLSession, WKWebView, Chromium, gRPC, and external-example jobs have no candidate results yet.
 
 ## WebSocket over HTTP/2
 
@@ -58,3 +70,9 @@ Perform only constant-time bounded work in `receive(_:)`. If persistence or anal
 ## Migrate exhaustive event handling for 0.2.0
 
 0.2.0 is source-breaking for exhaustive `CaptureEvent` switches. Add handling for `opaqueOpen`, `opaqueData`, `opaqueDirectionEnd`, `opaqueClose`, `opaqueError`, and `connectionFailure`. Update any custom serialization or event schema to preserve the new IDs, typed failure reasons, and target metadata. Consumers that construct ``CapturedRequestHead`` can continue using the initializer without `target`; consumers that match it must handle the optional field.
+
+## Migrate to the 0.2.2 candidate
+
+The candidate adds `.explicitHTTP` to ``ProxyIngress`` and `.explicitHTTP` to ``CapturedIngressProvenance``. Add both cases to exhaustive switches. The new ingress accepts HTTP/1.1 absolute-form `http` requests and HTTPS `CONNECT`; `.explicitConnect` remains the default.
+
+`ProxyServer` adds defaulted `correlationPolicy` and `interceptionPolicy` initializer parameters. `CapturedOpaqueFlow` adds a defaulted `reason`. `CapturedConnectionFailure` adds defaulted optional `stage` and `code` values. Existing value construction remains source-compatible, but serialized event schemas should add the new fields if they preserve candidate diagnostics.

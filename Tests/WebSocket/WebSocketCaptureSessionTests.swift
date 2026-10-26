@@ -72,14 +72,14 @@ final class WebSocketCaptureSessionTests: XCTestCase {
         XCTAssertEqual(clientFrame.closeCode, 1000)
         XCTAssertEqual(clientFrame.closeReason, "bye")
 
-        guard case let .webSocketClose(closeID, _, code, reason) = sink.events[2] else {
+        guard case let .webSocketClose(closeID, _, code, reason) = sink.events[3] else {
             return XCTFail("Expected WebSocket close")
         }
         XCTAssertEqual(closeID, id)
         XCTAssertEqual(code, 1000)
         XCTAssertEqual(reason, "bye")
 
-        guard case let .webSocketFrame(serverFrame) = sink.events[3] else {
+        guard case let .webSocketFrame(serverFrame) = sink.events[2] else {
             return XCTFail("Expected server close frame")
         }
         XCTAssertEqual(serverFrame.direction, .serverToClient)

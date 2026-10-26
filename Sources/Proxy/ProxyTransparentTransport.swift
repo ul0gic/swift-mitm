@@ -1,10 +1,9 @@
 import Foundation
 import NIOCore
-import NIOHTTP1
 import NIOPosix
 import NIOSSL
 
-private struct ResolvedRawUpstreamConnection: Sendable {
+struct ResolvedRawUpstreamConnection: Sendable {
     let channel: Channel
     let target: ResolvedTarget
 }
@@ -17,32 +16,10 @@ extension ProxyServer {
         switch ingress {
         case .explicitConnect:
             return configureExplicitInbound(channel, tlsRuntime: tlsRuntime)
+        case .explicitHTTP:
+            return configureExplicitInbound(channel, tlsRuntime: tlsRuntime)
         case .trustedProxyV2(let configuration):
             return configureTransparentInbound(channel, configuration: configuration, tlsRuntime: tlsRuntime)
-        }
-    }
-
-    private func configureExplicitInbound(
-        _ channel: Channel,
-        tlsRuntime: ProxyTLSRuntime
-    ) -> EventLoopFuture<Void> {
-        channel.eventLoop.makeCompletedFuture {
-            let sync = channel.pipeline.syncOperations
-            var encoderConfiguration = HTTPResponseEncoder.Configuration()
-            encoderConfiguration.automaticallySetFramingHeaders = false
-            try sync.addHandler(
-                HTTPResponseEncoder(configuration: encoderConfiguration),
-                name: Self.encoderName
-            )
-            try sync.addHandler(
-                ByteToMessageHandler(HTTPRequestDecoder(leftOverBytesStrategy: .forwardBytes)),
-                name: Self.decoderName
-            )
-            try sync.addHandler(
-                ConnectHandler { [self] tunnel, authority in
-                    onConnectEstablished(channel: tunnel, authority: authority, tlsRuntime: tlsRuntime)
-                }
-            )
         }
     }
 
@@ -62,15 +39,22 @@ extension ProxyServer {
                 stageObserver: stageObserver
             ) { [self] context, accepted in
                 failureHandler.value.updateTarget(accepted.target.capturedTarget())
+                failureHandler.value.updateStage(.routing)
+                let passThrough = interceptionPolicy.allowsPassThrough(
+                    host: accepted.target.connectionHost,
+                    port: accepted.target.port
+                )
                 let classifier = TransparentApplicationClassifier(
                     configuration: configuration,
-                    stageObserver: stageObserver
+                    stageObserver: stageObserver,
+                    passThrough: passThrough
                 ) { [self] _, classification in
                     handleTransparentClassification(
                         classification,
                         channel: context.channel,
                         target: accepted.target,
                         failureHandler: failureHandler,
+                        opaqueReason: passThrough ? .policySelected : .classificationFallback,
                         tlsRuntime: tlsRuntime
                     )
                 }
@@ -87,74 +71,35 @@ extension ProxyServer {
         }
     }
 
-    private func onConnectEstablished(
-        channel: Channel,
-        authority: String,
-        tlsRuntime: ProxyTLSRuntime
-    ) {
-        guard let target = ConnectionTarget(explicitConnectAuthority: authority) else {
-            channel.close(promise: nil)
-            return
-        }
-        let pipeline = channel.pipeline
-        let pendingReads = PendingTLSReads(eventLoop: channel.eventLoop)
-        do {
-            try pipeline.syncOperations.addHandler(pendingReads)
-        } catch {
-            channel.close(promise: nil)
-            return
-        }
-        let loopBoundPendingReads = NIOLoopBound(pendingReads, eventLoop: channel.eventLoop)
-        EventLoopFuture.andAllSucceed(
-            [
-                pipeline.removeHandler(name: Self.encoderName),
-                pipeline.removeHandler(name: Self.decoderName)
-            ],
-            on: channel.eventLoop
-        )
-            .flatMap { loopBoundPendingReads.value.clientALPNOffer }
-            .flatMapThrowing { try Self.applicationProtocols(for: $0) }
-            .flatMap { [self] applicationProtocols in
-                connectUpstreamTLS(
-                    target: target,
-                    applicationProtocols: applicationProtocols,
-                    tlsRuntime: tlsRuntime,
-                    on: channel.eventLoop
-                )
-            }
-            .flatMap { [self] upstream in
-                configureDownstreamTLS(
-                    channel: channel,
-                    upstream: upstream,
-                    pendingReads: loopBoundPendingReads,
-                    tlsRuntime: tlsRuntime
-                )
-            }
-            .flatMap { channel.setOption(ChannelOptions.autoRead, value: true) }
-            .whenFailure { _ in channel.close(promise: nil) }
-    }
-
     private func handleTransparentClassification(
         _ classification: TransparentApplicationClassification,
         channel: Channel,
         target: ConnectionTarget,
         failureHandler: NIOLoopBound<TransparentConnectionFailureHandler>,
+        opaqueReason: OpaqueForwardingReason,
         tlsRuntime: ProxyTLSRuntime
     ) -> EventLoopFuture<TransparentApplicationReadMode> {
+        guard let setupToken = connectionRegistry.beginSetup() else {
+            return channel.eventLoop.makeFailedFuture(ProxyConnectionError.serverStopping)
+        }
+        setupToken.onCancellation(on: channel.eventLoop) {
+            failureHandler.value.cancel()
+            channel.close(promise: nil)
+        }
+        channel.closeFuture.whenComplete { _ in setupToken.cancel() }
+        let setup: EventLoopFuture<TransparentApplicationReadMode>
         switch classification {
         case .interceptedTLS(let metadata):
-            let refinedTarget = target.applyingTLSMetadata(metadata)
-            failureHandler.value.updateTarget(refinedTarget.capturedTarget())
-            let applicationProtocols: [ALPNProtocol]
-            do {
-                applicationProtocols = try Self.applicationProtocols(for: metadata.compatibilityALPNOffer)
-            } catch {
-                return channel.eventLoop.makeFailedFuture(error)
-            }
-            return connectUpstreamTLS(
-                target: refinedTarget,
-                applicationProtocols: applicationProtocols,
+            failureHandler.value.beginTLSSetup(
+                deadline: timeoutPolicy.tlsHandshakeDeadline.nioTimeAmount ?? .seconds(10),
+                setupToken: setupToken
+            )
+            setup = connectInspectedTLS(
+                metadata: metadata,
+                target: target,
                 tlsRuntime: tlsRuntime,
+                setupToken: setupToken,
+                failureHandler: failureHandler,
                 on: channel.eventLoop
             )
             .flatMap { [self] upstream in
@@ -167,7 +112,8 @@ extension ProxyServer {
             }
             .map { .automatic }
         case .clearHTTP1:
-            return connectUpstreamRaw(target: target, on: channel.eventLoop)
+            failureHandler.value.updateStage(.connect)
+            setup = connectUpstreamRaw(target: target, on: channel.eventLoop, setupToken: setupToken)
                 .flatMap { [self] upstream in
                     bridgeClearHTTP1(
                         inbound: channel,
@@ -177,15 +123,30 @@ extension ProxyServer {
                 }
                 .map { .automatic }
         case .opaque:
-            return connectUpstreamRaw(target: target, on: channel.eventLoop)
+            failureHandler.value.updateStage(.connect)
+            setup = connectUpstreamRaw(
+                target: target,
+                on: channel.eventLoop,
+                setupToken: setupToken,
+                allowHalfClosure: true
+            )
                 .flatMap { [self] upstream in
                     bridgeOpaque(
                         inbound: channel,
                         upstream: upstream,
-                        failureHandler: failureHandler
+                        failureHandler: failureHandler,
+                        reason: opaqueReason
                     )
                 }
                 .map { .manual }
+        }
+        return setup.always { result in
+            if case .success = result, case .interceptedTLS = classification {
+                failureHandler.value.handoffFuture(on: channel.eventLoop)
+                    .whenComplete { _ in setupToken.complete() }
+            } else {
+                setupToken.complete()
+            }
         }
     }
 
@@ -204,6 +165,8 @@ extension ProxyServer {
                 on: channel.eventLoop
             )
             .flatMapThrowing { [self] context in
+                guard channel.isActive else { throw ProxyConnectionError.serverStopping }
+                failureHandler.value.updateStage(.downstreamTLS)
                 let sync = channel.pipeline.syncOperations
                 try sync.addHandler(
                     NIOSSLServerHandler(context: context),
@@ -221,6 +184,7 @@ extension ProxyServer {
         from channel: Channel
     ) -> EventLoopFuture<Void> {
         channel.eventLoop.makeCompletedFuture {
+            handler.value.complete()
             channel.pipeline.syncOperations.removeHandler(handler.value, promise: nil)
         }
     }
@@ -232,10 +196,21 @@ extension ProxyServer {
     ) -> EventLoopFuture<Void> {
         let sink = sink
         let captureBodyLimit = captureBodyLimit
-        let correlator = HTTP1ExchangeCorrelator()
+        let correlator = HTTP1ExchangeCorrelator(policy: correlationPolicy)
         let webSocketSession = WebSocketCaptureSession()
         let pair = NIOLoopBound(GlueHandler.matchedPair(), eventLoop: inbound.eventLoop)
         let target = upstream.target.capturedTarget
+        let connectionID = failureHandler.value.id
+        let reportResourceLimit: @Sendable () -> Void = {
+            sink.receive(.connectionFailure(CapturedConnectionFailure(
+                id: connectionID,
+                timestamp: Date(),
+                reason: .transportFailure,
+                target: target,
+                stage: .capture,
+                code: .resourceLimit
+            )))
+        }
         upstream.channel.closeFuture.whenComplete { _ in inbound.close(promise: nil) }
         inbound.closeFuture.whenComplete { _ in upstream.channel.close(promise: nil) }
         return inbound.eventLoop.makeCompletedFuture {
@@ -248,7 +223,8 @@ extension ProxyServer {
                     correlator: correlator,
                     sink: sink,
                     captureBodyLimit: captureBodyLimit,
-                    webSocketSession: webSocketSession
+                    webSocketSession: webSocketSession,
+                    onResourceLimit: reportResourceLimit
                 ),
                 pair.value.1
             ])
@@ -261,7 +237,8 @@ extension ProxyServer {
                     correlator: correlator,
                     sink: sink,
                     captureBodyLimit: captureBodyLimit,
-                    webSocketSession: webSocketSession
+                    webSocketSession: webSocketSession,
+                    onResourceLimit: reportResourceLimit
                 ),
                 pair.value.0
             ])
@@ -270,13 +247,19 @@ extension ProxyServer {
         .flatMap { upstream.channel.setOption(ChannelOptions.autoRead, value: true) }
     }
 
-    private func bridgeOpaque(
+    func bridgeOpaque(
         inbound: Channel,
         upstream: ResolvedRawUpstreamConnection,
-        failureHandler: NIOLoopBound<TransparentConnectionFailureHandler>
+        failureHandler: NIOLoopBound<TransparentConnectionFailureHandler>,
+        reason: OpaqueForwardingReason
     ) -> EventLoopFuture<Void> {
         let stageObserver = sink as? any TransparentIngressStageObserver
-        let flow = CapturedOpaqueFlow(id: UUID(), timestamp: Date(), target: upstream.target.capturedTarget)
+        let flow = CapturedOpaqueFlow(
+            id: failureHandler.value.id,
+            timestamp: Date(),
+            target: upstream.target.capturedTarget,
+            reason: reason
+        )
         let pair = NIOLoopBound(
             OpaqueFlowBridgeHandler.matchedPair(
                 flow: flow,
@@ -297,33 +280,45 @@ extension ProxyServer {
         }
     }
 
-    private func connectUpstreamRaw(
+    func connectUpstreamRaw(
         target: ConnectionTarget,
-        on loop: EventLoop
+        on loop: EventLoop,
+        setupToken suppliedToken: ProxyConnectionSetupToken? = nil,
+        allowHalfClosure: Bool = false
     ) -> EventLoopFuture<ResolvedRawUpstreamConnection> {
-        guard let setupToken = connectionRegistry.beginSetup() else {
+        guard let setupToken = suppliedToken ?? connectionRegistry.beginSetup() else {
             return loop.makeFailedFuture(ProxyConnectionError.serverStopping)
         }
-        guard let address = try? SocketAddress(ipAddress: target.connectionHost, port: target.port),
-              !egressPolicy.denies(address) else {
-            setupToken.complete()
+        if egressPolicy.deniesLiteral(target.connectionHost) {
+            if suppliedToken == nil { setupToken.complete() }
             return loop.makeFailedFuture(ProxyConnectionError.egressBlocked(target.connectionHost))
         }
+        let resolver = EgressFilteringResolver(
+            resolver: NIORandomizedDNSResolver(loop: loop),
+            policy: egressPolicy
+        )
+        setupToken.onCancellation(on: loop) { resolver.cancelQueries() }
+        let registry = connectionRegistry
         let connect = ClientBootstrap(group: loop)
+            .resolver(resolver)
             .channelOption(ChannelOptions.autoRead, value: false)
-            .channelOption(ChannelOptions.allowRemoteHalfClosure, value: true)
-            .connect(to: address)
+            .channelOption(ChannelOptions.allowRemoteHalfClosure, value: allowHalfClosure)
+            .channelInitializer { channel in
+                setupToken.onCancellation(on: channel.eventLoop) { channel.close(promise: nil) }
+                guard !setupToken.isCancelled, registry.register(channel) else {
+                    return channel.close().flatMapThrowing { throw ProxyConnectionError.serverStopping }
+                }
+                return channel.eventLoop.makeSucceededVoidFuture()
+            }
+            .connect(host: target.connectionHost, port: target.port)
         return enforceSetupDeadline(
             connect,
             timeout: timeoutPolicy.upstreamConnectDeadline.nioTimeAmount ?? .seconds(10),
             setupToken: setupToken
-        ) { $0.close(promise: nil) }
+        ) { $0.close() }
             .flatMap { [self] channel in
-                guard !setupToken.isCancelled, connectionRegistry.register(channel) else {
+                guard !setupToken.isCancelled else {
                     return channel.close().flatMapThrowing { throw ProxyConnectionError.serverStopping }
-                }
-                setupToken.onCancellation(on: channel.eventLoop) {
-                    channel.close(promise: nil)
                 }
                 guard let remote = channel.remoteAddress, !egressPolicy.denies(remote) else {
                     return channel.close().flatMapThrowing {
@@ -335,6 +330,8 @@ extension ProxyServer {
                     target: ResolvedTarget(unresolved: target, connectedAddress: remote)
                 ))
             }
-            .always { _ in setupToken.complete() }
+            .always { _ in
+                if suppliedToken == nil { setupToken.complete() }
+            }
     }
 }

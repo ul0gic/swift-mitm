@@ -126,6 +126,7 @@ final class Phase4PublicTransparentTLSTests: XCTestCase {
         XCTAssertEqual(try observation.futureResult.wait(), bytes)
         let snapshot = try sink.wait { $0.opaqueFlows.count >= expectedFlowCount }
         let flow = try XCTUnwrap(snapshot.opaqueFlows.last)
+        XCTAssertEqual(flow.reason, .classificationFallback)
         XCTAssertEqual(flow.target.destination.address, "127.0.0.1")
         XCTAssertEqual(flow.target.destination.port, peer.localPort)
         XCTAssertEqual(flow.target.tlsServerName, expectedSNI)

@@ -14,6 +14,10 @@ final class WebSocketCaptureSession {
         let serverDecoder: WebSocketFrameDecoder
         var permessageDeflate = false
         var lifecycle = Lifecycle.prepared
+        var clientClosed = false
+        var serverClosed = false
+        var closeCode: Int?
+        var closeReason: String?
     }
 
     private var active: ActiveSession?
@@ -52,9 +56,9 @@ final class WebSocketCaptureSession {
         _ bytes: Bytes,
         direction: WebSocketDirection
     ) -> Bool where Bytes.Element == UInt8 {
-        guard let session = active else { return true }
+        guard let session = active, session.lifecycle != .closed else { return true }
         let decoder = direction == .clientToServer ? session.clientDecoder : session.serverDecoder
-        return decoder.decode(bytes) { [self] frame in
+        return decoder.decode(bytes, shouldContinue: { [self] in active?.lifecycle != .closed }) { [self] frame in
             emit(frame, direction: direction)
         }
     }
@@ -67,8 +71,8 @@ final class WebSocketCaptureSession {
             .webSocketClose(
                 connectionID: session.id,
                 timestamp: Date(),
-                code: code,
-                reason: reason
+                code: code ?? session.closeCode,
+                reason: reason ?? session.closeReason
             )
         )
     }
@@ -80,7 +84,20 @@ final class WebSocketCaptureSession {
     }
 
     private func emit(_ frame: WebSocketFrameDecoder.Frame, direction: WebSocketDirection) {
-        guard let session = active else { return }
+        guard var session = active, session.lifecycle != .closed else { return }
+        if frame.opcode == .connectionClose {
+            if !session.clientClosed, !session.serverClosed {
+                session.closeCode = frame.closeCode
+                session.closeReason = frame.closeReason
+            }
+            switch direction {
+            case .clientToServer:
+                session.clientClosed = true
+            case .serverToClient:
+                session.serverClosed = true
+            }
+            active = session
+        }
         session.sink.receive(
             .webSocketFrame(
                 CapturedWebSocketFrame(
@@ -98,8 +115,8 @@ final class WebSocketCaptureSession {
                 )
             )
         )
-        if frame.opcode == .connectionClose {
-            close(code: frame.closeCode, reason: frame.closeReason)
+        if session.clientClosed, session.serverClosed {
+            close()
         }
     }
 }

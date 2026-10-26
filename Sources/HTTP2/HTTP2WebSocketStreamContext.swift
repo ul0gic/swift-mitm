@@ -116,9 +116,6 @@ final class HTTP2WebSocketStreamContext {
         guard !endStream || session.isAtFrameBoundary(direction: webSocketDirection) else {
             return coordinator.fail()
         }
-        if endStream, direction == .response {
-            session.close()
-        }
         closeIfEnded()
         return disposition
     }

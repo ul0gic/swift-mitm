@@ -36,6 +36,8 @@ public final class ProxyServer: Sendable {
     let egressPolicy: EgressPolicy
     let ingress: ProxyIngress
     let timeoutPolicy: ProxyTimeoutPolicy
+    let correlationPolicy: HTTP1CorrelationPolicy
+    let interceptionPolicy: ProxyInterceptionPolicy
     private let allowNonLoopbackBind: Bool
     let targetWindowSize: Int
     let captureBodyLimit: Int
@@ -54,7 +56,9 @@ public final class ProxyServer: Sendable {
         allowNonLoopbackBind: Bool = false,
         targetWindowSize: Int = 65535,
         captureBodyLimit: Int = 0,
-        opaqueCaptureByteLimit: Int = 0
+        opaqueCaptureByteLimit: Int = 0,
+        correlationPolicy: HTTP1CorrelationPolicy = .default,
+        interceptionPolicy: ProxyInterceptionPolicy = .default
     ) {
         self.authority = certificateAuthority
         self.sink = sink
@@ -62,6 +66,8 @@ public final class ProxyServer: Sendable {
         self.egressPolicy = egressPolicy
         self.ingress = ingress
         self.timeoutPolicy = timeoutPolicy
+        self.correlationPolicy = correlationPolicy
+        self.interceptionPolicy = interceptionPolicy
         self.allowNonLoopbackBind = allowNonLoopbackBind
         self.targetWindowSize = targetWindowSize
         self.captureBodyLimit = captureBodyLimit
@@ -105,6 +111,8 @@ public final class ProxyServer: Sendable {
                     configureInbound(clientChannel, tlsRuntime: runtime)
                 }
             if case .trustedProxyV2 = ingress {
+                _ = bootstrap.childChannelOption(ChannelOptions.allowRemoteHalfClosure, value: true)
+            } else if !interceptionPolicy.passThroughAuthorities.isEmpty {
                 _ = bootstrap.childChannelOption(ChannelOptions.allowRemoteHalfClosure, value: true)
             }
             let channel = try await bootstrap
@@ -152,6 +160,7 @@ public final class ProxyServer: Sendable {
     private func forceClose(_ channels: [Channel]) {
         for channel in channels {
             channel.eventLoop.execute {
+                channel.pipeline.fireUserInboundEventTriggered(ProxyConnectionError.serverStopping)
                 if let handler = try? channel.pipeline.syncOperations.handler(
                     type: TransparentConnectionFailureHandler.self
                 ) {

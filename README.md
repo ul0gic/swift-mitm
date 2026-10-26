@@ -1,165 +1,119 @@
 # SwiftMITM
 
-SwiftMITM is an embeddable Swift interception engine for authorized HTTP and TCP traffic. It accepts either explicit HTTP `CONNECT` traffic or a separately configured trusted PROXY protocol v2 ingress, preserves SwiftNIO backpressure, and emits structured HTTP, WebSocket, opaque-flow, and connection-failure events.
+**Build network tools that can see inside the connection.**
 
-The package is the engine only. Your application owns authorization, CA-key persistence and trust, listener access control, guest or host forwarding, capture storage, redaction, and presentation.
+SwiftMITM is a Swift-native interception engine for macOS developer tools and authorized security workflows. Embed HTTP/HTTPS proxying, inspect HTTP/1.1 and HTTP/2 exchanges, observe WebSocket traffic, and capture streaming bodies through one structured event API.
 
-## Status
+Build a network inspector, a debugging companion, or a traffic-analysis tool. SwiftMITM handles proxy transport and capture; your application owns the interface, trust, storage, and analysis.
 
-SwiftMITM 0.2.1 is the current supported release. It retains explicit `CONNECT` as the default and adds trusted transparent ingress; integrations that exhaustively switch over `CaptureEvent` must migrate before adopting it.
+[Run the example](#see-your-first-capture) · [Integration guide](Sources/SwiftMITM.docc/GettingStarted.md) · [Capture API](Sources/SwiftMITM.docc/CaptureEvents.md) · [Security model](Sources/SwiftMITM.docc/SecurityModel.md)
 
-## Capabilities
+> **0.2.2 candidate:** this README describes the current source candidate. Implementation is prepared; compilation and runtime acceptance remain unverified. The latest published release is [0.2.1](https://github.com/ul0gic/swift-mitm/tree/0.2.1), whose requirements and capabilities differ.
 
-- Explicit HTTP `CONNECT` interception and trusted PROXY v2 transparent ingress with literal-address or CIDR peer admission
-- TLS HTTP/1.1 and HTTP/2 capture through either ingress, with consumer-owned CA identities
-- RFC 6455 WebSocket capture over HTTP/1.1 and RFC 8441 extended `CONNECT` capture over HTTP/2 through either ingress
-- Transparent cleartext HTTP/1.1 and RFC 6455 WebSocket capture
-- Bounded opaque TCP forwarding for ECH, unsupported ALPN, and other unclassified traffic
-- Bounded HTTP bodies per direction, WebSocket payloads per frame, and opaque payloads per direction without truncating forwarding
-- Verified upstream TLS, loopback binding, and internal-egress denial by default
-- Explicit finite setup deadlines and deterministic proxy lifecycle ownership
+## What you can build
 
-## Requirements
+- **Developer network inspectors:** correlate requests and responses, inspect headers and trailers, and retain only the payload bytes you need.
+- **Streaming diagnostics:** observe SSE and gRPC transport as body chunks arrive, without waiting for the response to finish.
+- **WebSocket tools:** capture RFC 6455 traffic and RFC 8441 extended CONNECT streams over HTTP/2.
+- **Security workbenches:** retain upstream certificate verification, constrain destinations, and distinguish routing, TLS, and capture failures.
+- **Host-integrated capture:** accept original-destination metadata from a trusted PROXY v2 forwarder.
 
-- Swift 6.0 or newer
-- macOS 14 or newer
+## See your first capture
 
-## Installation
+[FirstCapture](Examples/FirstCapture/README.md) is a runnable executable built entirely against the public package API. It keeps the proxy alive, writes JSON Lines, and shuts down on Control-C.
 
-Install the current supported release:
+Use the candidate checkout, macOS 26+, and Xcode 27.1 with Swift 6.4. Xcode itself requires macOS 26.6+. Supply a matching P-256 interception CA certificate and private key in PEM format, stored outside the repository. The example neither installs trust nor changes system proxy settings.
 
-```swift
-dependencies: [
-    .package(url: "https://github.com/ul0gic/swift-mitm.git", from: "0.2.1")
-],
-targets: [
-    .target(
-        name: "YourTarget",
-        dependencies: [
-            .product(name: "SwiftMITM", package: "swift-mitm")
-        ]
-    )
-]
+From the repository root, with those files in `$HOME/.swiftmitm/`:
+
+```sh
+cd Examples/FirstCapture
+swift run FirstCapture \
+  --ca-cert "$HOME/.swiftmitm/ca-cert.pem" \
+  --ca-key "$HOME/.swiftmitm/ca-key.pem" \
+  --port 8080
 ```
 
-Complete the [0.2.0 migration](#capture-events-and-020-migration) before adopting transparent ingress or exhaustively switching on `CaptureEvent`.
+The first record reports the listening port:
 
-In Xcode, use **File → Add Package Dependencies** and enter `https://github.com/ul0gic/swift-mitm.git`.
-
-## Documentation
-
-The [SwiftPM DocC catalog](Sources/SwiftMITM.docc/SwiftMITM.md) contains the complete consumer contract:
-
-- [Getting Started](Sources/SwiftMITM.docc/GettingStarted.md)
-- [Certificate Authority and Trust](Sources/SwiftMITM.docc/CertificateAuthorityAndTrust.md)
-- [Capture Events](Sources/SwiftMITM.docc/CaptureEvents.md)
-- [Lifecycle and Concurrency](Sources/SwiftMITM.docc/LifecycleAndConcurrency.md)
-- [Security Model](Sources/SwiftMITM.docc/SecurityModel.md)
-
-## PROXY v2 conformance contract
-
-Language-neutral receiver and forwarder vectors live at [Conformance/ProxyV2/v1.json](Conformance/ProxyV2/v1.json). The 0.2.0 release artifact has SHA-256 `d9953424cbb63011c25820feca56ca60feb824b1db44dc4f82ef1940588fbf43`.
-
-Guest agents and privileged host helpers must consume that exact release-tagged file and pin and verify its SHA-256 before using it for interoperability. SwiftMITM validates the receiver path and proves a local accepting forwarder without root. Each external repository owns its own PROXY v2 encoder implementation, CI, and evidence that it passes the emitter vectors; package CI cannot establish that proof for another repository.
-
-The package does not provide a direct `/dev/pf` original-destination provider. The public macOS SDK has no stable PF lookup API for this use. A host helper owns PF rules, privilege, tuple validation, cancellation and cleanup, then normalizes its result into the trusted PROXY v2 contract.
-
-See [the conformance contract](Conformance/ProxyV2/README.md) for the schema and role boundaries.
-
-## Start an explicit CONNECT proxy
-
-```swift
-import SwiftMITM
-
-struct DiscardingSink: CaptureEventSink {
-    func receive(_: CaptureEvent) {}
-}
-
-let generated = try CertificateAuthority.generate(commonName: "My Tool MITM Root")
-let proxy = ProxyServer(
-    certificateAuthority: generated.authority,
-    sink: DiscardingSink(),
-    captureBodyLimit: 0
-)
-
-let port = try await proxy.start(port: 0)
-try await proxy.stop()
+```json
+{"type":"listening","port":8080}
 ```
 
-This default ingress accepts HTTP `CONNECT`. Configure an authorized client to use `127.0.0.1:<port>` as its HTTP proxy. `start` allows one listener per `ProxyServer` instance; `stop` is idempotent, closes accepted and upstream channels, and waits for bounded setup work to quiesce. A package-owned event-loop group makes its proxy terminal after `stop`; a consumer-supplied group remains consumer-owned and permits a later restart.
+In another terminal, send a request through the proxy:
 
-## Start a trusted transparent listener
-
-Transparent mode is a different ingress contract. Each accepted connection must come from an actual TCP peer admitted by `TrustedPeerPolicy`, then carry a supported PROXY v2 header. Binding to a non-loopback address merely permits the listener to accept network connections; it does not trust any peer. Keep the listener loopback-bound when a local host forwarder connects, or combine `allowNonLoopbackBind: true` with transport-level access control and a narrow trusted-peer policy.
-
-```swift
-let policy = TrustedPeerPolicy.loopback
-if let transparentIngress = TrustedProxyV2Ingress(trustedPeers: policy) {
-    let proxy = ProxyServer(
-        certificateAuthority: generated.authority,
-        sink: DiscardingSink(),
-        ingress: .trustedProxyV2(transparentIngress),
-        opaqueCaptureByteLimit: 0
-    )
-    let port = try await proxy.start(port: 0)
-    try await proxy.stop()
-    _ = port
-}
+```sh
+curl --noproxy '' --proxy http://127.0.0.1:8080 http://example.com/
 ```
 
-`TrustedPeerPolicy(addressesAndCIDRs:)` accepts only non-empty IP literals and CIDRs. Its `.loopback` policy covers `127.0.0.0/8` and `::1/128`. PROXY metadata defaults to a 4 KiB header limit and a 5-second deadline. Untrusted peers and invalid, oversized, or late PROXY headers are closed and emit a typed connection-failure event.
+For HTTPS, trust the interception CA for that invocation:
 
-Application classification has a separate 64 KiB limit and 1-second deadline. ECH, unsupported ALPN, classification timeout, and bounded non-TLS ambiguity fall back to opaque forwarding. A malformed or over-limit TLS ClientHello is closed with a classification-failure event.
+```sh
+curl --noproxy '' --proxy http://127.0.0.1:8080 \
+  --cacert "$HOME/.swiftmitm/ca-cert.pem" https://example.com/
+```
 
-One `ProxyServer` chooses one ingress for its single listener. Run separate instances when an application needs explicit `CONNECT` and transparent traffic simultaneously.
+Look for `requestHead`, `responseHead`, body-chunk metadata, and `responseEnd` records correlated by `id`. Payload retention defaults to zero. Requests depend on external network availability; these candidate commands have not yet passed the GitHub acceptance run.
 
-## Routing and protocol selection
+The [example guide](Examples/FirstCapture/README.md) covers payload capture, SSE, intentional pass-through, custom origin trust, and bounded asynchronous output. The [CA guide](Sources/SwiftMITM.docc/CertificateAuthorityAndTrust.md) covers creation, persistence, and client trust.
 
-In transparent mode, PROXY v2 supplies the original destination and original-client metadata. SwiftMITM routes upstream to that physical destination. A TLS SNI value refines only the upstream TLS name and the intercepted leaf identity; it never redirects the connection. Clear HTTP/1.1, TLS HTTP/1.1, TLS HTTP/2, RFC 6455, and RFC 8441 use the structured capture model. Opaque fallback preserves traffic without claiming to decode it.
+## Built around traffic integrity
 
-`ProxyTimeoutPolicy` bounds upstream connection setup to 10 seconds, TLS handshakes to 10 seconds, and initial HTTP/2 SETTINGS to 5 seconds by default. Its failable initializer rejects zero, negative, and unrepresentable deadlines. `TrustedProxyV2Ingress` likewise rejects invalid bounds rather than silently widening resource limits.
+| Capability | What it gives your tool |
+| --- | --- |
+| HTTP and HTTPS on one listener | Opt-in `.explicitHTTP` handles ordinary HTTP requests and HTTPS CONNECT; CONNECT-only remains the default. |
+| Header and trailer fidelity | Explicit HTTP codecs preserve permitted field-value octets, including non-UTF-8 bytes; raw interception forwards original HTTP octets. |
+| Streaming observation | Incremental body capture and trailers for SSE/gRPC transport, with retention limits independent of forwarding. |
+| Deliberate encrypted pass-through | Exact host-and-port rules preserve end-to-end TLS and report why traffic is opaque. |
+| Bounded capture state | Per-direction retention limits, bounded request correlation, and SwiftNIO backpressure. |
+| Explicit failure outcomes | Structured connection stages/codes and capture terminal events expose incomplete exchanges. |
 
-## Capture events and 0.2.0 migration
+Header fidelity does not mean identical wire formatting: the explicit forward proxy can normalize whitespace and framing. Its codec is a narrowly patched, pinned SwiftNIO source fork with a separately namespaced llhttp parser; consumers retain the official public NIO types.
 
-`CaptureEventSink.receive(_:)` is synchronous. Return quickly: a slow sink stalls the owning event loop and applies backpressure. The same `Sendable` sink can be called concurrently by independent connections and HTTP/2 streams, so the consumer owns cross-stream synchronization and any bounded asynchronous handoff.
+Pass-through is selected before interception. A failed handshake or certificate check never silently turns into an encrypted bypass.
 
-0.2.0 adds `CapturedTarget`, opaque-flow events, and connection-failure events. `CapturedRequestHead.target` remains optional for source-compatible value construction. Production requests through both ingress modes populate it with physical destination, logical authority, TLS server name when present, and ingress provenance; trusted transparent requests also include original-client metadata. Switches that exhaustively handle `CaptureEvent` must add:
+## Embed it in your application
 
-- `opaqueOpen`, zero or more `opaqueData`, each direction's `opaqueDirectionEnd`, then exactly one `opaqueClose` on clean completion
-- `opaqueError` instead of a clean close when opaque forwarding fails; no later terminal event follows
-- `connectionFailure` for transparent ingress, classification, setup, TLS, transport, timeout, and cancellation failures before a structured or opaque flow owns the connection
+The library product is `SwiftMITM`; both the library and example require Swift tools 6.4 and target macOS 26+. Candidate CI selects Xcode 27.1 and separately checks the standalone Swift 6.4.1 compiler.
 
-Opaque `bytes` contains only retained bytes, while `byteCount` is the complete observed chunk size. `opaqueCaptureByteLimit` defaults to `0`, so the default emits metadata and exact counts while retaining no opaque payload bytes. The limit applies independently to client-to-server and server-to-client data; `opaqueDirectionEnd` reports each full direction count and whether retention was truncated. See the [Capture Events guide](Sources/SwiftMITM.docc/CaptureEvents.md) for the complete ordering contract.
+For candidate development, add this checkout as a local Swift package dependency and link the `SwiftMITM` product. The runnable [example manifest](Examples/FirstCapture/Package.swift) shows the exact dependency declaration. There is no published 0.2.2 tag yet; use the [0.2.1 documentation](https://github.com/ul0gic/swift-mitm/tree/0.2.1) when integrating the published release.
 
-## Security responsibilities
+The integration has three parts:
 
-| Control | Default | Opt-in consequence |
-| --- | --- | --- |
-| Listener binding | Loopback only | `allowNonLoopbackBind: true` requires host-managed network access controls. |
-| Transparent admission | Not enabled | A trusted PROXY v2 policy accepts only its actual peer addresses. |
-| Upstream TLS | Certificate verification enabled | `verifyCertificate: false` removes upstream identity protection. |
-| Egress policy | Internal, loopback, link-local, and unspecified addresses denied | `EgressPolicy(allowInternal: true)` permits local and private services. |
-| Payload retention | Metadata only | Positive HTTP/WebSocket or opaque limits expose retained payload bytes to the sink. |
+1. Provide your interception `CertificateAuthority` and a `CaptureEventSink`.
+2. Choose explicit HTTP/CONNECT or trusted PROXY v2 ingress and start `ProxyServer`.
+3. Consume events throughout the session, then await `stop()` during shutdown.
 
-`additionalTrustRootsPEM` augments the system trust store. SwiftMITM neither installs CA trust nor configures proxy settings or transparent forwarding rules. Treat CA keys, traffic metadata, headers, and retained payloads as sensitive data.
+`CaptureEventSink.receive(_:)` is synchronous and may be called concurrently by independent connections. Slow callbacks apply backpressure. If you move delivery off the event loop, bound the queue and make loss visible; [FirstCapture's async mode](Examples/FirstCapture/README.md#bounded-async-handoff) demonstrates that contract.
 
-## Current limitations
+Start with [Getting Started](Sources/SwiftMITM.docc/GettingStarted.md), then use [Capture Events](Sources/SwiftMITM.docc/CaptureEvents.md) and [Lifecycle and Concurrency](Sources/SwiftMITM.docc/LifecycleAndConcurrency.md). Upgrading consumers should read the [0.2.2 migration notes](Sources/SwiftMITM.docc/CaptureEvents.md#migrate-to-the-0-2-2-candidate).
 
-- No UDP, QUIC, HTTP/3, cleartext HTTP/2 prior knowledge, or `h2c` upgrade
-- No ECH decryption, general opaque-protocol decoding, WebSocket HTTP/2-to-HTTP/1.1 translation, payload inflation, message reassembly, or content decoding
-- Certificate pinning remains effective and can prevent interception
-- No system proxy configuration, redirect-rule installation, privileged-helper lifecycle, Keychain integration, or trust UI
+## Security defaults that stay visible
 
-## Development
+- The listener binds to loopback; exposing it requires explicit configuration and host-managed access control.
+- Upstream TLS certificate verification is enabled; additional trust roots augment the system roots.
+- Internal, loopback, link-local, and unspecified upstream destinations are denied unless explicitly permitted.
+- Body and opaque payload retention default to zero; headers and other traffic metadata are still sensitive.
+- Transparent ingress admits the actual TCP peer before trusting its PROXY v2 metadata.
 
-GitHub Actions runs tests on pushes to `main` and pull requests. CodeQL scans Swift and workflow code on those events and weekly. Dependabot monitors dependencies and proposes Swift and SHA-pinned action updates; dependency review checks pull requests for newly introduced high or critical vulnerabilities.
+Your application owns authorization, CA-key persistence, client trust, capture storage, redaction, and any system routing changes. SwiftMITM does not install certificates, configure system proxies, or manage privileged helpers. Read the [security model](Sources/SwiftMITM.docc/SecurityModel.md) before exposing a listener or retaining traffic.
 
-Release validation runs in GitHub Actions. There is no required local gate. See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
+For host-forwarder integration, use the versioned [PROXY v2 conformance contract](Conformance/ProxyV2/README.md). A host helper supplies the original destination; the package does not implement direct `/dev/pf` destination lookup.
 
-## Support and security
+## Know the boundaries
 
-Use [GitHub Issues](https://github.com/ul0gic/swift-mitm/issues) for reproducible defects and [SUPPORT.md](SUPPORT.md) for required diagnostic context. Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
+SSE and gRPC support is **transport capture**: raw streamed body bytes and HTTP trailers. SwiftMITM does not decode SSE events, protobuf messages, gRPC message boundaries, compression, or gRPC-Web.
+
+There is no UDP, QUIC, HTTP/3, cleartext HTTP/2 prior knowledge, or `h2c` upgrade. There is no ECH decryption, general opaque-protocol decoding, or HTTP/2-to-HTTP/1.1 WebSocket translation. Certificate pinning can prevent interception; intentional pass-through preserves connectivity without providing decrypted capture.
+
+## Release qualification
+
+GitHub Actions owns compilation, lint, security analysis, DocC, external-consumer builds, and behavioral qualification. The prepared matrix covers curl, URLSession, WKWebView, Chromium, independent gRPC peers, and large-transfer/resource scenarios.
+
+All 0.2.2 candidate results remain unverified. Full suites are configured on macOS 27; the macOS 26 public-consumer smoke is partial minimum-runtime evidence, not full client qualification. No performance claim or production-readiness claim is implied by the prepared checks.
+
+[Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Support](SUPPORT.md) · [Report a vulnerability](SECURITY.md)
 
 ## License
 
-SwiftMITM is available under the [MIT License](LICENSE).
+SwiftMITM is [MIT licensed](LICENSE). Vendored SwiftNIO codec sources retain their Apache 2.0 license and notices; llhttp retains its MIT license and the SwiftNIO wrapper's Apache 2.0 license and notice. See [Vendor/](Vendor/) for the retained licenses and source provenance.

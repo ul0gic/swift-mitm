@@ -11,14 +11,18 @@ final class EgressFilteringResolver: Resolver, Sendable {
     }
 
     func initiateAQuery(host: String, port: Int) -> EventLoopFuture<[SocketAddress]> {
-        resolver.initiateAQuery(host: host, port: port).map { [policy] addresses in
-            addresses.filter { !policy.denies($0) }
+        resolver.initiateAQuery(host: host, port: port).flatMapThrowing { [policy] addresses in
+            let allowed = addresses.filter { !policy.denies($0) }
+            guard addresses.isEmpty || !allowed.isEmpty else { throw ProxyConnectionError.egressBlocked(host) }
+            return allowed
         }
     }
 
     func initiateAAAAQuery(host: String, port: Int) -> EventLoopFuture<[SocketAddress]> {
-        resolver.initiateAAAAQuery(host: host, port: port).map { [policy] addresses in
-            addresses.filter { !policy.denies($0) }
+        resolver.initiateAAAAQuery(host: host, port: port).flatMapThrowing { [policy] addresses in
+            let allowed = addresses.filter { !policy.denies($0) }
+            guard addresses.isEmpty || !allowed.isEmpty else { throw ProxyConnectionError.egressBlocked(host) }
+            return allowed
         }
     }
 

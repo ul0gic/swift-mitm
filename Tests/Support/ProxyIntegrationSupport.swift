@@ -128,6 +128,7 @@ final class ProxyTestClient {
     func openTunnel(proxyPort: Int, originHost: String, originPort: Int) throws -> Channel {
         let connectDone = group.next().makePromise(of: Void.self)
         let channel = try ClientBootstrap(group: group)
+            .connectTimeout(.seconds(2))
             .channelInitializer { channel in
                 channel.eventLoop.makeCompletedFuture {
                     try channel.pipeline.syncOperations.addHandler(
@@ -142,7 +143,12 @@ final class ProxyTestClient {
         var request = channel.allocator.buffer(capacity: 64)
         request.writeString("CONNECT \(originHost):\(originPort) HTTP/1.1\r\nHost: \(originHost):\(originPort)\r\n\r\n")
         try channel.writeAndFlush(request).wait()
-        try connectDone.futureResult.wait()
+        do {
+            try phase4BoundedWait(connectDone.futureResult, timeout: .seconds(3))
+        } catch {
+            try? phase4BoundedWait(channel.close())
+            throw error
+        }
         try channel.pipeline.removeHandler(name: "connect-response").wait()
         return channel
     }

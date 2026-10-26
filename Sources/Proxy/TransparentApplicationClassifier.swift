@@ -135,8 +135,7 @@ final class TransparentApplicationClassifier: ChannelInboundHandler, RemovableCh
         case terminal
     }
 
-    private let maximumBytes: Int
-    private let deadline: TimeAmount
+    private let configuration: TrustedProxyV2Ingress?
     private let decisionHandler: DecisionHandler
     private let stageObserver: (any TransparentIngressStageObserver)?
     private var inspectedByteCount = 0
@@ -145,6 +144,7 @@ final class TransparentApplicationClassifier: ChannelInboundHandler, RemovableCh
     private var http1Inspector = IncrementalHTTP1PrefixInspector()
     private var reads: [ByteBuffer] = []
     private var readComplete = false
+    private var inputClosed = false
     private var deadlineTask: Scheduled<Void>?
     private var pendingStageObserved = false
     private var state = State.classifying
@@ -160,18 +160,28 @@ final class TransparentApplicationClassifier: ChannelInboundHandler, RemovableCh
     init(
         configuration: TrustedProxyV2Ingress,
         stageObserver: (any TransparentIngressStageObserver)? = nil,
+        passThrough: Bool = false,
         decisionHandler: @escaping DecisionHandler
     ) {
-        maximumBytes = configuration.classificationMaximumBytes
-        deadline = configuration.classificationDeadlineTimeAmount
+        self.configuration = passThrough ? nil : configuration
         self.stageObserver = stageObserver
         self.decisionHandler = decisionHandler
     }
 
+    init(passThrough decisionHandler: @escaping DecisionHandler) {
+        configuration = nil
+        stageObserver = nil
+        self.decisionHandler = decisionHandler
+    }
+
     func handlerAdded(context: ChannelHandlerContext) {
+        guard let configuration else {
+            beginTransition(.opaque, context: context)
+            return
+        }
         let owner = NIOLoopBound(self, eventLoop: context.eventLoop)
         let boundContext = NIOLoopBound(context, eventLoop: context.eventLoop)
-        deadlineTask = context.eventLoop.scheduleTask(in: deadline) {
+        deadlineTask = context.eventLoop.scheduleTask(in: configuration.classificationDeadlineTimeAmount) {
             guard owner.value.state == .classifying else { return }
             owner.value.beginTransition(.opaque, context: boundContext.value)
         }
@@ -189,7 +199,9 @@ final class TransparentApplicationClassifier: ChannelInboundHandler, RemovableCh
         let buffer = unwrapInboundIn(data)
         reads.append(buffer)
         guard state == .classifying else { return }
+        guard let configuration else { return }
 
+        let maximumBytes = configuration.classificationMaximumBytes
         let remainingCapacity = maximumBytes - inspectedByteCount
         let inspectedCount = min(remainingCapacity, buffer.readableBytes)
         let inspectedBytes = buffer.readableBytesView.prefix(inspectedCount)
@@ -235,6 +247,14 @@ final class TransparentApplicationClassifier: ChannelInboundHandler, RemovableCh
         tlsInspector.removeAll()
         reads.removeAll(keepingCapacity: false)
         context.fireChannelInactive()
+    }
+
+    func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+        if let event = event as? ChannelEvent, case .inputClosed = event {
+            inputClosed = true
+        } else {
+            context.fireUserInboundEventTriggered(event)
+        }
     }
 
     func errorCaught(context: ChannelHandlerContext, error: Error) {
@@ -313,6 +333,9 @@ final class TransparentApplicationClassifier: ChannelInboundHandler, RemovableCh
         reads.forEach { context.fireChannelRead(wrapInboundOut($0)) }
         if readComplete {
             context.fireChannelReadComplete()
+        }
+        if inputClosed {
+            context.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
         }
         reads.removeAll(keepingCapacity: false)
         tlsInspector.removeAll()

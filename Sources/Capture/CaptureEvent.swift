@@ -27,6 +27,7 @@ public struct CapturedNetworkEndpoint: Sendable {
 
 public enum CapturedIngressProvenance: String, Sendable {
     case explicitConnect
+    case explicitHTTP
     case trustedProxyV2
 }
 
@@ -174,15 +175,28 @@ public struct CapturedWebSocketFrame: Sendable {
     }
 }
 
+public enum OpaqueForwardingReason: String, Sendable {
+    case policySelected
+    case classificationFallback
+    case unspecified
+}
+
 public struct CapturedOpaqueFlow: Sendable {
     public let id: UUID
     public let timestamp: Date
     public let target: CapturedTarget
+    public let reason: OpaqueForwardingReason
 
-    public init(id: UUID, timestamp: Date, target: CapturedTarget) {
+    public init(
+        id: UUID,
+        timestamp: Date,
+        target: CapturedTarget,
+        reason: OpaqueForwardingReason = .unspecified
+    ) {
         self.id = id
         self.timestamp = timestamp
         self.target = target
+        self.reason = reason
     }
 }
 
@@ -209,22 +223,55 @@ public enum CapturedConnectionFailureReason: String, Sendable {
     case cancelled
 }
 
+public enum ConnectionFailureStage: String, Sendable {
+    case admission
+    case routing
+    case connect
+    case upstreamTLS
+    case downstreamTLS
+    case negotiation
+    case capture
+}
+
+public enum ConnectionFailureCode: String, Sendable {
+    case egressDenied
+    case setupTimedOut
+    case serverStopping
+    case invalidProxyMetadata
+    case untrustedPeer
+    case destinationUnavailable
+    case classificationFailed
+    case malformedClientHello
+    case unsupportedProtocol
+    case protocolMismatch
+    case upstreamConnectFailed
+    case tlsHandshakeFailed
+    case transportFailure
+    case resourceLimit
+}
+
 public struct CapturedConnectionFailure: Sendable {
     public let id: UUID
     public let timestamp: Date
     public let reason: CapturedConnectionFailureReason
     public let target: CapturedTarget?
+    public let stage: ConnectionFailureStage?
+    public let code: ConnectionFailureCode?
 
     public init(
         id: UUID,
         timestamp: Date,
         reason: CapturedConnectionFailureReason,
-        target: CapturedTarget? = nil
+        target: CapturedTarget? = nil,
+        stage: ConnectionFailureStage? = nil,
+        code: ConnectionFailureCode? = nil
     ) {
         self.id = id
         self.timestamp = timestamp
         self.reason = reason
         self.target = target
+        self.stage = stage
+        self.code = code
     }
 }
 

@@ -4,10 +4,10 @@
 
 | Version | Supported |
 | --- | --- |
-| `0.1.x` | Yes |
+| `0.2.x` (latest tagged minor line; latest release `0.2.1`) | Yes |
 | Earlier versions | No |
 
-The latest tagged minor line and `main` receive security fixes.
+The latest tagged minor line and `main` receive security fixes. Version 0.2.2 is candidate preparation only; it is not a supported release until published.
 
 ## Reporting a vulnerability
 

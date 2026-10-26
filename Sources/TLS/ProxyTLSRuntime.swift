@@ -75,7 +75,7 @@ final class ProxyTLSRuntime: Sendable {
     ) -> EventLoopFuture<NIOSSLContext> {
         leafIdentities.identity(forHost: defaultHost, on: eventLoop).flatMap { [self] identity in
             threadPool.runIfActive(eventLoop: eventLoop) {
-                let termination = TLSTermination(identities: self.leafIdentities, defaultHost: defaultHost)
+                let termination = TLSTermination()
                 let configuration = termination.makeServerConfiguration(
                     baseIdentity: identity,
                     applicationProtocols: applicationProtocols

@@ -1,0 +1,288 @@
+import Foundation
+import NIOCore
+import NIOHTTP1
+import SwiftMITMHTTP1Codec
+
+extension ProxyServer {
+    func configureExplicitInbound(
+        _ channel: Channel,
+        tlsRuntime: ProxyTLSRuntime
+    ) -> EventLoopFuture<Void> {
+        channel.eventLoop.makeCompletedFuture {
+            let sync = channel.pipeline.syncOperations
+            if case .explicitHTTP = ingress {
+                var configuration = BytePreservingHTTPResponseEncoder.Configuration()
+                configuration.automaticallySetFramingHeaders = false
+                let encoder = BytePreservingHTTPResponseEncoder(configuration: configuration)
+                try sync.addHandler(encoder, name: Self.encoderName)
+                try sync.addHandler(
+                    ByteToMessageHandler(BytePreservingHTTPRequestDecoder(
+                        leftOverBytesStrategy: .forwardBytes,
+                        responseEncoder: encoder
+                    )),
+                    name: Self.decoderName
+                )
+            } else {
+                var configuration = HTTPResponseEncoder.Configuration()
+                configuration.automaticallySetFramingHeaders = false
+                try sync.addHandler(HTTPResponseEncoder(configuration: configuration), name: Self.encoderName)
+                try sync.addHandler(
+                    ByteToMessageHandler(HTTPRequestDecoder(leftOverBytesStrategy: .forwardBytes)),
+                    name: Self.decoderName
+                )
+            }
+            let connectionID = UUID()
+            switch ingress {
+            case .explicitHTTP:
+                try sync.addHandler(makeExplicitHTTPHandler(
+                    connectionID: connectionID,
+                    tlsRuntime: tlsRuntime
+                ))
+            case .explicitConnect, .trustedProxyV2:
+                try sync.addHandler(
+                    ConnectHandler(onRejected: { [self] reason, code in
+                        sink.receive(.connectionFailure(CapturedConnectionFailure(
+                            id: connectionID,
+                            timestamp: Date(),
+                            reason: reason,
+                            stage: .admission,
+                            code: code
+                        )))
+                    }) { [self] tunnel, authority in
+                        onConnectEstablished(
+                            channel: tunnel,
+                            authority: authority,
+                            connectionID: connectionID,
+                            tlsRuntime: tlsRuntime
+                        )
+                    }
+                )
+            }
+        }
+    }
+
+    private func makeExplicitHTTPHandler(
+        connectionID: UUID,
+        tlsRuntime: ProxyTLSRuntime
+    ) -> ExplicitHTTPProxyHandler {
+        ExplicitHTTPProxyHandler(
+            sink: sink,
+            captureBodyLimit: captureBodyLimit,
+            correlationPolicy: correlationPolicy,
+            connectionID: connectionID,
+            connect: { [self] target, loop in
+                guard let connectionTarget = ConnectionTarget(
+                    host: target.host,
+                    port: target.port,
+                    ingressProvenance: .explicitHTTP
+                ) else {
+                    return loop.makeFailedFuture(ProxyConnectionError.egressBlocked(target.host))
+                }
+                return connectUpstreamRaw(target: connectionTarget, on: loop).map {
+                    HTTPForwardConnection(channel: $0.channel, target: $0.target.capturedTarget)
+                }
+            },
+            onCONNECT: { [self] tunnel, authority in
+                onConnectEstablished(
+                    channel: tunnel,
+                    authority: authority,
+                    connectionID: connectionID,
+                    tlsRuntime: tlsRuntime
+                )
+            },
+            onResourceLimit: { [self] in
+                sink.receive(.connectionFailure(CapturedConnectionFailure(
+                    id: connectionID,
+                    timestamp: Date(),
+                    reason: .transportFailure,
+                    stage: .capture,
+                    code: .resourceLimit
+                )))
+            }
+        )
+    }
+
+    private func onConnectEstablished(
+        channel: Channel,
+        authority: String,
+        connectionID: UUID,
+        tlsRuntime: ProxyTLSRuntime
+    ) {
+        let provenance: ConnectionIngressProvenance
+        if case .explicitHTTP = ingress {
+            provenance = .explicitHTTP
+        } else {
+            provenance = .explicitConnect
+        }
+        guard let target = ConnectionTarget(
+            explicitConnectAuthority: authority,
+            ingressProvenance: provenance
+        ) else {
+            channel.close(promise: nil)
+            return
+        }
+        let pipeline = channel.pipeline
+        let failureHandler = NIOLoopBound(
+            TransparentConnectionFailureHandler(sink: sink, connectionID: connectionID),
+            eventLoop: channel.eventLoop
+        )
+        failureHandler.value.updateTarget(target.capturedTarget())
+        guard let setupToken = connectionRegistry.beginSetup() else {
+            failureHandler.value.cancel()
+            channel.close(promise: nil)
+            return
+        }
+        setupToken.onCancellation(on: channel.eventLoop) {
+            failureHandler.value.cancel()
+            channel.close(promise: nil)
+        }
+        channel.closeFuture.whenComplete { _ in setupToken.cancel() }
+        do {
+            try pipeline.syncOperations.addHandler(failureHandler.value)
+        } catch {
+            setupToken.complete()
+            channel.close(promise: nil)
+            return
+        }
+        if interceptionPolicy.allowsPassThrough(host: target.connectionHost, port: target.port) {
+            configureExplicitOpaque(
+                channel: channel,
+                target: target,
+                failureHandler: failureHandler,
+                setupToken: setupToken
+            )
+            return
+        }
+        configureExplicitTLS(
+            channel: channel,
+            target: target,
+            failureHandler: failureHandler,
+            setupToken: setupToken,
+            tlsRuntime: tlsRuntime
+        )
+    }
+
+    private func configureExplicitTLS(
+        channel: Channel,
+        target: ConnectionTarget,
+        failureHandler: NIOLoopBound<TransparentConnectionFailureHandler>,
+        setupToken: ProxyConnectionSetupToken,
+        tlsRuntime: ProxyTLSRuntime
+    ) {
+        let pipeline = channel.pipeline
+        failureHandler.value.beginTLSSetup(
+            deadline: timeoutPolicy.tlsHandshakeDeadline.nioTimeAmount ?? .seconds(10),
+            setupToken: setupToken
+        )
+        let pendingReads = PendingTLSReads(eventLoop: channel.eventLoop)
+        do {
+            try pipeline.syncOperations.addHandler(pendingReads, position: .before(failureHandler.value))
+        } catch {
+            setupToken.complete()
+            pipeline.fireErrorCaught(error)
+            channel.close(promise: nil)
+            return
+        }
+        let loopBoundPendingReads = NIOLoopBound(pendingReads, eventLoop: channel.eventLoop)
+        removeExplicitCodecs(channel: channel)
+            .flatMap { loopBoundPendingReads.value.readClientHello(on: channel) }
+            .flatMap { [self] metadata in
+                connectInspectedTLS(
+                    metadata: metadata,
+                    target: target,
+                    tlsRuntime: tlsRuntime,
+                    setupToken: setupToken,
+                    failureHandler: failureHandler,
+                    on: channel.eventLoop
+                )
+            }
+            .flatMap { [self] upstream in
+                configureDownstreamTLS(
+                    channel: channel,
+                    upstream: upstream,
+                    pendingReads: loopBoundPendingReads,
+                    tlsRuntime: tlsRuntime,
+                    failureHandler: failureHandler
+                )
+            }
+            .flatMap { channel.setOption(ChannelOptions.autoRead, value: true) }
+            .flatMap { failureHandler.value.handoffFuture(on: channel.eventLoop) }
+            .always { _ in setupToken.complete() }
+            .whenFailure { error in
+                pipeline.fireErrorCaught(error)
+                channel.close(promise: nil)
+            }
+    }
+
+    func connectInspectedTLS(
+        metadata: ClientHelloMetadata,
+        target: ConnectionTarget,
+        tlsRuntime: ProxyTLSRuntime,
+        setupToken: ProxyConnectionSetupToken,
+        failureHandler: NIOLoopBound<TransparentConnectionFailureHandler>,
+        on loop: EventLoop
+    ) -> EventLoopFuture<ResolvedUpstreamConnection> {
+        let refinedTarget = target.applyingTLSMetadata(metadata)
+        failureHandler.value.updateTarget(refinedTarget.capturedTarget())
+        do {
+            return connectUpstreamTLS(
+                target: refinedTarget,
+                applicationProtocols: try Self.applicationProtocols(for: metadata.compatibilityALPNOffer),
+                tlsRuntime: tlsRuntime,
+                setupToken: setupToken,
+                failureHandler: failureHandler,
+                on: loop
+            )
+        } catch {
+            return loop.makeFailedFuture(error)
+        }
+    }
+
+    private func removeExplicitCodecs(channel: Channel) -> EventLoopFuture<Void> {
+        let removeEncoder = channel.pipeline.removeHandler(name: Self.encoderName)
+        return removeEncoder.flatMap { channel.pipeline.removeHandler(name: Self.decoderName) }
+    }
+
+    private func configureExplicitOpaque(
+        channel: Channel,
+        target: ConnectionTarget,
+        failureHandler: NIOLoopBound<TransparentConnectionFailureHandler>,
+        setupToken: ProxyConnectionSetupToken
+    ) {
+        failureHandler.value.updateStage(.connect)
+        let codecsRemoved = channel.eventLoop.makePromise(of: Void.self)
+        let classifier = TransparentApplicationClassifier(passThrough: { [self] _, _ in
+            codecsRemoved.futureResult
+                .flatMap { [self] in
+                    connectUpstreamRaw(
+                        target: target,
+                        on: channel.eventLoop,
+                        setupToken: setupToken,
+                        allowHalfClosure: true
+                    )
+                }
+                .flatMap { [self] upstream in
+                    bridgeOpaque(
+                        inbound: channel,
+                        upstream: upstream,
+                        failureHandler: failureHandler,
+                        reason: .policySelected
+                    )
+                }
+                .map { .manual }
+                .always { _ in setupToken.complete() }
+        })
+        do {
+            try channel.pipeline.syncOperations.addHandler(classifier, position: .before(failureHandler.value))
+        } catch {
+            codecsRemoved.fail(error)
+            setupToken.complete()
+            channel.pipeline.fireErrorCaught(error)
+            channel.close(promise: nil)
+            return
+        }
+        channel.setOption(ChannelOptions.allowRemoteHalfClosure, value: true)
+            .flatMap { [self] in removeExplicitCodecs(channel: channel) }
+            .cascade(to: codecsRemoved)
+    }
+}

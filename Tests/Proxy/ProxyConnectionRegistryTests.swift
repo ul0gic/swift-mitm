@@ -69,6 +69,7 @@ final class ProxyConnectionRegistryTests: XCTestCase {
 
         XCTAssertTrue(token.isCancelled)
         XCTAssertEqual(callbackCount.withLockedValue { $0 }, 1)
+        XCTAssertFalse(token.complete())
         XCTAssertTrue(registry.beginShutdown().isEmpty)
         await registry.waitForQuiescence()
         registry.finishShutdown()

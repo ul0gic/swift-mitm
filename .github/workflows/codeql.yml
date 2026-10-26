@@ -20,13 +20,15 @@ jobs:
   analyze:
     name: CodeQL (${{ matrix.language }})
     runs-on: ${{ matrix.os }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
           - language: swift
-            os: macos-26
+            os: xcode-27
             build-mode: manual
           - language: actions
             os: ubuntu-24.04
@@ -43,7 +45,12 @@ jobs:
       - name: Build Swift package
         if: matrix.language == 'swift'
         run: |
-          swift build -c release
+          xcodebuild -version | tee "$RUNNER_TEMP/xcode.txt"
+          grep -Fx 'Xcode 27.1' "$RUNNER_TEMP/xcode.txt"
+          grep -Fx 'Build version 27A9275' "$RUNNER_TEMP/xcode.txt"
+          swift --version | tee "$RUNNER_TEMP/swift.txt"
+          grep -Eq 'Swift version 6\.4([ .]|$)' "$RUNNER_TEMP/swift.txt"
+          swift build -c release --force-resolved-versions -Xswiftc -warnings-as-errors
           git diff --exit-code -- Package.resolved
       - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:

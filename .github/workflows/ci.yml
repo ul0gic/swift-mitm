@@ -13,53 +13,441 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash
+
+env:
+  DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+
 jobs:
-  scope:
-    name: Change scope
-    runs-on: ubuntu-24.04
-    outputs:
-      docs_only: ${{ steps.scope.outputs.docs_only }}
+  tests:
+    name: Tests (${{ matrix.partition }}, ${{ matrix.os }})
+    needs: consumer
+    if: ${{ !cancelled() }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [behavior, compatibility, resources]
+        os: [xcode-27]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - id: scope
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-        shell: bash
+      - name: Record candidate and toolchain
         run: |
-          docs_only=false
-          if [[ -n "$BASE_SHA" && ! "$BASE_SHA" =~ ^0+$ ]]; then
-            git diff --name-only --no-renames -z "$BASE_SHA" HEAD > "$RUNNER_TEMP/changed-paths"
-            docs_only=true
-            while IFS= read -r -d '' path; do
-              [[ "$path" == *.md ]] || docs_only=false
-            done < "$RUNNER_TEMP/changed-paths"
-            git diff --check "$BASE_SHA" HEAD
+          mkdir -p evidence
+          git rev-parse HEAD > evidence/candidate-sha.txt
+          sw_vers > evidence/os.txt
+          swift --version > evidence/swift.txt
+          xcodebuild -version > evidence/xcode.txt
+          grep -Fx 'Xcode 27.1' evidence/xcode.txt
+          grep -Fx 'Build version 27A9275' evidence/xcode.txt
+          grep -Eq 'Swift version 6\.4([ .]|$)' evidence/swift.txt
+      - name: Install pinned independent clients
+        if: matrix.partition == 'compatibility'
+        run: |
+          client_python="$(find "$RUNNER_TOOL_CACHE/Python" -path '*/3.14.*/arm64/bin/python3' -print -quit)"
+          test -n "$client_python"
+          "$client_python" --version | grep -E '^Python 3\.14\.'
+          "$client_python" -m venv "$RUNNER_TEMP/clients"
+          "$RUNNER_TEMP/clients/bin/python" -m pip install --only-binary=:all: \
+            grpcio==1.85.0 cryptography==50.0.2 playwright==1.64.1 \
+            typing-extensions==4.16.0 cffi==2.1.1 pycparser==3.12 pyee==14.0.0 greenlet==3.5.6
+          "$RUNNER_TEMP/clients/bin/python" --version > evidence/python.txt
+          "$RUNNER_TEMP/clients/bin/python" -m pip freeze > evidence/python-packages.txt
+          case "$(uname -m)" in
+            arm64) platform=mac-arm64 ;;
+            x86_64) platform=mac-x64 ;;
+            *) exit 1 ;;
+          esac
+          curl --fail --location --output "$RUNNER_TEMP/chrome.zip" \
+            "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.47/$platform/chrome-$platform.zip"
+          unzip -q "$RUNNER_TEMP/chrome.zip" -d "$RUNNER_TEMP/chromium"
+          chromium="$RUNNER_TEMP/chromium/chrome-$platform/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+          "$chromium" --version > evidence/chromium.txt
+          echo "SWIFTMITM_CHROMIUM_PATH=$chromium" >> "$GITHUB_ENV"
+          echo "SWIFTMITM_CLIENT_PYTHON=$RUNNER_TEMP/clients/bin/python" >> "$GITHUB_ENV"
+      - name: Download independently built public consumer
+        if: matrix.partition == 'compatibility'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: consumer-current-${{ github.sha }}
+          path: ${{ runner.temp }}/consumer
+      - name: Prepare public consumer executable
+        if: matrix.partition == 'compatibility'
+        run: |
+          test "$(cat "$RUNNER_TEMP/consumer/candidate-sha.txt")" = "$GITHUB_SHA"
+          tar -xzf "$RUNNER_TEMP/consumer/FirstCapture.tar.gz" -C "$RUNNER_TEMP/consumer"
+          test -x "$RUNNER_TEMP/consumer/FirstCapture"
+          echo "SWIFTMITM_FIRST_CAPTURE=$RUNNER_TEMP/consumer/FirstCapture" >> "$GITHUB_ENV"
+      - name: Build and discover executable tests
+        run: |
+          swift build --build-tests --force-resolved-versions -Xswiftc -warnings-as-errors
+          swift test list --skip-build > evidence/discovered-tests.txt
+          git diff --exit-code -- Package.resolved
+      - name: Partition every discovered method exactly once
+        env:
+          PARTITION: ${{ matrix.partition }}
+        run: |
+          python3 - <<'PY'
+          import collections, os, pathlib, re
+          root = pathlib.Path('evidence')
+          tests = [line.strip() for line in (root / 'discovered-tests.txt').read_text().splitlines()
+                   if re.fullmatch(r'SwiftMITMTests\.\w+/test\w+', line.strip())]
+          assert tests, 'No XCTest methods discovered'
+          assert len(tests) == len(set(tests)), 'Duplicate discovered methods'
+          resources = {'Phase6OpaqueResourceTests', 'Phase6TransparentResourceTests',
+                       'ProductionProxyBackpressureTests', 'PublicProxyHTTP2WebSocketBackpressureTests',
+                       'StreamingBackpressureTests', 'Release022CorrelationResourceTests'}
+          compatibility = {'AppleTLSProxyCompatibilityTests', 'Phase4PublicTransparentTLSTests',
+                           'ProxyDiagnosticTests', 'PublicProxyHTTP2WebSocketTests',
+                           'Release022PublicTrustTests', 'Release022ClientCompatibilityTests',
+                           'Release022BrowserCompatibilityTests', 'Release022IndependentGRPCCompatibilityTests',
+                           'Release022ConsumerCompatibilityTests'}
+          required = resources | compatibility | {'Release022PublicHTTP1Tests',
+                                                  'Release022PublicHTTP1ForwardingTests',
+                                                  'Release022PublicHTTP1OctetTests',
+                                                  'Release022PublicHTTP2StreamingTests',
+                                                  'Release022PublicHTTP2MalformedTests',
+                                                  'Release022PublicReadOwnershipTests'}
+          classes = {test.split('.', 1)[1].split('/', 1)[0] for test in tests}
+          assert required <= classes, f'Missing required classes: {sorted(required - classes)}'
+          expected = {
+              'Release022ClientCompatibilityTests': {
+                  'testCurlHTTPAndHTTPSWithExplicitTrust',
+                  'testURLSessionHTTP11WithExplicitTrustAndProxy',
+                  'testURLSessionHTTP2WithExplicitTrustAndProxy'},
+              'Release022BrowserCompatibilityTests': {
+                  'testWKWebViewSSEAndWebSocketThroughPublicProxyWithExplicitTrust',
+                  'testChromiumSSEAndWebSocketThroughPublicProxyWithRunnerTrust'},
+              'Release022IndependentGRPCCompatibilityTests': {
+                  'testIndependentGRPCClientAndServerThroughPublicProxy'},
+              'Release022ConsumerCompatibilityTests': {
+                  'testExternalFirstCaptureCapturesHTTPAndHTTPSAndDrainsOnStop',
+                  'testAsyncConsumerByteOverflowReportsTerminalLossWhileForwardingCompletes',
+                  'testAsyncConsumerEventOverflowReportsTerminalLossWhileForwardingCompletes',
+                  'testSIGTERMExitsWithUnreadStdoutAfterProxyForwardingCompletes',
+                  'testBrokenStdoutReportsOutputFailureAndStillForwardsUntilSIGTERM'},
+              'Release022PublicReadOwnershipTests': {
+                  'testExplicitHTTPReadsClientHelloSentAfterCONNECTResponse',
+                  'testExplicitWebSocketReadsLaterFramesAfterEachDirectionBarrier',
+                  'testLocalStopFailsHeldCloseDelimitedResponseWithoutCleanEnd'},
+              'Release022CorrelationResourceTests': {
+                  'testCountCeilingThenOneOverFailsAllOutstandingIDs',
+                  'testMethodByteCeilingThenOneOverFailsAllOutstandingIDs',
+                  'testCombinedCeilingsThenOneOverFailsAllOutstandingIDs',
+                  'testMaximumCorrelationDrainsAndRefillsOneHundredCycles'}}
+          expected_methods = {f'SwiftMITMTests.{cls}/{method}'
+                              for cls, methods in expected.items() for method in methods}
+          assert expected_methods <= set(tests), f'Missing methods: {sorted(expected_methods - set(tests))}'
+          partitions = collections.defaultdict(list)
+          for test in sorted(tests):
+              cls = test.split('.', 1)[1].split('/', 1)[0]
+              partition = 'resources' if cls in resources else 'compatibility' if cls in compatibility else 'behavior'
+              partitions[partition].append(test)
+          assigned = [test for methods in partitions.values() for test in methods]
+          assert collections.Counter(assigned) == collections.Counter(tests), 'Partition omissions or duplicates'
+          for partition in ('behavior', 'compatibility', 'resources'):
+              assert partitions[partition], f'Empty required partition: {partition}'
+              (root / f'{partition}-tests.txt').write_text('\n'.join(partitions[partition]) + '\n')
+          selected = partitions[os.environ['PARTITION']]
+          (root / 'filter.txt').write_text('^(' + '|'.join(re.escape(test) for test in selected) + ')$')
+          print({key: len(value) for key, value in partitions.items()})
+          PY
+      - name: Run partition
+        env:
+          PARTITION: ${{ matrix.partition }}
+        run: |
+          options=(--parallel --num-workers 1)
+          if [[ "$PARTITION" == behavior ]]; then options=(--parallel); fi
+          swift test --verbose --skip-build "${options[@]}" --filter "$(cat evidence/filter.txt)" \
+            --xunit-output evidence/results.xml 2>&1 | tee evidence/tests.log
+      - name: Require every selected method to execute
+        env:
+          PARTITION: ${{ matrix.partition }}
+        run: |
+          python3 - <<'PY'
+          import collections, os, pathlib, re, xml.etree.ElementTree as ET
+          root = pathlib.Path('evidence')
+          selected = (root / f'{os.environ["PARTITION"]}-tests.txt').read_text().splitlines()
+          report = ET.parse(root / 'results.xml')
+          executed = [f'{case.attrib["classname"]}/{case.attrib["name"]}'
+                      for case in report.iter('testcase')]
+          assert collections.Counter(selected) == collections.Counter(executed), 'Executed methods differ from partition'
+          assert report.find('.//failure') is None, 'Test failure in result artifact'
+          assert report.find('.//skipped') is None, 'Skipped test in result artifact'
+          assert not re.search(r"Test Case .* skipped", (root / 'tests.log').read_text()), 'XCTest skip is not qualification'
+          PY
+      - name: Retain candidate test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tests-${{ matrix.partition }}-${{ matrix.os }}-${{ github.sha }}
+          path: evidence/
+          if-no-files-found: error
+
+  quality:
+    name: Format and lint
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned formatting tools
+        run: |
+          mkdir -p "$RUNNER_TEMP/swiftformat" "$RUNNER_TEMP/swiftlint"
+          curl --fail --location --output "$RUNNER_TEMP/swiftformat.zip" \
+            https://github.com/nicklockwood/SwiftFormat/releases/download/0.64.1/swiftformat.zip
+          curl --fail --location --output "$RUNNER_TEMP/swiftlint.zip" \
+            https://github.com/realm/SwiftLint/releases/download/0.65.1/portable_swiftlint.zip
+          echo '0e5762a848d738602c7a983b26812031e634d85e357db070968b9c805f253eff  '"$RUNNER_TEMP/swiftformat.zip" | shasum -a 256 -c -
+          echo 'c1e429b0599cf1b516f369a2d9ec04eaf0e436f3c12b637df8851fa52ff694d0  '"$RUNNER_TEMP/swiftlint.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/swiftformat.zip" -d "$RUNNER_TEMP/swiftformat"
+          unzip -q "$RUNNER_TEMP/swiftlint.zip" -d "$RUNNER_TEMP/swiftlint"
+          "$RUNNER_TEMP/swiftformat/swiftformat" --version
+          "$RUNNER_TEMP/swiftlint/swiftlint" version
+      - name: Check formatting
+        run: '"$RUNNER_TEMP/swiftformat/swiftformat" --lint Sources Tests Examples Package.swift'
+      - name: Check lint
+        run: '"$RUNNER_TEMP/swiftlint/swiftlint" lint --strict --quiet'
+
+  distribution:
+    name: Candidate distribution
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build release and versioned documentation before tagging
+        run: |
+          mkdir -p distribution
+          version="$(sed -n '1s/^# SwiftMITM //p' RELEASE_NOTES.md)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          swift --version > distribution/swift.txt
+          sw_vers > distribution/os.txt
+          xcodebuild -version > distribution/xcode.txt
+          grep -Fx 'Xcode 27.1' distribution/xcode.txt
+          grep -Fx 'Build version 27A9275' distribution/xcode.txt
+          grep -Eq 'Swift version 6\.4([ .]|$)' distribution/swift.txt
+          swift build -c release --force-resolved-versions -Xswiftc -warnings-as-errors
+          swift package --force-resolved-versions dump-symbol-graph --minimum-access-level public
+          graph="$(find .build -type d -name symbolgraph -print -quit)"
+          test -n "$graph"
+          mkdir -p "$RUNNER_TEMP/swiftmitm-symbols"
+          cp "$graph"/SwiftMITM.symbols.json "$RUNNER_TEMP/swiftmitm-symbols/"
+          for extension_graph in "$graph"/SwiftMITM@*.symbols.json; do
+            if [[ -f "$extension_graph" ]]; then cp "$extension_graph" "$RUNNER_TEMP/swiftmitm-symbols/"; fi
+          done
+          xcrun docc convert Sources/SwiftMITM.docc \
+            --additional-symbol-graph-dir "$RUNNER_TEMP/swiftmitm-symbols" \
+            --output-path "$RUNNER_TEMP/SwiftMITM.doccarchive" \
+            --fallback-display-name SwiftMITM \
+            --fallback-bundle-identifier com.ul0gic.SwiftMITM \
+            --fallback-bundle-version "$version" \
+            --warnings-as-errors
+          ditto -c -k --keepParent "$RUNNER_TEMP/SwiftMITM.doccarchive" "distribution/SwiftMITM-$version.doccarchive.zip"
+          printf '%s\n' "$GITHUB_SHA" > distribution/candidate-sha.txt
+          printf '%s\n' "$version" > distribution/version.txt
+          shasum -a 256 distribution/*.zip > distribution/SHA256SUMS
+          git diff --exit-code -- Package.resolved
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: swiftmitm-docc-${{ github.sha }}
+          path: distribution/
+          if-no-files-found: error
+
+  consumer:
+    name: External consumer (${{ matrix.compiler }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: current
+            os: xcode-27
+          - compiler: swift-6.4.1
+            os: xcode-27
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install signed Swift 6.4.1 toolchain
+        if: matrix.compiler == 'swift-6.4.1'
+        run: |
+          curl --fail --location --output "$RUNNER_TEMP/swift-6.4.1.pkg" \
+            https://download.swift.org/swift-6.4.1-release/xcode/swift-6.4.1-RELEASE/swift-6.4.1-RELEASE-osx.pkg
+          pkgutil --check-signature "$RUNNER_TEMP/swift-6.4.1.pkg" | tee "$RUNNER_TEMP/swift-signature.txt"
+          grep -F 'Developer ID Installer: Swift Open Source (V9AUD2URP3)' "$RUNNER_TEMP/swift-signature.txt"
+          installer -target CurrentUserHomeDirectory -pkg "$RUNNER_TEMP/swift-6.4.1.pkg"
+          echo 'TOOLCHAINS=swift' >> "$GITHUB_ENV"
+      - name: Compile public example as external package at candidate revision
+        env:
+          COMPILER: ${{ matrix.compiler }}
+        run: |
+          mkdir -p evidence
+          swift --version | tee evidence/swift.txt
+          sw_vers > evidence/os.txt
+          xcodebuild -version > evidence/xcode.txt
+          grep -Fx 'Xcode 27.1' evidence/xcode.txt
+          grep -Fx 'Build version 27A9275' evidence/xcode.txt
+          if [[ "$COMPILER" == swift-6.4.1 ]]; then
+            grep -Eq 'Swift version 6\.4\.1([ (]|$)' evidence/swift.txt
+            cp "$RUNNER_TEMP/swift-signature.txt" evidence/
+          else
+            grep -Eq 'Swift version 6\.4([ .]|$)' evidence/swift.txt
           fi
-          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+          git rev-parse HEAD > evidence/candidate-sha.txt
+          cp -R Examples/FirstCapture "$RUNNER_TEMP/FirstCapture"
+          cp Package.resolved "$RUNNER_TEMP/FirstCapture/Package.resolved"
+          python3 - <<'PY'
+          import os, pathlib
+          manifest = pathlib.Path(os.environ['RUNNER_TEMP']) / 'FirstCapture/Package.swift'
+          source = manifest.read_text()
+          old = '.package(path: "../..")'
+          assert source.count(old) == 1, 'Expected the public example local dependency once'
+          dependency = f'.package(url: "file://{os.environ["GITHUB_WORKSPACE"]}", revision: "{os.environ["GITHUB_SHA"]}")'
+          manifest.write_text(source.replace(old, dependency))
+          PY
+          cd "$RUNNER_TEMP/FirstCapture"
+          swift build -c release -Xswiftc -warnings-as-errors 2>&1 | tee "$GITHUB_WORKSPACE/evidence/build.log"
+          cp Package.resolved "$GITHUB_WORKSPACE/evidence/Package.resolved"
+          python3 - <<'PY'
+          import json, os, pathlib
+          candidate = pathlib.Path(os.environ['GITHUB_WORKSPACE'])
+          original = {pin['identity']: pin['state'] for pin in json.loads((candidate / 'Package.resolved').read_text())['pins']}
+          external = {pin['identity']: pin['state'] for pin in json.loads(pathlib.Path('Package.resolved').read_text())['pins']}
+          assert external['swift-mitm']['revision'] == os.environ['GITHUB_SHA'], 'Consumer did not resolve the candidate'
+          assert all(external.get(name) == state for name, state in original.items()), 'Consumer dependency versions drifted'
+          PY
+          if [[ "$COMPILER" == current ]]; then
+            binary_directory="$(swift build -c release --show-bin-path)"
+            tar -czf "$GITHUB_WORKSPACE/evidence/FirstCapture.tar.gz" -C "$binary_directory" FirstCapture
+          fi
+      - name: Retain external compiler evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: consumer-${{ matrix.compiler }}-${{ github.sha }}
+          path: evidence/
+          if-no-files-found: error
+
+  minimum-runtime:
+    name: macOS 26 public consumer smoke
+    needs: consumer
+    runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: consumer-current-${{ github.sha }}
+          path: ${{ runner.temp }}/consumer
+      - name: Exercise the Xcode 27.1 binary on the deployment minimum
+        run: |
+          mkdir -p evidence
+          sw_vers > evidence/os.txt
+          grep -Eq '^ProductVersion:[[:space:]]+26\.' evidence/os.txt
+          test "$(cat "$RUNNER_TEMP/consumer/candidate-sha.txt")" = "$GITHUB_SHA"
+          cp "$RUNNER_TEMP/consumer/candidate-sha.txt" evidence/
+          cp "$RUNNER_TEMP/consumer/swift.txt" evidence/build-swift.txt
+          cp "$RUNNER_TEMP/consumer/xcode.txt" evidence/build-xcode.txt
+          tar -xzf "$RUNNER_TEMP/consumer/FirstCapture.tar.gz" -C "$RUNNER_TEMP/consumer"
+          export OPENSSL_BIN="$(brew --prefix openssl@3)/bin/openssl"
+          "$OPENSSL_BIN" version > evidence/openssl.txt
+          python3 - <<'PY'
+          import http.server, json, os, pathlib, selectors, signal, subprocess, tempfile, threading, time
+          body = b'SwiftMITM macOS 26 runtime smoke\n'
+          class Origin(http.server.BaseHTTPRequestHandler):
+              def do_GET(self):
+                  self.send_response(200)
+                  self.send_header('Content-Length', str(len(body)))
+                  self.end_headers()
+                  self.wfile.write(body)
+              def log_message(self, *_):
+                  pass
+          evidence = pathlib.Path('evidence')
+          binary = pathlib.Path(os.environ['RUNNER_TEMP']) / 'consumer/FirstCapture'
+          origin = http.server.HTTPServer(('127.0.0.1', 0), Origin)
+          origin_thread = threading.Thread(target=origin.serve_forever)
+          origin_thread.start()
+          process = None
+          try:
+              with tempfile.TemporaryDirectory() as temporary:
+                  root = pathlib.Path(temporary)
+                  key, certificate = root / 'ca-key.pem', root / 'ca.pem'
+                  subprocess.run([os.environ['OPENSSL_BIN'], 'genpkey', '-algorithm', 'EC', '-pkeyopt',
+                                  'ec_paramgen_curve:P-256', '-out', str(key)], check=True, timeout=20)
+                  subprocess.run([os.environ['OPENSSL_BIN'], 'req', '-new', '-x509', '-key', str(key),
+                                  '-out', str(certificate), '-days', '1', '-subj', '/CN=SwiftMITM CI',
+                                  '-addext', 'basicConstraints=critical,CA:TRUE',
+                                  '-addext', 'keyUsage=critical,keyCertSign,cRLSign'], check=True, timeout=20)
+                  with (evidence / 'stderr.txt').open('wb') as errors:
+                      process = subprocess.Popen([str(binary), '--ca-cert', str(certificate),
+                          '--ca-key', str(key), '--port', '0', '--allow-internal'],
+                          stdout=subprocess.PIPE, stderr=errors)
+                      with selectors.DefaultSelector() as selector:
+                          selector.register(process.stdout, selectors.EVENT_READ)
+                          deadline = time.monotonic() + 20
+                          first = bytearray()
+                          while not first.endswith(b'\n'):
+                              assert selector.select(timeout=max(0, deadline - time.monotonic())), 'Proxy did not announce startup'
+                              chunk = os.read(process.stdout.fileno(), 4096)
+                              assert chunk, 'Proxy exited before announcing startup'
+                              first.extend(chunk)
+                      listening = json.loads(first)
+                      assert listening['type'] == 'listening'
+                      response = subprocess.run(['/usr/bin/curl', '--silent', '--show-error', '--fail',
+                          '--max-time', '20', '--noproxy', '', '--proxy',
+                          f'http://127.0.0.1:{listening["port"]}',
+                          f'http://127.0.0.1:{origin.server_port}/smoke'],
+                          check=True, stdout=subprocess.PIPE, timeout=25)
+                      assert response.stdout == body, 'Forwarded response differs from origin bytes'
+                      process.send_signal(signal.SIGINT)
+                      remaining, _ = process.communicate(timeout=20)
+                      transcript = first + remaining
+                      (evidence / 'events.jsonl').write_bytes(transcript)
+                      assert process.returncode == 0, 'Proxy did not stop cleanly'
+                      events = [json.loads(line)['type'] for line in transcript.splitlines()]
+                      assert events.count('requestHead') == 1 and events.count('responseEnd') == 1
+                      assert events[-1] == 'stopped'
+                      assert not {'streamError', 'connectionFailure', 'deliveryLoss'} & set(events)
+                  (evidence / 'scope.txt').write_text(
+                      'Passed public startup, HTTP forwarding/capture and SIGINT stop only.\n'
+                      'TLS, streaming clients and resource ceilings on macOS 26 remain unverified.\n')
+          finally:
+              if process is not None and process.poll() is None:
+                  process.kill()
+                  process.wait(timeout=10)
+              origin.shutdown()
+              origin.server_close()
+              origin_thread.join(timeout=10)
+          PY
+      - name: Retain minimum-runtime smoke evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: minimum-runtime-${{ github.sha }}
+          path: evidence/
+          if-no-files-found: error
 
   verify:
     name: Verify
-    needs: scope
+    needs: [tests, quality, distribution, consumer, minimum-runtime]
     if: always()
-    runs-on: ${{ needs.scope.outputs.docs_only == 'true' && 'ubuntu-24.04' || 'macos-26' }}
-    timeout-minutes: 45
+    runs-on: ubuntu-24.04
     steps:
-      - name: Require successful scope assessment
-        if: needs.scope.result != 'success'
-        run: exit 1
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Check documentation-only change
-        if: needs.scope.outputs.docs_only == 'true'
-        run: echo 'Documentation-only change; no Swift build needed.'
-      - name: Run tests
-        if: needs.scope.outputs.docs_only != 'true'
-        shell: bash
+      - name: Require every configured candidate job
+        env:
+          RESULTS: ${{ toJSON(needs) }}
         run: |
-          isolated='SwiftMITMTests\.(Phase4PublicTransparentTLSTests|Phase6OpaqueResourceTests|Phase6TransparentResourceTests|ProductionProxyBackpressureTests|ProxyDiagnosticTests|PublicProxyHTTP2WebSocketBackpressureTests|PublicProxyHTTP2WebSocketTests|StreamingBackpressureTests)'
-          swift test --force-resolved-versions --parallel --skip "$isolated"
-          swift test --skip-build --filter "$isolated"
+          jq -e 'all(.[]; .result == "success")' <<< "$RESULTS"
+          printf 'Candidate `%s`: all configured checks passed.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Configured current-runtime clients: curl, URLSession HTTP/1.1 + HTTP/2, WKWebView SSE/WebSocket, pinned stable Chromium and independent gRPC.\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'Runtime evidence covers macOS 27 suites and a macOS 26 public-consumer smoke. Full minimum-runtime acceptance remains incomplete; the smoke does not replace the client/resource matrix.\n' >> "$GITHUB_STEP_SUMMARY"

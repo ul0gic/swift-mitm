@@ -268,8 +268,9 @@ final class PendingTLSReads: ChannelInboundHandler, RemovableChannelHandler {
     typealias InboundIn = ByteBuffer
 
     let clientALPNOffer: EventLoopFuture<ClientALPNOffer>
+    let clientHello: EventLoopFuture<ClientHelloMetadata>
 
-    private let clientALPNOfferPromise: EventLoopPromise<ClientALPNOffer>
+    private let clientHelloPromise: EventLoopPromise<ClientHelloMetadata>
     private var reads: [ByteBuffer] = []
     private var bufferedByteCount = 0
     private var readComplete = false
@@ -282,8 +283,15 @@ final class PendingTLSReads: ChannelInboundHandler, RemovableChannelHandler {
     }
 
     init(eventLoop: EventLoop) {
-        clientALPNOfferPromise = eventLoop.makePromise()
-        clientALPNOffer = clientALPNOfferPromise.futureResult
+        clientHelloPromise = eventLoop.makePromise()
+        clientHello = clientHelloPromise.futureResult
+        clientALPNOffer = clientHello.map { $0.compatibilityALPNOffer }
+    }
+
+    func readClientHello(on channel: Channel) -> EventLoopFuture<ClientHelloMetadata> {
+        guard !completed else { return clientHello }
+        return channel.setOption(ChannelOptions.autoRead, value: true)
+            .flatMap { [clientHello] in clientHello }
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
@@ -340,8 +348,8 @@ final class PendingTLSReads: ChannelInboundHandler, RemovableChannelHandler {
             guard let metadata = try inspector.append(buffer.readableBytesView) else { return }
             completed = true
             context.channel.setOption(ChannelOptions.autoRead, value: false)
-                .map { metadata.compatibilityALPNOffer }
-                .cascade(to: clientALPNOfferPromise)
+                .map { metadata }
+                .cascade(to: clientHelloPromise)
         } catch {
             failIfPending(error)
             context.close(promise: nil)
@@ -351,6 +359,6 @@ final class PendingTLSReads: ChannelInboundHandler, RemovableChannelHandler {
     private func failIfPending(_ error: Error) {
         guard !completed else { return }
         completed = true
-        clientALPNOfferPromise.fail(error)
+        clientHelloPromise.fail(error)
     }
 }

@@ -7,6 +7,10 @@ import NIOHTTP2
 final class HTTP2StreamErrorState: Sendable {
     private let emitted = NIOLockedValueBox(false)
 
+    var isFailed: Bool {
+        emitted.withLockedValue { $0 }
+    }
+
     func claim() -> Bool {
         emitted.withLockedValue { value in
             guard !value else { return false }
@@ -30,6 +34,12 @@ final class HTTP2CaptureTapHandler: ChannelInboundHandler {
         case body
         case ended
         case failed
+    }
+
+    private enum PayloadDisposition {
+        case forward
+        case consume
+        case terminate
     }
 
     private static let errorMessage = "HTTP/2 capture stream invalid"
@@ -66,23 +76,28 @@ final class HTTP2CaptureTapHandler: ChannelInboundHandler {
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let payload = unwrapInboundIn(data)
-        let shouldForward: Bool
+        let disposition: PayloadDisposition
         switch payload {
+        case .windowUpdate:
+            disposition = .consume
         case .headers(let frame):
-            shouldForward = processHeaders(frame.headers, endStream: frame.endStream)
+            disposition = processHeaders(frame.headers, endStream: frame.endStream) ? .forward : .terminate
         case .data(let frame):
-            shouldForward = processData(frame.data, endStream: frame.endStream)
+            disposition = processData(frame.data, endStream: frame.endStream) ? .forward : .terminate
         case .rstStream:
             if streamContext?.value.isWebSocketCaptureClosed != true {
                 failCapture(terminateStream: streamContext?.value.requiresStreamTerminationForViolation == true)
             }
-            shouldForward = true
+            disposition = .forward
         default:
-            shouldForward = true
+            disposition = .forward
         }
-        if shouldForward {
+        switch disposition {
+        case .forward:
             context.fireChannelRead(data)
-        } else {
+        case .consume:
+            break
+        case .terminate:
             context.close(promise: nil)
         }
     }
@@ -92,11 +107,12 @@ final class HTTP2CaptureTapHandler: ChannelInboundHandler {
            streamContext?.value.isWebSocketCaptureClosed != true {
             failCapture(terminateStream: streamContext?.value.requiresStreamTerminationForViolation == true)
         }
+        streamContext?.value.terminate(failed: false)
         context.fireChannelInactive()
     }
 
     func errorCaught(context: ChannelHandlerContext, error: Error) {
-        if isResponseEndWindowUpdateError(error) || isPostResponseEndCancellation(error) {
+        if isPostResponseEndCancellation(error) {
             return
         }
         if streamContext?.value.isWebSocketCaptureClosed != true {
@@ -106,6 +122,7 @@ final class HTTP2CaptureTapHandler: ChannelInboundHandler {
     }
 
     private func processHeaders(_ headers: HPACKHeaders, endStream: Bool) -> Bool {
+        guard !errorState.isFailed else { return true }
         switch (direction, phase) {
         case (.request, .awaitingHead):
             return processInitialRequestHeaders(headers, endStream: endStream)
@@ -193,6 +210,7 @@ final class HTTP2CaptureTapHandler: ChannelInboundHandler {
     }
 
     private func processData(_ data: IOData, endStream: Bool) -> Bool {
+        guard !errorState.isFailed else { return true }
         guard phase == .body else {
             if phase != .failed {
                 failCapture(terminateStream: streamContext?.value.requiresStreamTerminationForViolation == true)
@@ -334,15 +352,6 @@ final class HTTP2CaptureTapHandler: ChannelInboundHandler {
 }
 
 private extension HTTP2CaptureTapHandler {
-    private func isResponseEndWindowUpdateError(_ error: Error) -> Bool {
-        guard direction == .response,
-              streamContext?.value.state == .acceptedWebSocket,
-              let transition = error as? NIOHTTP2Errors.BadStreamStateTransition else {
-            return false
-        }
-        return transition.fromState == .halfClosedRemoteLocalActive
-    }
-
     private func isPostResponseEndCancellation(_ error: Error) -> Bool {
         guard direction == .response, phase == .ended,
               streamContext?.value.isWebSocketCaptureClosed == true,

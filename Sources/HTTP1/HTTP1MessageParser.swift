@@ -101,6 +101,14 @@ final class HTTP1MessageParser {
         if case .bodyUntilClose = phase {
             emit(.messageComplete)
             phase = .head
+        } else if case .head = phase, headBytes.isEmpty {
+            return
+        } else if case .tunnel = phase {
+            return
+        } else if case .failed = phase {
+            return
+        } else {
+            fail(emit: emit)
         }
     }
 
@@ -240,11 +248,7 @@ final class HTTP1MessageParser {
             if Self.endsWithCRLF(lineBytes) {
                 let isBlankLine = lineBytes.count == 2
                 if !isBlankLine {
-                    guard let line = String(bytes: lineBytes.dropLast(2), encoding: .utf8) else {
-                        fail(emit: emit)
-                        return end
-                    }
-                    trailerLines.append(line)
+                    trailerLines.append(Self.fieldText(lineBytes.dropLast(2)))
                 }
                 lineBytes.removeAll(keepingCapacity: true)
                 if isBlankLine {

@@ -2,7 +2,22 @@
 
 All notable SwiftMITM changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.2.2 - candidate preparation (unreleased)
+
+These notes describe candidate source. The release acceptance gate has not completed, and 0.2.2 has not been published.
+
+### Added
+
+- Opt-in explicit HTTP/1.1 absolute-form forwarding on the existing listener alongside HTTPS `CONNECT`; CONNECT-only ingress remains the default.
+- Exact-authority opaque pass-through policy and explicit reasons distinguishing policy selection from protocol-classification fallback.
+- Typed connection-failure stage and code metadata, plus configurable HTTP/1 correlation bounds.
+- A public-import first-capture proxy example with bounded asynchronous event delivery and visible overflow handling.
+
+### Changed
+
+- Candidate HTTP/1.1 SSE and HTTP/2 gRPC paths capture streamed raw body bytes and HTTP trailers without semantic decoding.
+- Candidate migration adds `.explicitHTTP` ingress and provenance cases. Its in-repository codec maps permitted received header and trailer octets back to equal octets when serializing, but does not preserve original whitespace or complete wire formatting; compilation, linkage, and runtime fidelity remain unverified.
+- Raise the package/example baseline to Swift tools 6.4 and macOS 26+, with Xcode 27.1 for builds; candidate compiler and runtime verification remains pending.
 
 ## 0.2.1 - 2026-08-21
 
