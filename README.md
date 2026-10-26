@@ -152,11 +152,9 @@ Opaque `bytes` contains only retained bytes, while `byteCount` is the complete o
 
 ## Development
 
-```sh
-Scripts/verify.sh
-```
+GitHub Actions runs tests on pushes to `main` and pull requests. CodeQL scans Swift and workflow code on those events and weekly. Dependabot monitors dependencies and proposes Swift and SHA-pinned action updates; dependency review checks pull requests for newly introduced high or critical vulnerabilities.
 
-The release gate runs format and strict lint checks, partitioned tests, a release build, and DocC validation. See [CHANGELOG.md](CHANGELOG.md), [CONTRIBUTING.md](CONTRIBUTING.md), and [RELEASING.md](RELEASING.md) for release and contribution policy.
+Release validation runs in GitHub Actions. There is no required local gate. See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## Support and security
 

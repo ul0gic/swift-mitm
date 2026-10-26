@@ -2,17 +2,11 @@
 
 Open an issue before proposing a behavior or public-API change. Keep changes scoped to the standalone SwiftPM library; application UI, persistence, and host-product behavior do not belong in SwiftMITM.
 
-## Local gate
+## Verification
 
-Install Swift 6, SwiftFormat, and SwiftLint, then run:
+GitHub Actions owns verification; no local gate is required. Pull requests receive tests, CodeQL analysis, and dependency review before merging. Markdown-only changes skip the Swift test build. CodeQL also scans weekly, and Dependabot monitors dependency advisories and proposes updates.
 
-```sh
-Scripts/verify.sh
-```
-
-The gate checks formatting, strict lint, non-load tests in parallel, resource-intensive tests serially in an isolated process, a release build, and DocC warnings. The partitions are exhaustive and run every test exactly once without allowing streaming, memory, or production-backpressure measurements to starve unrelated integration tests. New behavior requires focused consumer-facing tests, bounded hostile-input behavior where applicable, and documentation for public lifecycle or security contracts.
-
-GitHub runs that full macOS gate whenever a change includes code, tests, package configuration, scripts, or workflows. A change containing only tracked Markdown files runs a fast Ubuntu scope and whitespace check while still satisfying the protected `Verify` requirement.
+Keep `Package.resolved` current when changing dependencies so review covers the versions the package actually builds. New behavior needs focused consumer-facing evidence and documentation for changed lifecycle or security contracts.
 
 Do not add production dependencies without prior approval. Do not include private keys, credentials, captured payloads, or product-specific identifiers in code, fixtures, logs, issues, or pull requests.
 
