@@ -12,7 +12,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.29.0"),
         .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.44.0"),
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.5.0"),
-        .package(url: "https://github.com/apple/swift-crypto.git", from: "4.0.0")
+        .package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.3")
     ],
     targets: [
         .target(
