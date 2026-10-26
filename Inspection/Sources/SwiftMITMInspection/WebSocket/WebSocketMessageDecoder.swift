@@ -104,8 +104,7 @@ public final class WebSocketMessageDecoder {
         case "client_max_window_bits", "server_max_window_bits":
             guard pair.count == 2,
                   let value = Int32(pair[1].trimmingCharacters(in: .whitespaces)),
-                  (8...15).contains(value)
-            else { throw WebSocketMessageError.unsupportedExtension }
+                  (8...15).contains(value) else { throw WebSocketMessageError.unsupportedExtension }
             return (name, value)
         default: throw WebSocketMessageError.unsupportedExtension
         }
@@ -161,8 +160,8 @@ public final class WebSocketMessageDecoder {
     ) throws -> WebSocketMessageProgress {
         guard !failed else { throw WebSocketMessageError.terminated }
         do {
-            guard frameOpen, bytes.count <= remaining, (1...1_048_576).contains(maximumOutputBytes)
-            else { throw WebSocketMessageError.invalidSequence }
+            guard frameOpen, bytes.count <= remaining,
+                  (1...1_048_576).contains(maximumOutputBytes) else { throw WebSocketMessageError.invalidSequence }
             if control {
                 remaining -= bytes.count
                 return WebSocketMessageProgress(
@@ -206,8 +205,8 @@ public final class WebSocketMessageDecoder {
     ) throws -> WebSocketMessageProgress {
         guard !failed else { throw WebSocketMessageError.terminated }
         do {
-            guard frameOpen, remaining == 0, (1...1_048_576).contains(maximumOutputBytes)
-            else { throw WebSocketMessageError.invalidSequence }
+            guard frameOpen, remaining == 0,
+                  (1...1_048_576).contains(maximumOutputBytes) else { throw WebSocketMessageError.invalidSequence }
             guard !control, final else {
                 frameOpen = false
                 return WebSocketMessageProgress(consumedBytes: 0, producedBytes: 0, outputLimit: false, message: nil)

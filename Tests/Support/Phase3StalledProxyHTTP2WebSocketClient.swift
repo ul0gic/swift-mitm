@@ -250,8 +250,7 @@ private final class Phase3StalledWebSocketClientHandler: ChannelDuplexHandler {
         guard endStream else { return }
         guard
             headerOffset == header.count,
-            payloadBytes == payloadSize
-        else {
+            payloadBytes == payloadSize else {
             completion.complete(.failure(Phase2FixtureError.unexpectedBytes))
             context.close(promise: nil)
             return

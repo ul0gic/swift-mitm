@@ -236,8 +236,7 @@ private final class Phase3LoadOriginStreamHandler: ChannelDuplexHandler {
         guard
             headers.first(name: ":method") == "CONNECT",
             headers.first(name: ":protocol") == "websocket",
-            headers.first(name: ":path") == "/load"
-        else {
+            headers.first(name: ":path") == "/load" else {
             context.close(promise: nil)
             return
         }

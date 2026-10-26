@@ -12,22 +12,22 @@ final class Release022PublicHTTP1OctetTests: XCTestCase {
                 .utf8)
                 + octets +
                 Array(
-                    "\r\nTransfer-Encoding: chunked\r\nTrailer: X-Request-Trailer\r\n\r\n1\r\nz\r\n0\r\nX-Request-Trailer: "
-                        .utf8
+                    ("\r\nTransfer-Encoding: chunked\r\nTrailer: X-Request-Trailer\r\n\r\n"
+                        + "1\r\nz\r\n0\r\nX-Request-Trailer: ").utf8
                 )
                 + octets + Array("\r\n\r\n".utf8)
             try phase4BoundedWait(client.writeAndFlush(ByteBuffer(bytes: first)))
             let upstream = try origin.received.wait {
                 $0.suffix(4) == [13, 10, 13, 10]
-                    && String(decoding: $0, as: UTF8.self).lowercased().contains("x-request-trailer:")
+                    && self.containsField("x-request-trailer", octets: octets, bytes: $0)
             }
             XCTAssertTrue(containsField("x-request", octets: octets, bytes: upstream))
             XCTAssertTrue(containsField("x-request-trailer", octets: octets, bytes: upstream))
             let response = Array("HTTP/1.1 200 OK\r\nX-Response: ".utf8) + octets
                 +
                 Array(
-                    "\r\nTransfer-Encoding: chunked\r\nTrailer: X-Response-Trailer\r\n\r\n1\r\na\r\n0\r\nX-Response-Trailer: "
-                        .utf8
+                    ("\r\nTransfer-Encoding: chunked\r\nTrailer: X-Response-Trailer\r\n\r\n"
+                        + "1\r\na\r\n0\r\nX-Response-Trailer: ").utf8
                 )
                 + octets + Array("\r\n\r\n".utf8)
             try origin.write(response)

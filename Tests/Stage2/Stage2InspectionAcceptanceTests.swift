@@ -272,21 +272,17 @@ extension Stage2InspectionAcceptanceTests {
         let request = "GET http://127.0.0.1:\(peer.origin.port)/socket HTTP/1.1\r\nHost: localhost\r\n"
             + "Connection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\n"
             + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
-            + "Sec-WebSocket-Extensions: permessage-deflate; server_no_context_takeover; client_no_context_takeover\r\n\r\n"
+            + "Sec-WebSocket-Extensions: permessage-deflate; "
+                + "server_no_context_takeover; client_no_context_takeover\r\n\r\n"
         try phase4BoundedWait(peer.client.writeAndFlush(ByteBuffer(string: request)))
         _ = try peer.origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
         try peer.origin.write(Array((
             "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n"
                 + "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n"
-                + "Sec-WebSocket-Extensions: permessage-deflate; server_no_context_takeover; client_no_context_takeover\r\n\r\n"
+                + "Sec-WebSocket-Extensions: permessage-deflate; "
+                + "server_no_context_takeover; client_no_context_takeover\r\n\r\n"
         ).utf8))
-        _ = try peer.raw.wait { $0.contains {
-            if case .webSocketOpen = $0 {
-                true
-            } else {
-                false
-            }
-        } }
+        _ = try peer.raw.wait { $0.contains(where: release022IsWebSocketOpen) }
     }
 
     private func openContextWebSocket(_ peer: Stage2WireContext) throws {
@@ -300,12 +296,6 @@ extension Stage2InspectionAcceptanceTests {
                 + "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n"
                 + "Sec-WebSocket-Extensions: permessage-deflate\r\n\r\n"
         ).utf8))
-        _ = try peer.raw.wait { $0.contains {
-            if case .webSocketOpen = $0 {
-                true
-            } else {
-                false
-            }
-        } }
+        _ = try peer.raw.wait { $0.contains(where: release022IsWebSocketOpen) }
     }
 }

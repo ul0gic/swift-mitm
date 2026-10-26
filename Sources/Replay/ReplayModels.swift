@@ -19,8 +19,7 @@ public struct ReplayConfiguration: Sendable {
 
     public init(maximumConcurrentAttempts: Int = 8, maximumBodyBytes: Int = 1_048_576) throws {
         guard (1...64).contains(maximumConcurrentAttempts),
-              (1...16_777_216).contains(maximumBodyBytes)
-        else { throw ReplayError.invalidConfiguration }
+              (1...16_777_216).contains(maximumBodyBytes) else { throw ReplayError.invalidConfiguration }
         self.maximumConcurrentAttempts = maximumConcurrentAttempts
         self.maximumBodyBytes = maximumBodyBytes
     }

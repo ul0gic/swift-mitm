@@ -305,8 +305,7 @@ final class PendingTLSReads: ChannelInboundHandler, RemovableChannelHandler {
         }
         let buffer = unwrapInboundIn(data)
         guard
-            buffer.readableBytes <= ClientHelloALPNParser.maximumClientHelloBytes - bufferedByteCount
-        else {
+            buffer.readableBytes <= ClientHelloALPNParser.maximumClientHelloBytes - bufferedByteCount else {
             failIfPending(ProxyALPNError.malformedClientHello)
             context.close(promise: nil)
             return

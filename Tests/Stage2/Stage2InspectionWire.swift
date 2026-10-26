@@ -99,7 +99,6 @@ func stage2WithInspectionWire(
         try await body(context)
         try await context.close()
     } catch {
-        let failure = error
         await stage2CleanupInspectionWire(
             client: client,
             proxy: proxy,
@@ -107,7 +106,7 @@ func stage2WithInspectionWire(
             inspector: inspector,
             group: group
         )
-        throw failure
+        throw error
     }
 }
 
@@ -141,6 +140,5 @@ private func stage2CleanupInspectionWire(
     origin.stop()
     let shutdown = await inspector.shutdown()
     XCTAssertTrue(shutdown.drained)
-    do { try await group.shutdownGracefully() }
-    catch { XCTFail("Event loop cleanup failed: \(error)") }
+    do { try await group.shutdownGracefully() } catch { XCTFail("Event loop cleanup failed: \(error)") }
 }

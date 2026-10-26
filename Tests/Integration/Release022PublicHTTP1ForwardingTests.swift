@@ -127,11 +127,13 @@ final class Release022PublicHTTP1ForwardingTests: XCTestCase {
                 + "GET http://127.0.0.1:\(second.port)/two HTTP/1.1\r\nHost: ignored\r\n\r\n"
             try phase4BoundedWait(channel.writeAndFlush(ByteBuffer(string: requests)))
             let firstRequest = try first.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
-            XCTAssertTrue(try XCTUnwrap(String(bytes: firstRequest, encoding: .utf8)).hasPrefix("GET /one HTTP/1.1\r\n"))
+            XCTAssertTrue(try XCTUnwrap(String(bytes: firstRequest, encoding: .utf8))
+                .hasPrefix("GET /one HTTP/1.1\r\n"))
             XCTAssertTrue(second.received.bytes.isEmpty)
             try first.write(Array("HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nA".utf8))
             let secondRequest = try second.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
-            XCTAssertTrue(try XCTUnwrap(String(bytes: secondRequest, encoding: .utf8)).hasPrefix("GET /two HTTP/1.1\r\n"))
+            XCTAssertTrue(try XCTUnwrap(String(bytes: secondRequest, encoding: .utf8))
+                .hasPrefix("GET /two HTTP/1.1\r\n"))
             XCTAssertEqual(first.received.bytes, firstRequest)
             try second.write(Array("HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nB".utf8))
             let events = try sink.wait { release022ResponseEnds($0).count == 2 }

@@ -38,7 +38,7 @@ struct ConsoleInspectionSink: InspectionEventSink {
         case let .protobuf(name, digest, fields):
             summary = "protobuf message=\(name) schema=\(digest) fields=\(fields.count)"
         case let .webSocketChunk(bytes): summary = "webSocketChunk bytes=\(bytes.count)"
-        case let .webSocketMessage(message): summary = "webSocketMessage bytes=\(message.byteCount)"
+        case let .webSocketMessage(message): summary = "webSocketMessage decodedBytes=\(message.decodedBytes)"
         case .diagnostic: summary = "diagnostic"
         case .end: summary = "end"
         }

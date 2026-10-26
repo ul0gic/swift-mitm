@@ -247,16 +247,7 @@ extension ProxyServer {
         let captureBodyLimit = captureBodyLimit
         let correlator = HTTP1ExchangeCorrelator(policy: correlationPolicy, admission: admission)
         let webSocketSession = WebSocketCaptureSession()
-        let reportResourceLimit: @Sendable () -> Void = {
-            sink.receive(.connectionFailure(CapturedConnectionFailure(
-                id: connectionID,
-                timestamp: Date(),
-                reason: .transportFailure,
-                target: target,
-                stage: .capture,
-                code: .resourceLimit
-            )))
-        }
+        let reportResourceLimit = makeHTTP1ResourceLimitReporter(connectionID: connectionID, target: target)
         let pair = NIOLoopBound(GlueHandler.matchedPair(), eventLoop: loop)
         return loop.makeCompletedFuture {
             try upstream.channel.pipeline.syncOperations.addHandlers([
@@ -291,6 +282,20 @@ extension ProxyServer {
         .flatMap { upstream.releaseBufferedReads() }
     }
 
+    func makeHTTP1ResourceLimitReporter(connectionID: UUID, target: CapturedTarget) -> @Sendable () -> Void {
+        let sink = sink
+        return {
+            sink.receive(.connectionFailure(CapturedConnectionFailure(
+                id: connectionID,
+                timestamp: Date(),
+                reason: .transportFailure,
+                target: target,
+                stage: .capture,
+                code: .resourceLimit
+            )))
+        }
+    }
+
     private func bridgeControlledHTTP1(
         inbound: Channel,
         upstream: NegotiatedUpstreamConnection,
@@ -299,8 +304,9 @@ extension ProxyServer {
         connectionID: UUID
     ) -> EventLoopFuture<Void> {
         inbound.eventLoop.makeCompletedFuture {
-            guard let destination = HTTPForwardTarget(scheme: "https", authority: authority, requestTarget: "/")
-            else { throw HTTPControlError.invalidConfiguration }
+            guard let destination = HTTPForwardTarget(scheme: "https", authority: authority, requestTarget: "/") else {
+                throw HTTPControlError.invalidConfiguration
+            }
             var configuration = BytePreservingHTTPResponseEncoder.Configuration()
             configuration.automaticallySetFramingHeaders = false
             let encoder = BytePreservingHTTPResponseEncoder(configuration: configuration)

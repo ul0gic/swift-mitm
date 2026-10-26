@@ -95,8 +95,7 @@ struct ProxyV2Parser {
         let comparedByteCount = min(header.readableBytes, Self.signature.count)
         guard
             let received = header.getBytes(at: header.readerIndex, length: comparedByteCount),
-            received.elementsEqual(Self.signature.prefix(comparedByteCount))
-        else {
+            received.elementsEqual(Self.signature.prefix(comparedByteCount)) else {
             throw ProxyV2ParserError.invalidSignature
         }
     }
@@ -106,8 +105,7 @@ struct ProxyV2Parser {
         guard
             let versionAndCommand: UInt8 = header.getInteger(at: baseIndex + 12),
             let familyAndTransport: UInt8 = header.getInteger(at: baseIndex + 13),
-            let declaredLength: UInt16 = header.getInteger(at: baseIndex + 14, endianness: .big)
-        else {
+            let declaredLength: UInt16 = header.getInteger(at: baseIndex + 14, endianness: .big) else {
             throw ProxyV2ParserError.truncatedHeader
         }
 
@@ -163,8 +161,7 @@ struct ProxyV2Parser {
     private func parseAddress(at index: Int, byteCount: Int, portIndex: Int) throws -> SocketAddress {
         guard
             let packedAddress = header.getSlice(at: index, length: byteCount),
-            let port: UInt16 = header.getInteger(at: portIndex, endianness: .big)
-        else {
+            let port: UInt16 = header.getInteger(at: portIndex, endianness: .big) else {
             throw ProxyV2ParserError.malformedAddressBlock
         }
         guard port != 0 else { throw ProxyV2ParserError.invalidPort }

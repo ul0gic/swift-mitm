@@ -34,11 +34,11 @@ struct ReplayPreparedRequest: Sendable {
         case let .replaceBody(replacement, _, _, _): body = Array(replacement)
         case let .route(authority, names):
             guard let mapped = HTTPForwardTarget(
-                scheme: target.scheme,
-                authority: authority,
-                requestTarget: target.requestTarget
-            ), let url = URL(string: mapped.scheme + "://" + mapped.authority + mapped.requestTarget)
-            else { throw ReplayError.invalidRequest }
+                      scheme: target.scheme,
+                      authority: authority,
+                      requestTarget: target.requestTarget
+                  ),
+                  let url = URL(string: mapped.scheme + "://" + mapped.authority + mapped.requestTarget) else { throw ReplayError.invalidRequest }
             destination = url
             if mapped.authority != target.authority {
                 policy = .strip
@@ -63,8 +63,8 @@ struct ReplayPreparedRequest: Sendable {
         guard let components = URLComponents(url: request.destination, resolvingAgainstBaseURL: false),
               let scheme = components.scheme?.lowercased(), scheme == "http" || scheme == "https",
               let host = components.host, !host.isEmpty, components.user == nil, components.password == nil,
-              components.fragment == nil, !request.method.isEmpty, request.method.utf8.allSatisfy(token)
-        else { throw ReplayError.invalidRequest }
+              components.fragment == nil, !request.method.isEmpty,
+              request.method.utf8.allSatisfy(token) else { throw ReplayError.invalidRequest }
         guard request.method.uppercased() != "CONNECT", !request.headers.contains(where: {
             $0.name.lowercased() == "upgrade" || $0.name.lowercased().hasPrefix("sec-websocket-")
         }) else { throw ReplayError.unsupportedSession }
@@ -84,12 +84,11 @@ struct ReplayPreparedRequest: Sendable {
     private static func preserveCredentials(_ request: ReplayRequest, target: HTTPForwardTarget) throws -> Bool {
         guard case let .preserveForSameOrigin(source) = request.credentialPolicy else { return false }
         guard let source = URLComponents(url: source, resolvingAgainstBaseURL: false),
-              source.scheme?.lowercased() == target.scheme, let host = source.host
-        else { throw ReplayError.credentialScopeMismatch }
+              source.scheme?.lowercased() == target.scheme,
+              let host = source.host else { throw ReplayError.credentialScopeMismatch }
         let unbracketed = host.hasPrefix("[") && host.hasSuffix("]") ? String(host.dropFirst().dropLast()) : host
         guard ConnectionTarget.normalizedHost(unbracketed) == target.host,
-              (source.port ?? (target.scheme == "https" ? 443 : 80)) == target.port
-        else { throw ReplayError.credentialScopeMismatch }
+              (source.port ?? (target.scheme == "https" ? 443 : 80)) == target.port else { throw ReplayError.credentialScopeMismatch }
         return true
     }
 
@@ -101,8 +100,7 @@ struct ReplayPreparedRequest: Sendable {
             guard !field.name.isEmpty, field.name.utf8.allSatisfy(token),
                   field.value.unicodeScalars.allSatisfy({
                       $0.value <= 255 && ($0.value == 9 || ($0.value >= 32 && $0.value != 127))
-                  })
-            else { throw ReplayError.invalidRequest }
+                  }) else { throw ReplayError.invalidRequest }
             let name = field.name.lowercased()
             if name == "proxy-authorization" || (!preserveCredentials && sensitive.contains(name)) {
                 continue

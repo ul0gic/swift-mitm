@@ -75,7 +75,8 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
                 let received = Release022WireObservation()
                 let client = try release022WireClient(group: peer.group, port: peer.proxyPort, observation: received)
                 let request = "GET http://127.0.0.1:\(peer.origin.port)/map HTTP/1.1\r\nHost: localhost\r\n"
-                    + "Authorization: Bearer synthetic-origin-secret\r\nCookie: synthetic-cookie\r\nX-Private: synthetic-custom\r\n\r\n"
+                    + "Authorization: Bearer synthetic-origin-secret\r\nCookie: synthetic-cookie\r\n"
+                    + "X-Private: synthetic-custom\r\n\r\n"
                 try phase4BoundedWait(client.writeAndFlush(ByteBuffer(string: request)))
                 try await stage2Await { second.requests.count == 1 }
                 let mapped = try XCTUnwrap(second.requests.first)
@@ -101,7 +102,8 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
             let received = Release022WireObservation()
             let client = try release022WireClient(group: peer.group, port: peer.proxyPort, observation: received)
             for index in 0..<100 {
-                let request = "GET http://127.0.0.1:\(peer.origin.port)/reuse/\(index) HTTP/1.1\r\nHost: localhost\r\n\r\n"
+                let request = "GET http://127.0.0.1:\(peer.origin.port)/reuse/\(index) HTTP/1.1\r\n"
+                    + "Host: localhost\r\n\r\n"
                 try phase4BoundedWait(client.writeAndFlush(ByteBuffer(string: request)))
                 _ = try peer.raw.wait { release022ResponseEnds($0).count == index + 1 }
             }
@@ -194,10 +196,12 @@ extension Stage2ControlResourceAcceptanceTests {
                 let received = Release022WireObservation()
                 let client = try release022WireClient(group: peer.group, port: peer.proxyPort, observation: received)
                 let upgrade = index.isMultiple(of: 2)
-                    ? "Connection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                    ? "Connection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\n"
+                        + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
                     : ""
                 try phase4BoundedWait(client.writeAndFlush(ByteBuffer(string:
-                    "GET http://127.0.0.1:\(peer.origin.port)/cycle/\(index) HTTP/1.1\r\nHost: localhost\r\n\(upgrade)\r\n")))
+                    "GET http://127.0.0.1:\(peer.origin.port)/cycle/\(index) HTTP/1.1\r\n"
+                        + "Host: localhost\r\n\(upgrade)\r\n")))
                 _ = try peer.raw.wait { release022ResponseEnds($0).count == index + 1 }
                 let drained = await peer.inspector.drain()
                 XCTAssertTrue(drained.drained)
@@ -239,7 +243,7 @@ extension Stage2ControlResourceAcceptanceTests {
         ], limits: HTTPControlLimits()))
         try await stage2WithHTTPOrigin(runtime: runtime, reply: { _ in
             Stage2OriginReply(status: .payloadTooLarge, beforeRequestEnd: true)
-        }) { peer in
+        }, body: { peer in
             let request = ReplayRequest(
                 source: ReplaySource(requestID: UUID(), representation: .original),
                 destination: try XCTUnwrap(URL(string: "http://127.0.0.1:\(peer.origin.port)/early")),
@@ -254,7 +258,7 @@ extension Stage2ControlResourceAcceptanceTests {
             XCTAssertEqual(peer.origin.acceptedConnections, 1)
             XCTAssertEqual(peer.origin.requests.count, 1)
             XCTAssertEqual(peer.origin.requests.first?.head.headers.first(name: "x-controlled"), "yes")
-        }
+        })
     }
 
     func testResponseBodyReplacementPreservesTrailersAndOriginalCapture() async throws {
@@ -280,8 +284,8 @@ extension Stage2ControlResourceAcceptanceTests {
                     + "ETag: \"old\"\r\n\r\n4\r\norig\r\n0\r\nX-End: complete\r\n\r\n"
             ).utf8))
             _ = try peer.raw.wait { release022ResponseEnds($0).count == 1 }
-            let response = try peer.received.wait { String(decoding: $0, as: UTF8.self).contains("X-End: complete") }
-            let text = String(decoding: response, as: UTF8.self)
+            let response = try peer.received.wait { String(bytes: $0, encoding: .utf8)?.contains("X-End: complete") == true }
+            let text = try XCTUnwrap(String(bytes: response, encoding: .utf8))
             XCTAssertTrue(text.contains("changed"))
             XCTAssertFalse(text.contains("orig"))
             XCTAssertFalse(text.lowercased().contains("etag:"))

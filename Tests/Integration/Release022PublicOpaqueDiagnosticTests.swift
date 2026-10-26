@@ -51,7 +51,6 @@ final class Release022PublicOpaqueDiagnosticTests: XCTestCase {
         }
     }
 
-
     private func assertConnectFailure(sink: Release022Events, originPort: Int) {
         let failures = sink.events.compactMap { event -> CapturedConnectionFailure? in
             if case let .connectionFailure(failure) = event {

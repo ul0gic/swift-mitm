@@ -78,30 +78,43 @@ extension ProxyServer {
             setupToken: setupToken
         ) { $0.close() }
             .flatMap { [self] channel in
-                guard !setupToken.isCancelled else {
-                    return channel.close().flatMapThrowing { throw ProxyConnectionError.serverStopping }
-                }
-                setupToken.onCancellation(on: channel.eventLoop) {
-                    channel.close(promise: nil)
-                }
-                failureHandler?.value.updateStage(.upstreamTLS)
-                let negotiation = negotiateUpstreamTLS(
-                    on: channel,
+                completeUpstreamTLSSetup(
+                    channel: channel,
                     context: context,
                     target: target,
-                    egressPolicy: egressPolicy
+                    egressPolicy: egressPolicy,
+                    setupToken: setupToken,
+                    failureHandler: failureHandler
                 )
-                return enforceSetupDeadline(
-                    negotiation,
-                    timeout: timeoutPolicy.tlsHandshakeDeadline.nioTimeAmount ?? .seconds(10),
-                    setupToken: setupToken
-                ) { $0.connection.channel.close() }
             }
             .always { _ in
                 if suppliedSetupToken == nil {
                     setupToken.complete()
                 }
             }
+    }
+
+    private func completeUpstreamTLSSetup(
+        channel: Channel,
+        context: NIOSSLContext,
+        target: ConnectionTarget,
+        egressPolicy: EgressPolicy,
+        setupToken: ProxyConnectionSetupToken,
+        failureHandler: NIOLoopBound<TransparentConnectionFailureHandler>?
+    ) -> EventLoopFuture<ResolvedUpstreamConnection> {
+        guard !setupToken.isCancelled else {
+            return channel.close().flatMapThrowing { throw ProxyConnectionError.serverStopping }
+        }
+        setupToken.onCancellation(on: channel.eventLoop) {
+            channel.close(promise: nil)
+        }
+        failureHandler?.value.updateStage(.upstreamTLS)
+        let negotiation = negotiateUpstreamTLS(on: channel, context: context, target: target, egressPolicy: egressPolicy)
+        return enforceSetupDeadline(
+            negotiation,
+            timeout: timeoutPolicy.tlsHandshakeDeadline.nioTimeAmount ?? .seconds(10),
+            setupToken: setupToken
+        ) { $0.connection.channel.close() }
     }
 
     private func beginUpstreamTLSConnection(

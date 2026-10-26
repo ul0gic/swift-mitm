@@ -86,7 +86,7 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
                 + "Host: localhost\r\nX-Probe: original\r\n\r\n"
             try phase4BoundedWait(peer.client.writeAndFlush(ByteBuffer(string: request)))
             let forwarded = try peer.origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
-            let wire = String(decoding: forwarded, as: UTF8.self)
+            let wire = try XCTUnwrap(String(bytes: forwarded, encoding: .utf8))
             XCTAssertTrue(wire.contains("X-Probe: effective\r\n"))
             XCTAssertFalse(wire.contains("X-Probe: original\r\n"))
             try peer.origin.write(Array("HTTP/1.1 204 No Content\r\n\r\n".utf8))
@@ -131,7 +131,7 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
                 XCTFail("Duplicate resume changed a completed hold")
             }
             let forwarded = try peer.origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
-            XCTAssertTrue(String(decoding: forwarded, as: UTF8.self).hasPrefix("GET /pause HTTP/1.1\r\n"))
+            XCTAssertTrue(try XCTUnwrap(String(bytes: forwarded, encoding: .utf8)).hasPrefix("GET /pause HTTP/1.1\r\n"))
             try peer.origin.write(Array("HTTP/1.1 204 No Content\r\n\r\n".utf8))
             _ = try peer.raw.wait { release022ResponseEnds($0).count == 1 }
         }
@@ -161,7 +161,7 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
             let replayEvents = Stage2ReplayEvents()
             async let replay = proxy.replay(request, responseSink: replayEvents)
             let bytes = try peer.origin.received.wait { $0.suffix(7).elementsEqual(Array("payload".utf8)) }
-            let wire = String(decoding: bytes, as: UTF8.self)
+            let wire = try XCTUnwrap(String(bytes: bytes, encoding: .utf8))
             XCTAssertTrue(wire.hasPrefix("POST /replay HTTP/1.1\r\n"))
             XCTAssertFalse(wire.lowercased().contains("authorization:"))
             XCTAssertFalse(wire.lowercased().contains("cookie:"))
@@ -196,7 +196,8 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
 
     func testHARExportRedactsEveryCapturedCredentialLocationAndOmitsBody() async throws {
         try await stage2WithInspectionWire { peer in
-            let request = "GET http://127.0.0.1:\(peer.origin.port)/export?token=synthetic-query-secret&keep=yes HTTP/1.1\r\n"
+            let request = "GET http://127.0.0.1:\(peer.origin.port)/export"
+                + "?token=synthetic-query-secret&keep=yes HTTP/1.1\r\n"
                 + "Host: localhost\r\nAuthorization: Bearer synthetic-header-secret\r\n"
                 + "Cookie: session=synthetic-cookie-secret\r\n\r\n"
             let clock = ContinuousClock()
@@ -312,7 +313,7 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
         XCTAssertEqual(document.log.entries.first?.request.method, "GET")
         XCTAssertEqual(document.log.entries.first?.response.status, 200)
         XCTAssertTrue(document.log.entries.first?.request.url.contains("keep=yes") ?? false)
-        let output = String(decoding: writer.bytes, as: UTF8.self)
+        let output = try XCTUnwrap(String(bytes: writer.bytes, encoding: .utf8))
         for secret in [
             "synthetic-query-secret",
             "synthetic-header-secret",

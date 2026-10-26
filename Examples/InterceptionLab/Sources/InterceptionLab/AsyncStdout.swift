@@ -89,7 +89,7 @@ final class AsyncStdout: Sendable {
 
     func line(_ data: Data) async throws {
         try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
                 state.withLock { state in
                     if let failure = state.failure {
                         continuation.resume(throwing: failure)

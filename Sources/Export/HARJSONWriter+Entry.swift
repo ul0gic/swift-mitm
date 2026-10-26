@@ -22,8 +22,8 @@ extension HARJSONWriter {
     ) async throws {
         let sourceURL = entry.request.scheme + "://" + entry.request.authority + entry.request.path
         guard let url = redactedURL(sourceURL, configuration: configuration), url.host != nil,
-              url.scheme == "http" || url.scheme == "https", let redacted = url.string
-        else { throw HARExportError.invalidURL }
+              url.scheme == "http" || url.scheme == "https",
+              let redacted = url.string else { throw HARExportError.invalidURL }
         try await raw("{\"method\":")
         try await string(entry.request.method)
         try await raw(",\"url\":")

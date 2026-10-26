@@ -162,8 +162,7 @@ private final class Phase2LoopbackServerHandler: ChannelInboundHandler {
         guard
             !replied,
             !configuration.replyBytes.isEmpty,
-            receivedByteCount >= configuration.expectedBytes.count
-        else { return }
+            receivedByteCount >= configuration.expectedBytes.count else { return }
         replied = true
         context.writeAndFlush(NIOAny(ByteBuffer(bytes: configuration.replyBytes)), promise: nil)
     }

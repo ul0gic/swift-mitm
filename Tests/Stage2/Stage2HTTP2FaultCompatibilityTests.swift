@@ -65,14 +65,18 @@ final class Stage2HTTP2FaultCompatibilityTests: XCTestCase {
         environment["no_grpc_proxy"] = ""
         environment["no_proxy"] = ""
         environment["NO_PROXY"] = ""
-        return try release022RunProcess(executable: peer.python, arguments: [
-            Release022ExternalPeer.clientsDirectory.appendingPathComponent("Stage2/h2_fault_peer.py").path,
-            "client",
-            "--target",
-            "localhost:\(originPort)",
-            "--root",
-            proxyRoot.path
-        ], environment: environment)
+        return try release022RunProcess(
+            executable: peer.python,
+            arguments: [
+                Release022ExternalPeer.clientsDirectory.appendingPathComponent("Stage2/h2_fault_peer.py").path,
+                "client",
+                "--target",
+                "localhost:\(originPort)",
+                "--root",
+                proxyRoot.path
+            ],
+            environment: environment
+        )
     }
 
     private func faultRuntime() throws -> HTTPControlRuntime {

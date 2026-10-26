@@ -65,10 +65,11 @@ final class Stage2HTTPOrigin: Sendable {
                 }
                 return channel.pipeline.configureHTTPServerPipeline().flatMap {
                     channel.eventLoop.makeCompletedFuture {
-                        try channel.pipeline.syncOperations.addHandler(Stage2HTTPOriginHandler(
-                            reply: self.reply,
-                            record: { request in self.state.withLockedValue { $0.requests.append(request) } }
-                        ))
+                        try channel.pipeline.syncOperations.addHandler(
+                            Stage2HTTPOriginHandler(reply: self.reply) { request in
+                                self.state.withLockedValue { $0.requests.append(request) }
+                            }
+                        )
                     }
                 }
             }

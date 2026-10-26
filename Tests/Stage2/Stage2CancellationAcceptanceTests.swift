@@ -47,7 +47,8 @@ final class Stage2CancellationAcceptanceTests: XCTestCase {
             let received = Release022WireObservation()
             let client = try release022WireClient(group: peer.group, port: peer.proxyPort, observation: received)
             try phase4BoundedWait(client.writeAndFlush(ByteBuffer(string:
-                "GET http://127.0.0.1:\(peer.origin.port)/blocked HTTP/1.1\r\nHost: localhost\r\nX-Snapshot: retained\r\n\r\n")))
+                "GET http://127.0.0.1:\(peer.origin.port)/blocked HTTP/1.1\r\n"
+                    + "Host: localhost\r\nX-Snapshot: retained\r\n\r\n")))
             try await stage2Await { blocked.entered }
             try await client.close().get()
             try await stage2AwaitAsync { await runtime.resourceUsage().orphanedCallbacks == 1 }
@@ -115,7 +116,7 @@ final class Stage2CancellationAcceptanceTests: XCTestCase {
             let next = try release022WireClient(group: peer.group, port: port, observation: received)
             try phase4BoundedWait(next.writeAndFlush(ByteBuffer(string:
                 "GET http://127.0.0.1:\(peer.origin.port)/healthy HTTP/1.1\r\nHost: localhost\r\n\r\n")))
-            _ = try received.wait { String(decoding: $0, as: UTF8.self).hasPrefix("HTTP/1.1 200 ") }
+            _ = try received.wait { String(bytes: $0, encoding: .utf8)?.hasPrefix("HTTP/1.1 200 ") == true }
             XCTAssertEqual(peer.origin.requests.map(\.head.uri), ["/healthy"])
             try await next.close().get()
             try await peer.proxy.stop()

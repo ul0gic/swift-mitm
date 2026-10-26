@@ -95,13 +95,7 @@ private func release022ExerciseIdentity(
             _ = try phase4BoundedWait(tls.handshake)
             XCTFail("A trusted chain for the wrong selected identity must fail interception")
         } catch {
-            _ = try sink.wait { $0.contains {
-                if case .connectionFailure = $0 {
-                    true
-                } else {
-                    false
-                }
-            } }
+            _ = try sink.wait { $0.contains(where: release022IsConnectionFailure) }
         }
         try phase4BoundedWait(channel.closeFuture)
     }
@@ -119,13 +113,7 @@ private func release022AssertSelectedIdentity(
     })
     try phase4BoundedWait(channel
         .writeAndFlush(ByteBuffer(string: "GET /identity HTTP/1.1\r\nHost: localhost\r\n\r\n")))
-    _ = try sink.wait { $0.contains {
-        if case .responseEnd = $0 {
-            true
-        } else {
-            false
-        }
-    } }
+    _ = try sink.wait { $0.contains(where: release022IsResponseEnd) }
     let request = try XCTUnwrap(sink.events
         .compactMap { event -> CapturedRequestHead? in
             if case let .requestHead(head) = event {

@@ -120,13 +120,7 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         protocolName: String,
         version: HTTPProtocolVersion
     ) throws {
-        let events = try sink.wait { $0.contains {
-            if case .responseEnd = $0 {
-                true
-            } else {
-                false
-            }
-        } }
+        let events = try sink.wait { $0.contains(where: release022IsResponseEnd) }
         let heads = events.compactMap { event -> CapturedRequestHead? in
             if case let .requestHead(head) = event {
                 head
@@ -139,8 +133,8 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         FileHandle.standardError
             .write(
                 Data(
-                    "CLIENT-MATRIX URLSession protocol=\(protocolName) os=\(ProcessInfo.processInfo.operatingSystemVersionString) trusted=true\n"
-                        .utf8
+                    ("CLIENT-MATRIX URLSession protocol=\(protocolName) "
+                        + "os=\(ProcessInfo.processInfo.operatingSystemVersionString) trusted=true\n").utf8
                 )
             )
     }

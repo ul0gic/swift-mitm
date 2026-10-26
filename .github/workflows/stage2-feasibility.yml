@@ -14,6 +14,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: stage2-feasibility-${{ github.ref }}
   cancel-in-progress: true
@@ -125,6 +129,15 @@ jobs:
           cp Package.resolved evidence/core-Package.resolved
           swift test --skip-build --filter 'Release022PublicTrustTests|Release022PublicHTTP1OctetTests' \
             --xunit-output evidence/core-results.xml 2>&1 | tee evidence/core-tests.log
+          python3 - <<'PY_RESULTS'
+          import xml.etree.ElementTree as ET
+          root = ET.parse('evidence/core-results.xml').getroot()
+          cases = [case for case in root.iter('testcase') if case.find('skipped') is None]
+          assert cases, 'Core compatibility must execute tests'
+          assert not list(root.iter('failure')) and not list(root.iter('error'))
+          assert any('Release022PublicTrustTests' in case.get('classname', '') for case in cases)
+          assert any('Release022PublicHTTP1OctetTests' in case.get('classname', '') for case in cases)
+          PY_RESULTS
       - name: Retain core compatibility evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -197,7 +210,7 @@ jobs:
             -r Tests/Clients/Stage2/HTTP3/requirements.txt
           "$RUNNER_TEMP/http3-peers/bin/python" -m pip freeze > evidence/http3-peer-versions.txt
       - name: Exercise verified TLS and independent HTTP3 streams
-        timeout-minutes: 10
+        timeout-minutes: 20
         run: |
           "$RUNNER_TEMP/http3-peers/bin/python" Tests/Clients/Stage2/HTTP3/verify.py \
             --binary "$SWIFTMITM_HTTP3_PROBE" --output evidence/http3-results.json

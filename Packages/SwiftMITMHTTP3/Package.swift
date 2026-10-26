@@ -15,12 +15,12 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-http-types.git", from: "1.8.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
         .package(
-            url: "https://github.com/apple/swift-nio-quic.git",
-            revision: "11b231126952b3ef408c4e1ab95d14e16af5d867"
+            url: "https://github.com/ul0gic/swift-nio-quic.git",
+            revision: "e29c3914b615d4c9153356079d5bbf7da08f959e"
         ),
         .package(
-            url: "https://github.com/apple/swift-nio-http3.git",
-            revision: "e2c54cdbf50dc64bf9e80861922f8d9400d2acce"
+            url: "https://github.com/ul0gic/swift-nio-http3.git",
+            revision: "63a3ba36b9c05aa9bf2851c7d9adb39c9988dde0"
         )
     ],
     targets: [

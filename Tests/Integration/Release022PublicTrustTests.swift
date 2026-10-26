@@ -259,7 +259,6 @@ extension Release022PublicTrustTests {
             throw error
         }
     }
-
 }
 
 extension Release022PublicTrustTests {
@@ -325,7 +324,7 @@ extension Release022PublicTrustTests {
         XCTAssertEqual(try phase4BoundedWait(tls.handshake), "http/1.1")
         try phase4BoundedWait(channel
             .writeAndFlush(ByteBuffer(string: "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")))
-        _ = try received.wait { String(decoding: $0, as: UTF8.self).hasSuffix("AAAAAAAA") }
+        _ = try received.wait { String(bytes: $0, encoding: .utf8)?.hasSuffix("AAAAAAAA") == true }
     }
 
     private func assertTransparentPolicySelection(_ events: [CaptureEvent]) {

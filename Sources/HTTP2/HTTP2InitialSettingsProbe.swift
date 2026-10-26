@@ -76,8 +76,7 @@ struct HTTP2InitialSettingsProbe {
             let lengthLow = bytes.getInteger(at: readerIndex + 2, as: UInt8.self),
             let frameType = bytes.getInteger(at: readerIndex + 3, as: UInt8.self),
             let flags = bytes.getInteger(at: readerIndex + 4, as: UInt8.self),
-            let rawStreamIdentifier = bytes.getInteger(at: readerIndex + 5, endianness: .big, as: UInt32.self)
-        else {
+            let rawStreamIdentifier = bytes.getInteger(at: readerIndex + 5, endianness: .big, as: UInt32.self) else {
             return nil
         }
 
@@ -114,8 +113,7 @@ struct HTTP2InitialSettingsProbe {
         while settingOffset < settingsEnd {
             guard
                 let identifier = bytes.getInteger(at: settingOffset, endianness: .big, as: UInt16.self),
-                let value = bytes.getInteger(at: settingOffset + 2, endianness: .big, as: UInt32.self)
-            else {
+                let value = bytes.getInteger(at: settingOffset + 2, endianness: .big, as: UInt32.self) else {
                 return enablesExtendedConnect
             }
             if identifier == 0x8 {

@@ -98,7 +98,8 @@ final class Release022HTTP2Origin: @unchecked Sendable {
                                     self.condition.broadcast()
                                 }
                             }
-                        }.map { _ in () }
+                        }
+                        .map { _ in () }
                     }
             }
             .bind(host: "127.0.0.1", port: 0))

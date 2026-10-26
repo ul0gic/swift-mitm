@@ -231,8 +231,7 @@ enum ClientHelloALPNParser {
                 label.count <= 63,
                 label.first.map(isASCIILetterOrDigit) == true,
                 label.last.map(isASCIILetterOrDigit) == true,
-                label.allSatisfy({ isASCIILetterOrDigit($0) || $0 == 0x2D })
-            else {
+                label.allSatisfy({ isASCIILetterOrDigit($0) || $0 == 0x2D }) else {
                 throw ProxyALPNError.malformedClientHello
             }
         }
@@ -248,8 +247,7 @@ enum ClientHelloALPNParser {
             guard
                 !label.isEmpty,
                 label.count <= 3,
-                label.allSatisfy({ 0x30 ... 0x39 ~= $0 })
-            else { return false }
+                label.allSatisfy({ 0x30 ... 0x39 ~= $0 }) else { return false }
             return label.reduce(0) { ($0 * 10) + Int($1 - 0x30) } <= 255
         }
     }

@@ -5,7 +5,7 @@ public enum ProtobufInspectionError: Error, Sendable {
     case invalidDescriptor, unsupportedSchema, missingImport, duplicateSymbol, capacityExceeded
 }
 
-public indirect enum ProtobufValue: Sendable {
+indirect public enum ProtobufValue: Sendable {
     case unsigned(UInt64), signed(Int64), floating(Double), boolean(Bool), string(String), bytes([UInt8])
     case enumeration(number: Int32, name: String?)
     case message([ProtobufFieldOccurrence]), packed([ProtobufValue])

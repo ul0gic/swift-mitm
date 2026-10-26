@@ -21,8 +21,7 @@ public struct InspectionConfiguration: Sendable {
         guard (1...(256 * 1024 * 1024)).contains(maximumQueuedBytes),
               (1...65_536).contains(maximumQueuedItems), (1...1024).contains(maximumActiveBodies),
               (1...262_144).contains(maximumLineBytes), (1...4_194_304).contains(maximumEventBytes),
-              (1...16_777_216).contains(maximumMessageBytes)
-        else { throw InspectionBudgetError.invalidLimit }
+              (1...16_777_216).contains(maximumMessageBytes) else { throw InspectionBudgetError.invalidLimit }
         self.budget = budget
         self.maximumQueuedBytes = maximumQueuedBytes
         self.maximumQueuedItems = maximumQueuedItems

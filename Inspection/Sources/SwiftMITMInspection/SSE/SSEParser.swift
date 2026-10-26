@@ -38,8 +38,7 @@ public final class SSEParser {
         budget: InspectionMemoryBudget
     ) throws {
         guard maximumLineBytes > 0, maximumLineBytes <= 262_144,
-              maximumEventBytes > 0, maximumEventBytes <= 4_194_304
-        else { throw SSEParserError.invalidConfiguration }
+              maximumEventBytes > 0, maximumEventBytes <= 4_194_304 else { throw SSEParserError.invalidConfiguration }
         // Charge carry capacity, UTF-8 replacement expansion, metadata and synchronous output copies.
         let reservation = 8 * maximumLineBytes + 4 * maximumEventBytes
         guard budget.reserve(reservation) else { throw InspectionBudgetError.capacityExceeded }

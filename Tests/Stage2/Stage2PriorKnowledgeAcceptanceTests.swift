@@ -35,7 +35,8 @@ private final class Stage2ClearH2Origin: Sendable {
                             self.state.withLockedValue { $0.requests.append(headers) }
                         })
                     }
-                }.map { _ in () }
+                }
+                .map { _ in () }
             }
             .bind(host: "127.0.0.1", port: 0)
             .get()
@@ -148,7 +149,7 @@ final class Stage2PriorKnowledgeAcceptanceTests: XCTestCase {
         port: Int,
         muxPromise: EventLoopPromise<NIOHTTP2Handler.StreamMultiplexer>
     ) async throws -> Channel {
-        return try await ClientBootstrap(group: group)
+        try await ClientBootstrap(group: group)
             .channelInitializer { channel in
                 channel.configureHTTP2Pipeline(
                     mode: .client,
@@ -156,7 +157,8 @@ final class Stage2PriorKnowledgeAcceptanceTests: XCTestCase {
                     streamConfiguration: .init()
                 ) { stream in
                     stream.close()
-                }.map { muxPromise.succeed($0) }
+                }
+            .map { muxPromise.succeed($0) }
             }
             .connect(host: "127.0.0.1", port: port)
             .get()

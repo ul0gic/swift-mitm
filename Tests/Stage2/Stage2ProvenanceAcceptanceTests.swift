@@ -15,7 +15,7 @@ final class Stage2ProvenanceAcceptanceTests: XCTestCase {
                 "GET http://127.0.0.1:\(peer.origin.port)/synthetic HTTP/1.1\r\n"
                     + "Host: localhost\r\nX-Probe: original\r\n\r\n")))
             let bytes = try received.wait { $0.suffix(14).elementsEqual(Array("synthetic-body".utf8)) }
-            let wire = String(decoding: bytes, as: UTF8.self)
+            let wire = try XCTUnwrap(String(bytes: bytes, encoding: .utf8))
             XCTAssertTrue(wire.hasPrefix("HTTP/1.1 202 "))
             XCTAssertTrue(wire.lowercased().contains("x-response: generated\r\n"))
             XCTAssertFalse(wire.lowercased().contains("x-probe:"))
@@ -48,7 +48,7 @@ final class Stage2ProvenanceAcceptanceTests: XCTestCase {
         }
     }
     private func syntheticResponseRuntime() throws -> HTTPControlRuntime {
-        return HTTPControlRuntime(configuration: try HTTPControlConfiguration(rules: [
+        HTTPControlRuntime(configuration: try HTTPControlConfiguration(rules: [
             HTTPRule(
                 id: "request-edit",
                 match: HTTPRuleMatch(phase: .request, path: "/synthetic"),

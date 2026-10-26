@@ -146,8 +146,7 @@ private final class Phase3ConcurrentOriginRecorder: @unchecked Sendable {
                 state.ordinaryRequestCount == 1,
                 let socketABytes = state.socketABytes,
                 let socketBBytes = state.socketBBytes,
-                state.socketBTerminatedAfterViolation
-            else { return nil }
+                state.socketBTerminatedAfterViolation else { return nil }
             return .init(
                 ordinaryRequestCount: state.ordinaryRequestCount,
                 socketABytes: socketABytes,

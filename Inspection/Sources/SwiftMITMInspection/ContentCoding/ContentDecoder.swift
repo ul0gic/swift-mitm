@@ -64,8 +64,7 @@ public final class ContentDecoder {
         )
         if coding == .brotli {
             guard compression_stream_init(&appleStream, COMPRESSION_STREAM_DECODE, COMPRESSION_BROTLI)
-                == COMPRESSION_STATUS_OK
-            else {
+                == COMPRESSION_STATUS_OK else {
                 throw ContentDecoderError.initializationFailed
             }
             initializedApple = true
@@ -128,8 +127,7 @@ public final class ContentDecoder {
     ) throws -> ContentDecoderProgress {
         guard !finished, !failed else { throw ContentDecoderError.alreadyFinished }
         guard maximumOutputBytes > 0, maximumOutputBytes <= 1_048_576,
-              input.count <= 1_048_576
-        else {
+              input.count <= 1_048_576 else {
             throw ContentDecoderError.invalidConfiguration
         }
         do {

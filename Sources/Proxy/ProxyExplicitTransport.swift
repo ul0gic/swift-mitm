@@ -131,9 +131,8 @@ extension ProxyServer {
             ).flatMap { [self] connected in
                 configureControlReads(HTTPForwardConnection(
                     channel: connected.connection.channel,
-                    target: connected.target.capturedTarget,
-                    releaseBufferedReads: { connected.connection.releaseBufferedReads() }
-                ))
+                    target: connected.target.capturedTarget
+                ) { connected.connection.releaseBufferedReads() })
             }
         }
         return connectUpstreamRaw(target: destination, on: loop, setupToken: setupToken).flatMap { [self] in
@@ -170,15 +169,9 @@ extension ProxyServer {
         connectionID: UUID,
         tlsRuntime: ProxyTLSRuntime
     ) {
-        let provenance: ConnectionIngressProvenance
-        if case .explicitHTTP = ingress {
-            provenance = .explicitHTTP
-        } else {
-            provenance = .explicitConnect
-        }
         guard let target = ConnectionTarget(
             explicitConnectAuthority: authority,
-            ingressProvenance: provenance
+            ingressProvenance: explicitIngressProvenance
         ) else {
             channel.close(promise: nil)
             return
@@ -222,6 +215,13 @@ extension ProxyServer {
             setupToken: setupToken,
             tlsRuntime: tlsRuntime
         )
+    }
+
+    private var explicitIngressProvenance: ConnectionIngressProvenance {
+        if case .explicitHTTP = ingress {
+            return .explicitHTTP
+        }
+        return .explicitConnect
     }
 
     private func configureExplicitTLS(
@@ -313,7 +313,7 @@ extension ProxyServer {
     ) {
         failureHandler.value.updateStage(.connect)
         let codecsRemoved = channel.eventLoop.makePromise(of: Void.self)
-        let classifier = TransparentApplicationClassifier(passThrough: { [self] _, _ in
+        let classifier = TransparentApplicationClassifier { [self] _, _ in
             codecsRemoved.futureResult
                 .flatMap { [self] in
                     connectUpstreamRaw(
@@ -333,7 +333,7 @@ extension ProxyServer {
                 }
                 .map { .manual }
                 .always { _ in setupToken.complete() }
-        })
+        }
         do {
             try channel.pipeline.syncOperations.addHandler(classifier, position: .before(failureHandler.value))
         } catch {

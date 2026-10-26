@@ -305,8 +305,7 @@ private extension HTTPInspectionBody {
 
     func inspectProtobuf(_ bytes: [UInt8], path: String) {
         guard let schema = configuration.schema,
-              let name = schema.messageName(methodPath: path, response: context.direction == .response)
-        else {
+              let name = schema.messageName(methodPath: path, response: context.direction == .response) else {
             output(.diagnostic(.schemaUnavailable))
             return
         }

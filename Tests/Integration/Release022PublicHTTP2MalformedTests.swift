@@ -94,13 +94,7 @@ final class Release022PublicHTTP2MalformedTests: XCTestCase {
             return frames.contains { $0.type == 3 && $0.stream == 1 }
                 && frames.contains { $0.type == 1 && $0.stream == 3 && $0.flags & 1 != 0 }
         }
-        let events = try sink.wait { $0.contains {
-            if case .responseEnd = $0 {
-                true
-            } else {
-                false
-            }
-        } }
+        let events = try sink.wait { $0.contains(where: release022IsResponseEnd) }
         let requests = events.compactMap { event -> CapturedRequestHead? in
             if case let .requestHead(head) = event {
                 head

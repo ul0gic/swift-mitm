@@ -1,3 +1,4 @@
+import Foundation
 import NIOHTTP3
 import NIOQUIC
 import SwiftMITM
@@ -7,4 +8,6 @@ _ = try CertificateAuthority(
     privateKeyPEM: generated.privateKeyPEM,
     certificatePEM: generated.certificatePEM
 )
-print("Combined graph linked; core authority generation and restoration completed.")
+try FileHandle.standardOutput.write(contentsOf: Data(
+    "Combined graph linked; core authority generation and restoration completed.\n".utf8
+))

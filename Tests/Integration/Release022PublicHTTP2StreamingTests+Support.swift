@@ -61,13 +61,7 @@ extension Release022PublicHTTP2StreamingTests {
                 }
             }
             try client.write(.headers(.init(headers: HPACKHeaders([("client-bin", "AQI=")]), endStream: true)))
-            try upstream.wait { $0.contains {
-                if case let .headers(headers) = $0 {
-                    headers.endStream
-                } else {
-                    false
-                }
-            } }
+            try upstream.wait { $0.contains(where: release022IsTerminalHeader) }
             let released = interleave ? min(requestMessages.count, responseMessages.count) : 0
             let events = try self.finishGRPCResponse(
                 client: client,
@@ -109,20 +103,8 @@ extension Release022PublicHTTP2StreamingTests {
             headers: HPACKHeaders([("grpc-status", "0"), ("grpc-message", "ok"), ("trailer-bin", "//4=")]),
             endStream: true
         )))
-        try client.wait { $0.contains {
-            if case let .headers(headers) = $0 {
-                headers.endStream
-            } else {
-                false
-            }
-        } }
-        let events = try sink.wait { $0.contains {
-            if case .responseEnd = $0 {
-                true
-            } else {
-                false
-            }
-        } }
+        try client.wait { $0.contains(where: release022IsTerminalHeader) }
+        let events = try sink.wait { $0.contains(where: release022IsResponseEnd) }
         return events
     }
 

@@ -100,8 +100,7 @@ final class ReplayControls: Sendable {
     ) throws {
         guard !HTTPControlConfiguration.unsupported(message),
               (1...snapshot.limits.maximumBodyBytes).contains(maximum),
-              body.count <= snapshot.limits.maximumBodyBytes
-        else { throw HTTPControlError.unsupportedEdit }
+              body.count <= snapshot.limits.maximumBodyBytes else { throw HTTPControlError.unsupportedEdit }
         if let input = message.body, input.count > maximum {
             throw HTTPControlError.bodyLimitExceeded
         }

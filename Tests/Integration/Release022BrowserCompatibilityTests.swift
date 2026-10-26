@@ -40,8 +40,8 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
             FileHandle.standardError
                 .write(
                     Data(
-                        "CLIENT-MATRIX WKWebView os=\(ProcessInfo.processInfo.operatingSystemVersionString) trusted=true sse=true websocket=true\n"
-                            .utf8
+                        ("CLIENT-MATRIX WKWebView os=\(ProcessInfo.processInfo.operatingSystemVersionString) "
+                            + "trusted=true sse=true websocket=true\n").utf8
                     )
                 )
             view.stopLoading()

@@ -65,14 +65,18 @@ final class Release022IndependentGRPCCompatibilityTests: XCTestCase {
         environment["no_grpc_proxy"] = ""
         environment["no_proxy"] = ""
         environment["NO_PROXY"] = ""
-        return try release022RunProcess(executable: peer.python, arguments: [
-            Release022ExternalPeer.clientsDirectory.appendingPathComponent("grpc_peer.py").path,
-            "client",
-            "--target",
-            "localhost:\(originPort)",
-            "--root",
-            proxyRoot.path
-        ], environment: environment)
+        return try release022RunProcess(
+            executable: peer.python,
+            arguments: [
+                Release022ExternalPeer.clientsDirectory.appendingPathComponent("grpc_peer.py").path,
+                "client",
+                "--target",
+                "localhost:\(originPort)",
+                "--root",
+                proxyRoot.path
+            ],
+            environment: environment
+        )
     }
 
     private func assertIndependentGRPCEvents(_ events: [CaptureEvent]) {

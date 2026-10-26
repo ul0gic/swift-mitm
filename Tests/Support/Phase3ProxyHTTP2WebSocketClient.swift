@@ -352,8 +352,7 @@ private final class Phase3ProxyHTTP2WebSocketClientStreamHandler: ChannelDuplexH
         let expected = WebSocketWire.serverFrames
         guard
             serverBytes.count <= expected.count,
-            serverBytes == Array(expected.prefix(serverBytes.count))
-        else {
+            serverBytes == Array(expected.prefix(serverBytes.count)) else {
             completion.complete(.failure(Phase2FixtureError.unexpectedBytes))
             context.close(promise: nil)
             return

@@ -207,7 +207,7 @@ final class Stage2HTTP2AcceptanceTests: XCTestCase {
     }
 
     private func pausedStreamRuntime() throws -> HTTPControlRuntime {
-        return HTTPControlRuntime(configuration: try HTTPControlConfiguration(rules: [
+        HTTPControlRuntime(configuration: try HTTPControlConfiguration(rules: [
             HTTPRule(
                 id: "hold-h2",
                 match: HTTPRuleMatch(phase: .request, path: "/hold"),
