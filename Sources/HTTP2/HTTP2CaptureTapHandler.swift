@@ -247,8 +247,8 @@ final class HTTP2CaptureTapHandler: ChannelInboundHandler {
     private func validResponseStatus(_ headers: HPACKHeaders) -> Int? {
         let pseudoHeaders = pseudoHeaderPairs(headers)
         guard pseudoHeaders.count == 1, pseudoHeaders[0].0 == ":status",
-            pseudoHeaders[0].1.utf8.count == 3,
-            let status = Int(pseudoHeaders[0].1), (100...599).contains(status), status != 101 else {
+              pseudoHeaders[0].1.utf8.count == 3,
+              let status = Int(pseudoHeaders[0].1), (100...599).contains(status), status != 101 else {
             return nil
         }
         return status
@@ -267,7 +267,9 @@ final class HTTP2CaptureTapHandler: ChannelInboundHandler {
             name.hasPrefix(":") ? nil : HTTPHeaderField(name: name, value: value)
         }
     }
+}
 
+private extension HTTP2CaptureTapHandler {
     private func emitRequestHead(_ headers: HPACKHeaders) {
         sink.receive(
             .requestHead(

@@ -146,8 +146,8 @@ final class ProbeTransport {
                         stream.eventLoop.makeCompletedFuture {
                             let relay = ProbeRelay<HTTPRequestPart>(admission: state.value
                                 .admission) { part, source, relay in
-                                state.value.connect(part: part, downstream: source, requestRelay: relay)
-                            }
+                                    state.value.connect(part: part, downstream: source, requestRelay: relay)
+                                }
                             try stream.pipeline.syncOperations.addHandler(relay)
                         }
                     }

@@ -38,7 +38,7 @@ public final class SSEParser {
         budget: InspectionMemoryBudget
     ) throws {
         guard maximumLineBytes > 0, maximumLineBytes <= 262_144,
-            maximumEventBytes > 0, maximumEventBytes <= 4_194_304
+              maximumEventBytes > 0, maximumEventBytes <= 4_194_304
         else { throw SSEParserError.invalidConfiguration }
         // Charge carry capacity, UTF-8 replacement expansion, metadata and synchronous output copies.
         let reservation = 8 * maximumLineBytes + 4 * maximumEventBytes
@@ -100,6 +100,8 @@ public final class SSEParser {
             try dispatch(emit: emit)
             return
         }
+        // SSE requires replacement decoding for malformed UTF-8.
+        // swiftlint:disable:next optional_data_string_conversion
         let decoded = String(decoding: bytes, as: UTF8.self)
         let decodedCount = decoded.utf8.count
         guard decodedCount <= maximumLineBytes else { throw SSEParserError.lineLimitExceeded }
@@ -114,6 +116,8 @@ public final class SSEParser {
         if !data.isEmpty {
             data.removeLast()
             try emit(SSEEvent(
+                // SSE data preserves the replacement-decoded stream.
+                // swiftlint:disable:next optional_data_string_conversion
                 data: String(decoding: data, as: UTF8.self),
                 event: event.isEmpty ? "message" : event,
                 lastEventID: lastEventID,

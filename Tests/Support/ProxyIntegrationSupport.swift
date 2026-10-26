@@ -207,30 +207,30 @@ final class ProxyTestClient {
             ? ProxyClientPromise<NIOHTTP2Handler.StreamMultiplexer?>(eventLoop: channel.eventLoop)
             : nil
         let installFuture = channel.eventLoop
-.submit {
-            try channel.pipeline.syncOperations.addHandler(
-                NIOSSLClientHandler(context: sslContext, serverHostname: serverHostname),
-                position: .first
-            )
-            try channel.pipeline.syncOperations.addHandler(TLSHandshakeProbe(completion: handshake))
-        }
-        .flatMap {
-            guard let multiplexer else {
-                return channel.eventLoop.makeSucceededVoidFuture()
+            .submit {
+                try channel.pipeline.syncOperations.addHandler(
+                    NIOSSLClientHandler(context: sslContext, serverHostname: serverHostname),
+                    position: .first
+                )
+                try channel.pipeline.syncOperations.addHandler(TLSHandshakeProbe(completion: handshake))
             }
-            return channel.configureHTTP2SecureUpgrade { channel in
-                let configured = channel.configureHTTP2Pipeline(
-                    mode: .client,
-                    connectionConfiguration: .init(),
-                    streamConfiguration: .init()
-                ) { $0.close() }
-                configured.map(Optional.some).whenComplete { multiplexer.complete($0) }
-                return configured.map { _ in () }
-            } http1ChannelConfigurator: { channel in
-                multiplexer.complete(.success(nil))
-                return channel.eventLoop.makeSucceededVoidFuture()
+            .flatMap {
+                guard let multiplexer else {
+                    return channel.eventLoop.makeSucceededVoidFuture()
+                }
+                return channel.configureHTTP2SecureUpgrade { channel in
+                    let configured = channel.configureHTTP2Pipeline(
+                        mode: .client,
+                        connectionConfiguration: .init(),
+                        streamConfiguration: .init()
+                    ) { $0.close() }
+                    configured.map(Optional.some).whenComplete { multiplexer.complete($0) }
+                    return configured.map { _ in () }
+                } http1ChannelConfigurator: { channel in
+                    multiplexer.complete(.success(nil))
+                    return channel.eventLoop.makeSucceededVoidFuture()
+                }
             }
-        }
         let completedInstallation = installFuture.flatMapError { error in
             handshake.complete(.failure(error))
             multiplexer?.complete(.failure(error))

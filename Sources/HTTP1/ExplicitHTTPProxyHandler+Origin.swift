@@ -40,7 +40,7 @@ extension ExplicitHTTPProxyHandler {
             }
             if let release = connection.releaseBufferedReads {
                 release()
-.flatMap { channel.setOption(ChannelOptions.autoRead, value: false) }
+                    .flatMap { channel.setOption(ChannelOptions.autoRead, value: false) }
                     .whenFailure { _ in channel.close(promise: nil) }
             }
             readClientIfNeeded()

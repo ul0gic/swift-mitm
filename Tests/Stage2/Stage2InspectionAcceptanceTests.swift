@@ -15,7 +15,7 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
             _ = try peer.origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
             try peer.origin.write(Array(
                 "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n"
-.utf8
+                    .utf8
             ))
             let pieces: [[UInt8]] = [
                 [0xEF],
@@ -47,15 +47,15 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
             XCTAssertTrue(drain.drained)
             XCTAssertEqual(
                 peer.inspected
-.events
-.filter {
-                if case .sse = $0.payload {
-                    true
-                } else {
-                    false
-                }
-            }
-.count,
+                    .events
+                    .filter {
+                        if case .sse = $0.payload {
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    .count,
                 1
             )
         }
@@ -69,7 +69,7 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
             let body: [UInt8] = [0x01, 0x02, 0x03, 0x04, 0xFF, 0x00]
             try peer.origin.write(Array(
                 "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: \(body.count)\r\n\r\n"
-.utf8
+                    .utf8
             ) + body)
             let received = try peer.received.wait { $0.suffix(body.count).elementsEqual(body) }
             XCTAssertEqual(Array(received.suffix(body.count)), body)
@@ -85,13 +85,13 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
             }
             XCTAssertEqual(
                 events.filter { event in
-                if case .diagnostic(.malformedCoding) = event.payload {
-                    true
-                } else {
-                    false
+                    if case .diagnostic(.malformedCoding) = event.payload {
+                        true
+                    } else {
+                        false
+                    }
                 }
-            }
-.count,
+                .count,
                 1
             )
             XCTAssertTrue(release022Errors(peer.raw.events).isEmpty)
@@ -107,7 +107,7 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
             _ = try peer.origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
             try peer.origin.write(Array(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/grpc-web-text+proto\r\nTransfer-Encoding: chunked\r\n\r\n"
-.utf8
+                    .utf8
             ))
             let message: [UInt8] = [0, 0, 0, 0, 2, 8, 42]
             let encoded = Array(Data(message).base64EncodedString().utf8)
@@ -140,13 +140,13 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
             XCTAssertTrue(release022ResponseBodyBytes(peer.raw.events).isEmpty)
             XCTAssertEqual(
                 finished.filter { event in
-                if case .grpc(.message) = event.payload, event.direction == .response {
-                    true
-                } else {
-                    false
+                    if case .grpc(.message) = event.payload, event.direction == .response {
+                        true
+                    } else {
+                        false
+                    }
                 }
-            }
-.count,
+                .count,
                 1
             )
         }
@@ -184,7 +184,7 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
                     nil
                 }
             }
-.first)
+            .first)
             XCTAssertTrue(summary.compressed)
             XCTAssertEqual(summary.encodedBytes, 7)
             XCTAssertEqual(summary.decodedBytes, 5)
@@ -218,7 +218,7 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
                         false
                     }
                 }
-.count == 2
+                .count == 2
             }
             let bytes = observed.flatMap { event -> [UInt8] in
                 if case let .webSocketChunk(bytes) = event.payload {
@@ -237,7 +237,6 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
             })
         }
     }
-
 }
 
 extension Stage2InspectionAcceptanceTests {
@@ -278,8 +277,8 @@ extension Stage2InspectionAcceptanceTests {
         _ = try peer.origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
         try peer.origin.write(Array((
             "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n"
-            + "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n"
-            + "Sec-WebSocket-Extensions: permessage-deflate; server_no_context_takeover; client_no_context_takeover\r\n\r\n"
+                + "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n"
+                + "Sec-WebSocket-Extensions: permessage-deflate; server_no_context_takeover; client_no_context_takeover\r\n\r\n"
         ).utf8))
         _ = try peer.raw.wait { $0.contains {
             if case .webSocketOpen = $0 {
@@ -298,8 +297,8 @@ extension Stage2InspectionAcceptanceTests {
         _ = try peer.origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
         try peer.origin.write(Array((
             "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n"
-            + "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n"
-            + "Sec-WebSocket-Extensions: permessage-deflate\r\n\r\n"
+                + "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n"
+                + "Sec-WebSocket-Extensions: permessage-deflate\r\n\r\n"
         ).utf8))
         _ = try peer.raw.wait { $0.contains {
             if case .webSocketOpen = $0 {

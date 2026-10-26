@@ -84,11 +84,11 @@ final class HTTPInspectionBody {
 
     private func configureMedia(headers: [HTTPHeaderField], path: String, status: Int?) throws {
         let media = headers.first { $0.name.lowercased() == "content-type" }?
-.value
+            .value
             .split(separator: ";", maxSplits: 1)
-.first?
+            .first?
             .trimmingCharacters(in: .whitespaces)
-.lowercased() ?? ""
+            .lowercased() ?? ""
         if media == "text/event-stream" {
             sse = try SSEParser(
                 maximumLineBytes: configuration.maximumLineBytes,
@@ -110,7 +110,7 @@ final class HTTPInspectionBody {
                     guard let self else { return }
                     self.output(.grpc(event))
                     if case let .message(message) = event,
-                        media == "application/grpc" || media.hasSuffix("+proto") {
+                       media == "application/grpc" || media.hasSuffix("+proto") {
                         self.inspectProtobuf(message.bytes, path: path)
                     }
                 }
@@ -305,7 +305,7 @@ private extension HTTPInspectionBody {
 
     func inspectProtobuf(_ bytes: [UInt8], path: String) {
         guard let schema = configuration.schema,
-            let name = schema.messageName(methodPath: path, response: context.direction == .response)
+              let name = schema.messageName(methodPath: path, response: context.direction == .response)
         else {
             output(.diagnostic(.schemaUnavailable))
             return

@@ -128,7 +128,7 @@ public final class ContentDecoder {
     ) throws -> ContentDecoderProgress {
         guard !finished, !failed else { throw ContentDecoderError.alreadyFinished }
         guard maximumOutputBytes > 0, maximumOutputBytes <= 1_048_576,
-            input.count <= 1_048_576
+              input.count <= 1_048_576
         else {
             throw ContentDecoderError.invalidConfiguration
         }

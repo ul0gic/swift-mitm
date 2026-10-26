@@ -296,23 +296,23 @@ final class CaptureBodyTests: XCTestCase {
 
     private func firstRequestID(_ sink: RecordingSink) -> UUID? {
         sink.events
-.compactMap { event -> UUID? in
-            if case let .requestHead(head) = event {
-                return head.id
+            .compactMap { event -> UUID? in
+                if case let .requestHead(head) = event {
+                    return head.id
+                }
+                return nil
             }
-            return nil
-        }
-.first
+            .first
     }
 
     private func firstResponseID(_ sink: RecordingSink) -> UUID? {
         sink.events
-.compactMap { event -> UUID? in
-            if case let .responseHead(head) = event {
-                return head.requestID
+            .compactMap { event -> UUID? in
+                if case let .responseHead(head) = event {
+                    return head.requestID
+                }
+                return nil
             }
-            return nil
-        }
-.first
+            .first
     }
 }

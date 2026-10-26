@@ -15,7 +15,7 @@ final class HTTPControlBudget: Sendable {
         try state.withLockedValue { value in
             guard bytes >= 0,
                   bytes <= value.configuration.limits.maximumRetainedBytes - value.bytes
-                  else { throw HTTPControlError.capacityExceeded }
+            else { throw HTTPControlError.capacityExceeded }
             value.bytes += bytes
         }
     }

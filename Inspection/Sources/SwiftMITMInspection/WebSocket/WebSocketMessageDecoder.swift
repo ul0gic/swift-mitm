@@ -103,8 +103,8 @@ public final class WebSocketMessageDecoder {
             return (name, nil)
         case "client_max_window_bits", "server_max_window_bits":
             guard pair.count == 2,
-                let value = Int32(pair[1].trimmingCharacters(in: .whitespaces)),
-                (8...15).contains(value)
+                  let value = Int32(pair[1].trimmingCharacters(in: .whitespaces)),
+                  (8...15).contains(value)
             else { throw WebSocketMessageError.unsupportedExtension }
             return (name, value)
         default: throw WebSocketMessageError.unsupportedExtension

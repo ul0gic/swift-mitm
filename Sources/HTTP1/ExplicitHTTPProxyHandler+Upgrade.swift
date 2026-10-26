@@ -14,7 +14,7 @@ extension ExplicitHTTPProxyHandler {
         context.write(wrapOutboundOut(.head(head)), promise: nil)
         let channel = context.channel
         context.writeAndFlush(wrapOutboundOut(.end(nil)))
-.assumeIsolated()
+            .assumeIsolated()
             .flatMap {
                 self.stopped = true
                 return context.pipeline.syncOperations.removeHandler(context: context)
@@ -64,9 +64,9 @@ extension ExplicitHTTPProxyHandler {
         }
         stopped = true
         channel.pipeline
-.syncOperations
-.removeHandler(context: context)
-.assumeIsolated()
+            .syncOperations
+            .removeHandler(context: context)
+            .assumeIsolated()
             .flatMap { Self.remove(HTTPForwardResponseHandler.self, from: upstream) }
             .flatMap { Self.remove(BytePreservingHTTPResponseEncoder.self, from: channel) }
             .flatMap { Self.remove(BytePreservingHTTPRequestEncoder.self, from: upstream) }

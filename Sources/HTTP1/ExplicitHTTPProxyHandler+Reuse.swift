@@ -11,7 +11,7 @@ extension ExplicitHTTPProxyHandler {
             authority: target.authority,
             scheme: target.scheme,
             credentialScope: Self.fields(exchange.effectiveHead.headers)
-                             .filter { credentials.contains($0.name.lowercased()) }
+                .filter { credentials.contains($0.name.lowercased()) }
         )
     }
 
@@ -20,7 +20,7 @@ extension ExplicitHTTPProxyHandler {
         let channel = pooled.channel
         guard authorizeReuse(target, channel), let remote = channel.remoteAddress,
               let unresolved = ConnectionTarget(host: target.host, port: target.port, ingressProvenance: .explicitHTTP)
-              else {
+        else {
             channel.close(promise: nil)
             return false
         }
@@ -84,7 +84,7 @@ extension ExplicitHTTPProxyHandler {
             .flatMap { Self.remove(ByteToMessageHandler<BytePreservingHTTPResponseDecoder>.self, from: channel) }
             .flatMap { Self.remove(BytePreservingHTTPRequestEncoder.self, from: channel) }
             .assumeIsolated()
-.whenComplete { result in
+            .whenComplete { result in
                 guard !self.stopped, self.active === exchange else {
                     channel.close(promise: nil)
                     return
@@ -110,8 +110,8 @@ extension ExplicitHTTPProxyHandler {
                 eventLoop: channel.eventLoop
             )
             return channel.pipeline
-.syncOperations
-.removeHandler(context: raw)
+                .syncOperations
+                .removeHandler(context: raw)
                 .flatMap { channel.pipeline.syncOperations.removeHandler(context: typed.value) }
         } catch { return channel.eventLoop.makeFailedFuture(error) }
     }

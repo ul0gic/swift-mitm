@@ -231,8 +231,8 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
         }
         if head.method == .CONNECT {
             guard ConnectionTarget(explicitConnectAuthority: head.uri) != nil,
-                !head.headers.contains(name: "transfer-encoding"),
-                head.headers["content-length"].allSatisfy({ $0 == "0" }) else {
+                  !head.headers.contains(name: "transfer-encoding"),
+                  head.headers["content-length"].allSatisfy({ $0 == "0" }) else {
                 reject(status: .badRequest, message: "Invalid CONNECT request")
                 return false
             }

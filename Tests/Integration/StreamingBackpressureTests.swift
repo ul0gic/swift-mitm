@@ -170,7 +170,6 @@ final class StreamingBackpressureTests: XCTestCase {
         assertFullSpeedMeasurement(received: received, bodySize: bodySize, elapsed: elapsed, peakDelta: peakDelta)
     }
 
-
     private func assertStalledMemory(bodySize: Int) async throws {
         try await Task.sleep(for: .milliseconds(300))
         let baseline = try MachMemory.residentBytes()
@@ -187,16 +186,15 @@ final class StreamingBackpressureTests: XCTestCase {
             "RSS grew \(stalledDelta) bytes while the consumer was stalled on a \(bodySize)-byte body — "
                 + "backpressure is not holding across the two proxy legs"
         )
-
     }
 
     private func assertFullSpeedMeasurement(received: Int, bodySize: Int, elapsed: TimeInterval, peakDelta: UInt64) {
         let throughputMBps = Double(bodySize) / 1_000_000 / elapsed
         let measurement =
             "STREAMING-MEASURE full-speed: body=\(bodySize / (1024 * 1024))MiB "
-            + "elapsed=\(String(format: "%.3f", elapsed))s "
-            + "throughput=\(String(format: "%.1f", throughputMBps))MB/s "
-            + "peakRSSDelta=\(peakDelta / (1024 * 1024))MiB\n"
+                + "elapsed=\(String(format: "%.3f", elapsed))s "
+                + "throughput=\(String(format: "%.1f", throughputMBps))MB/s "
+                + "peakRSSDelta=\(peakDelta / (1024 * 1024))MiB\n"
         FileHandle.standardError.write(Data(measurement.utf8))
 
         XCTAssertEqual(received, bodySize)

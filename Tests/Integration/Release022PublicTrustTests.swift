@@ -100,29 +100,7 @@ final class Release022PublicTrustTests: XCTestCase {
             )
             XCTAssertEqual(count, 8)
             try await server.stop()
-            let flows = sink.events.compactMap { event -> CapturedOpaqueFlow? in
-                if case let .opaqueOpen(flow) = event {
-                    flow
-                } else {
-                    nil
-                }
-            }
-            XCTAssertEqual(flows.count, 1)
-            XCTAssertEqual(flows.first?.reason, .policySelected)
-            XCTAssertFalse(sink.events.contains {
-                if case .requestHead = $0 {
-                    true
-                } else {
-                    false
-                }
-            })
-            XCTAssertFalse(sink.events.contains {
-                if case .connectionFailure = $0 {
-                    true
-                } else {
-                    false
-                }
-            })
+            assertPolicySelectedOpaqueFlow(sink.events)
             origin.stop()
             try await group.shutdownGracefully()
         } catch {
@@ -134,7 +112,6 @@ final class Release022PublicTrustTests: XCTestCase {
             throw error
         }
     }
-
 }
 
 extension Release022PublicTrustTests {
@@ -213,23 +190,7 @@ extension Release022PublicTrustTests {
                 .writeAndFlush(ByteBuffer(string: "CONNECT \(target) HTTP/1.1\r\nHost: \(target)\r\n\r\n")))
             try received.waitForClose()
             try await server.stop()
-            let failures = sink.events.compactMap { event -> CapturedConnectionFailure? in
-                if case let .connectionFailure(failure) = event {
-                    failure
-                } else {
-                    nil
-                }
-            }
-            XCTAssertEqual(failures.count, 1)
-            XCTAssertEqual(failures.first?.code, .egressDenied)
-            XCTAssertEqual(origin.acceptedConnections, 0)
-            XCTAssertFalse(sink.events.contains {
-                if case .opaqueOpen = $0 {
-                    true
-                } else {
-                    false
-                }
-            })
+            assertDeniedPassThrough(sink.events, acceptedConnections: origin.acceptedConnections)
             if channel.isActive {
                 try await channel.close().get()
             }
@@ -280,34 +241,10 @@ extension Release022PublicTrustTests {
                 destinationPort: origin.localPort
             )
             try phase4BoundedWait(channel.writeAndFlush(ByteBuffer(bytes: header.bytes)))
-            let tls = try ProxyTestClient(group: group).installTLS(
-                on: channel,
-                serverHostname: "localhost",
-                mitmCACertificatePEM: origin.caCertificatePEM,
-                applicationProtocols: ["http/1.1"]
-            )
-            try phase4BoundedWait(tls.installed)
-            XCTAssertEqual(try phase4BoundedWait(tls.handshake), "http/1.1")
-            try phase4BoundedWait(channel
-                .writeAndFlush(ByteBuffer(string: "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")))
-            _ = try received.wait { String(decoding: $0, as: UTF8.self).hasSuffix("AAAAAAAA") }
+            try fetchTransparentOrigin(channel: channel, group: group, origin: origin, received: received)
             try await channel.close().get()
             try await server.stop()
-            let reasons = sink.events.compactMap { event -> OpaqueForwardingReason? in
-                if case let .opaqueOpen(flow) = event {
-                    flow.reason
-                } else {
-                    nil
-                }
-            }
-            XCTAssertEqual(reasons, [.policySelected])
-            XCTAssertFalse(sink.events.contains {
-                if case .requestHead = $0 {
-                    true
-                } else {
-                    false
-                }
-            })
+            assertTransparentPolicySelection(sink.events)
             origin.stop()
             try await group.shutdownGracefully()
         } catch {
@@ -321,5 +258,91 @@ extension Release022PublicTrustTests {
             try? await group.shutdownGracefully()
             throw error
         }
+    }
+
+}
+
+extension Release022PublicTrustTests {
+    private func assertPolicySelectedOpaqueFlow(_ events: [CaptureEvent]) {
+        let flows = events.compactMap { event -> CapturedOpaqueFlow? in
+            if case let .opaqueOpen(flow) = event {
+                flow
+            } else {
+                nil
+            }
+        }
+        XCTAssertEqual(flows.count, 1)
+        XCTAssertEqual(flows.first?.reason, .policySelected)
+        XCTAssertFalse(events.contains {
+            if case .requestHead = $0 {
+                true
+            } else {
+                false
+            }
+        })
+        XCTAssertFalse(events.contains {
+            if case .connectionFailure = $0 {
+                true
+            } else {
+                false
+            }
+        })
+    }
+
+    private func assertDeniedPassThrough(_ events: [CaptureEvent], acceptedConnections: Int) {
+        let failures = events.compactMap { event -> CapturedConnectionFailure? in
+            if case let .connectionFailure(failure) = event {
+                failure
+            } else {
+                nil
+            }
+        }
+        XCTAssertEqual(failures.count, 1)
+        XCTAssertEqual(failures.first?.code, .egressDenied)
+        XCTAssertEqual(acceptedConnections, 0)
+        XCTAssertFalse(events.contains {
+            if case .opaqueOpen = $0 {
+                true
+            } else {
+                false
+            }
+        })
+    }
+
+    private func fetchTransparentOrigin(
+        channel: Channel,
+        group: EventLoopGroup,
+        origin: TLSOriginServer,
+        received: Release022WireObservation
+    ) throws {
+        let tls = try ProxyTestClient(group: group).installTLS(
+            on: channel,
+            serverHostname: "localhost",
+            mitmCACertificatePEM: origin.caCertificatePEM,
+            applicationProtocols: ["http/1.1"]
+        )
+        try phase4BoundedWait(tls.installed)
+        XCTAssertEqual(try phase4BoundedWait(tls.handshake), "http/1.1")
+        try phase4BoundedWait(channel
+            .writeAndFlush(ByteBuffer(string: "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")))
+        _ = try received.wait { String(decoding: $0, as: UTF8.self).hasSuffix("AAAAAAAA") }
+    }
+
+    private func assertTransparentPolicySelection(_ events: [CaptureEvent]) {
+        let reasons = events.compactMap { event -> OpaqueForwardingReason? in
+            if case let .opaqueOpen(flow) = event {
+                flow.reason
+            } else {
+                nil
+            }
+        }
+        XCTAssertEqual(reasons, [.policySelected])
+        XCTAssertFalse(events.contains {
+            if case .requestHead = $0 {
+                true
+            } else {
+                false
+            }
+        })
     }
 }

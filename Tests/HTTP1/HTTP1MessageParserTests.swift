@@ -178,7 +178,7 @@ final class HTTP1MessageParserTests: XCTestCase {
     func testPipelinedKeepAliveRequestsInOneFeed() {
         let pipelined =
             "GET /a HTTP/1.1\r\nHost: x\r\n\r\n"
-            + "POST /b HTTP/1.1\r\nContent-Length: 2\r\n\r\nhi"
+                + "POST /b HTTP/1.1\r\nContent-Length: 2\r\n\r\nhi"
         let outputs = parse(mode: .request, feeds: [pipelined])
         XCTAssertEqual(
             outputs,

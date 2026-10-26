@@ -38,7 +38,7 @@ final class Release022IndependentGRPCCompatibilityTests: XCTestCase {
                         false
                     }
                 }
-.count == 5
+                .count == 5
             }
             assertIndependentGRPCEvents(events)
             try await server.stop()
@@ -52,7 +52,12 @@ final class Release022IndependentGRPCCompatibilityTests: XCTestCase {
         }
     }
 
-    private func independentClient(peer: Release022ExternalPeer, port: Int, originPort: Int, proxyRoot: URL) throws -> String {
+    private func independentClient(
+        peer: Release022ExternalPeer,
+        port: Int,
+        originPort: Int,
+        proxyRoot: URL
+    ) throws -> String {
         var environment = ProcessInfo.processInfo.environment
         environment["grpc_proxy"] = "http://127.0.0.1:\(port)"
         environment["https_proxy"] = "http://127.0.0.1:\(port)"

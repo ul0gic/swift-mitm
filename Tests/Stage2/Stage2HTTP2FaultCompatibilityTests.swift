@@ -53,8 +53,12 @@ final class Stage2HTTP2FaultCompatibilityTests: XCTestCase {
         }
     }
 
-
-    private func runFaultClient(peer: Release022ExternalPeer, port: Int, originPort: Int, proxyRoot: URL) throws -> String {
+    private func runFaultClient(
+        peer: Release022ExternalPeer,
+        port: Int,
+        originPort: Int,
+        proxyRoot: URL
+    ) throws -> String {
         var environment = ProcessInfo.processInfo.environment
         environment["grpc_proxy"] = "http://127.0.0.1:\(port)"
         environment["https_proxy"] = "http://127.0.0.1:\(port)"

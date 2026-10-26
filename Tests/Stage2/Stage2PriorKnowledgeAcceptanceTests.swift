@@ -23,22 +23,22 @@ private final class Stage2ClearH2Origin: Sendable {
 
     func start() async throws {
         let listener = try await ServerBootstrap(group: group)
-.childChannelInitializer { [self] channel in
-            state.withLockedValue { $0.channels.append(channel) }
-            return channel.configureHTTP2Pipeline(
-                mode: .server,
-                connectionConfiguration: .init(),
-                streamConfiguration: .init()
-            ) { stream in
-                stream.eventLoop.makeCompletedFuture {
-                    try stream.pipeline.syncOperations.addHandler(Stage2ClearH2Handler { headers in
-                        self.state.withLockedValue { $0.requests.append(headers) }
-                    })
-                }
-            }.map { _ in () }
-        }
-.bind(host: "127.0.0.1", port: 0)
-.get()
+            .childChannelInitializer { [self] channel in
+                state.withLockedValue { $0.channels.append(channel) }
+                return channel.configureHTTP2Pipeline(
+                    mode: .server,
+                    connectionConfiguration: .init(),
+                    streamConfiguration: .init()
+                ) { stream in
+                    stream.eventLoop.makeCompletedFuture {
+                        try stream.pipeline.syncOperations.addHandler(Stage2ClearH2Handler { headers in
+                            self.state.withLockedValue { $0.requests.append(headers) }
+                        })
+                    }
+                }.map { _ in () }
+            }
+            .bind(host: "127.0.0.1", port: 0)
+            .get()
         state.withLockedValue { $0.listener = listener }
     }
 
@@ -56,7 +56,7 @@ private final class Stage2ClearH2Handler: ChannelInboundHandler {
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         guard case let .headers(frame) = unwrapInboundIn(data),
-              frame.headers.first(name: ":method") != nil else { return }
+              frame.headers.contains(name: ":method") else { return }
         record(frame.headers)
         context.write(
             wrapOutboundOut(.headers(.init(headers: HPACKHeaders([
@@ -125,9 +125,11 @@ final class Stage2PriorKnowledgeAcceptanceTests: XCTestCase {
         }
     }
 
-
     private func priorKnowledgeProxy(
-        group: MultiThreadedEventLoopGroup, originPort: Int, raw: Release022Events, inspector: HTTPInspector
+        group: MultiThreadedEventLoopGroup,
+        originPort: Int,
+        raw: Release022Events,
+        inspector: HTTPInspector
     ) throws -> ProxyServer {
         let ingress = try XCTUnwrap(HTTP2PriorKnowledgeIngress(authority: "127.0.0.1:\(originPort)"))
         return ProxyServer(
@@ -142,26 +144,29 @@ final class Stage2PriorKnowledgeAcceptanceTests: XCTestCase {
     }
 
     private func connectPriorKnowledge(
-        group: MultiThreadedEventLoopGroup, port: Int,
+        group: MultiThreadedEventLoopGroup,
+        port: Int,
         muxPromise: EventLoopPromise<NIOHTTP2Handler.StreamMultiplexer>
     ) async throws -> Channel {
         return try await ClientBootstrap(group: group)
-.channelInitializer { channel in
-            channel.configureHTTP2Pipeline(
-                mode: .client,
-                connectionConfiguration: .init(),
-                streamConfiguration: .init()
-            ) { stream in
-                stream.close()
-            }.map { muxPromise.succeed($0) }
-        }
-.connect(host: "127.0.0.1", port: port)
-.get()
+            .channelInitializer { channel in
+                channel.configureHTTP2Pipeline(
+                    mode: .client,
+                    connectionConfiguration: .init(),
+                    streamConfiguration: .init()
+                ) { stream in
+                    stream.close()
+                }.map { muxPromise.succeed($0) }
+            }
+            .connect(host: "127.0.0.1", port: port)
+            .get()
     }
 
     private func assertPriorKnowledgeExchange(
-        mux: NIOHTTP2Handler.StreamMultiplexer, origin: Stage2ClearH2Origin,
-        events: Stage2InspectionEvents, connection: Channel
+        mux: NIOHTTP2Handler.StreamMultiplexer,
+        origin: Stage2ClearH2Origin,
+        events: Stage2InspectionEvents,
+        connection: Channel
     ) async throws {
         let stream = try stage2H2Stream(mux)
         try stream.write(.headers(.init(

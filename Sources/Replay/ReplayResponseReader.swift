@@ -37,7 +37,7 @@ struct ReplayResponseReader: Sendable {
     private mutating func receiveHead(_ received: HTTPResponseHead) async throws -> ReplayResult? {
         timing.startResponse()
         guard !ExplicitHTTPProxyHandler.ambiguous(received.headers), received.status.code != 101,
-            status == nil else { throw ReplayError.incompleteResponse }
+              status == nil else { throw ReplayError.incompleteResponse }
         let response = CapturedResponseHead(
             requestID: execution.invocation.identity.requestID,
             timestamp: Date(),
@@ -63,8 +63,8 @@ struct ReplayResponseReader: Sendable {
         guard !overflow else { throw ReplayError.incompleteResponse }
         receivedBytes = newCount
         let requestID = execution.invocation
-.identity
-.requestID
+            .identity
+            .requestID
         (execution.server.sink as? ObservationCaptureSink)?.receiveBody(
             requestID: requestID,
             direction: .response,

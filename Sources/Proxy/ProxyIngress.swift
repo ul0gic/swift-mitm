@@ -143,7 +143,7 @@ public struct TrustedPeerPolicy: Sendable {
         guard components.count == 2 else { return maximum }
         let text = components[1]
         guard !text.isEmpty, text.utf8.allSatisfy({ (48...57).contains($0) }),
-            let prefixLength = Int(text), (0...maximum).contains(prefixLength) else {
+              let prefixLength = Int(text), (0...maximum).contains(prefixLength) else {
             return nil
         }
         return prefixLength
@@ -175,9 +175,9 @@ public struct TrustedProxyV2Ingress: Sendable {
         classificationDeadline: Duration = defaultClassificationDeadline
     ) {
         guard (16...(16 + Int(UInt16.max))).contains(proxyHeaderMaximumBytes),
-            (1...Self.defaultClassificationMaximumBytes).contains(classificationMaximumBytes),
-            proxyHeaderDeadline.nioTimeAmount != nil,
-            classificationDeadline.nioTimeAmount != nil else {
+              (1...Self.defaultClassificationMaximumBytes).contains(classificationMaximumBytes),
+              proxyHeaderDeadline.nioTimeAmount != nil,
+              classificationDeadline.nioTimeAmount != nil else {
             return nil
         }
         self.trustedPeers = trustedPeers
@@ -218,8 +218,8 @@ public struct ProxyTimeoutPolicy: Sendable {
         http2InitialSettingsDeadline: Duration = defaultHTTP2InitialSettingsDeadline
     ) {
         guard upstreamConnectDeadline.nioTimeAmount != nil,
-            tlsHandshakeDeadline.nioTimeAmount != nil,
-            http2InitialSettingsDeadline.nioTimeAmount != nil else {
+              tlsHandshakeDeadline.nioTimeAmount != nil,
+              http2InitialSettingsDeadline.nioTimeAmount != nil else {
             return nil
         }
         self.upstreamConnectDeadline = upstreamConnectDeadline

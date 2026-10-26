@@ -36,7 +36,10 @@ func release022AssertIdentity(
         let channel = try peer.openTunnel(proxyPort: port, originHost: "127.0.0.1", originPort: origin.localPort)
         client = channel
         try release022ExerciseIdentity(
-            channel: channel, peer: peer, authority: authority, sink: sink,
+            channel: channel,
+            peer: peer,
+            authority: authority,
+            sink: sink,
             expectation: .init(serverName: serverName, port: origin.localPort, succeeds: succeeds)
         )
         if channel.isActive {
@@ -66,7 +69,10 @@ private struct Release022IdentityExpectation {
 }
 
 private func release022ExerciseIdentity(
-    channel: Channel, peer: ProxyTestClient, authority: CertificateAuthority, sink: Release022Events,
+    channel: Channel,
+    peer: ProxyTestClient,
+    authority: CertificateAuthority,
+    sink: Release022Events,
     expectation: Release022IdentityExpectation
 ) throws {
     let tls = try peer.installTLS(
@@ -78,7 +84,12 @@ private func release022ExerciseIdentity(
     try phase4BoundedWait(tls.installed)
     if expectation.succeeds {
         XCTAssertEqual(try phase4BoundedWait(tls.handshake), "http/1.1")
-        try release022AssertSelectedIdentity(channel: channel, port: expectation.port, serverName: expectation.serverName, sink: sink)
+        try release022AssertSelectedIdentity(
+            channel: channel,
+            port: expectation.port,
+            serverName: expectation.serverName,
+            sink: sink
+        )
     } else {
         do {
             _ = try phase4BoundedWait(tls.handshake)
@@ -97,7 +108,10 @@ private func release022ExerciseIdentity(
 }
 
 private func release022AssertSelectedIdentity(
-    channel: Channel, port: Int, serverName: String?, sink: Release022Events
+    channel: Channel,
+    port: Int,
+    serverName: String?,
+    sink: Release022Events
 ) throws {
     let received = Release022WireObservation()
     try phase4BoundedWait(channel.eventLoop.submit {
@@ -113,14 +127,14 @@ private func release022AssertSelectedIdentity(
         }
     } }
     let request = try XCTUnwrap(sink.events
-.compactMap { event -> CapturedRequestHead? in
-        if case let .requestHead(head) = event {
-            head
-        } else {
-            nil
+        .compactMap { event -> CapturedRequestHead? in
+            if case let .requestHead(head) = event {
+                head
+            } else {
+                nil
+            }
         }
-    }
-.first)
+        .first)
     XCTAssertEqual(request.target?.destination.address, "127.0.0.1")
     XCTAssertEqual(request.target?.destination.port, port)
     XCTAssertEqual(request.target?.tlsServerName, serverName)
@@ -136,14 +150,14 @@ private func release022AssertSelectedIdentity(
 private func release022AssertIdentityFailure(_ events: [CaptureEvent]) {
     XCTAssertEqual(
         events
-.filter {
-        if case .connectionFailure = $0 {
-            true
-        } else {
-            false
-        }
-    }
-.count,
+            .filter {
+                if case .connectionFailure = $0 {
+                    true
+                } else {
+                    false
+                }
+            }
+            .count,
         1
     )
     XCTAssertFalse(events.contains {

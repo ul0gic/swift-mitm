@@ -86,8 +86,8 @@ final class ReplayControls: Sendable {
             try validateReplacement(body, maximum: maximum, override: override, message: message)
         case let .respond(status, _, body):
             guard (200...599).contains(status), body.count <= snapshot.limits.maximumBodyBytes,
-                ![204, 205, 304].contains(status) || body.isEmpty,
-                message.method != "HEAD" || body.isEmpty else { throw HTTPControlError.unsupportedEdit }
+                  ![204, 205, 304].contains(status) || body.isEmpty,
+                  message.method != "HEAD" || body.isEmpty else { throw HTTPControlError.unsupportedEdit }
         default: break
         }
     }
@@ -99,8 +99,8 @@ final class ReplayControls: Sendable {
         message: HTTPControlMessage
     ) throws {
         guard !HTTPControlConfiguration.unsupported(message),
-            (1...snapshot.limits.maximumBodyBytes).contains(maximum),
-            body.count <= snapshot.limits.maximumBodyBytes
+              (1...snapshot.limits.maximumBodyBytes).contains(maximum),
+              body.count <= snapshot.limits.maximumBodyBytes
         else { throw HTTPControlError.unsupportedEdit }
         if let input = message.body, input.count > maximum {
             throw HTTPControlError.bodyLimitExceeded

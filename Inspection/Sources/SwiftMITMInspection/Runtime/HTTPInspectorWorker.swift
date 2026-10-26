@@ -3,15 +3,19 @@ import SwiftMITM
 
 extension HTTPInspector {
     func runTurn() {
-        var state = worker.withLock { value in
-            let taken = value
-            value = Worker()
-            return taken
+        let schedule = worker.withLock { state in
+            processTurn(&state)
         }
+        if schedule {
+            queue.async { self.runTurn() }
+        }
+    }
+
+    private func processTurn(_ state: inout Worker) -> Bool {
         let stopping = ingress.withLock { $0.stopping }
         if stopping {
             stopWorker(&state)
-            return
+            return false
         }
         applyLosses(&state)
         if state.current == nil {
@@ -20,19 +24,12 @@ extension HTTPInspector {
         processCurrent(&state)
         let continuing = state.current != nil
         cleanupTerminals(&state)
-        worker.withLock { value in
-            value = state
-            state = Worker()
-        }
-        let schedule = ingress.withLock { value in
+        return ingress.withLock { value in
             if continuing || !value.items.isEmpty || !value.losses.isEmpty || value.stopping {
                 return true
             }
             value.running = false
             return false
-        }
-        if schedule {
-            queue.async { self.runTurn() }
         }
     }
 
@@ -113,12 +110,12 @@ extension HTTPInspector {
         let terminalIDs = ingress.withLock { value in
             value.active.filter { id in
                 guard state.current?.key.id != id,
-                    !value.items.contains(where: { $0.key.id == id }) else { return false }
+                      !value.items.contains(where: { $0.key.id == id }) else { return false }
                 if value.closedSockets.contains(id) {
                     return true
                 }
                 guard value.ended.contains(self.makeKey(id, .request)),
-                    value.ended.contains(self.makeKey(id, .response)) else { return false }
+                      value.ended.contains(self.makeKey(id, .response)) else { return false }
                 return state.exchanges.keys.filter { $0.id == id }.allSatisfy { key in
                     let response = Key(HTTPBodyObservation(
                         requestID: id,

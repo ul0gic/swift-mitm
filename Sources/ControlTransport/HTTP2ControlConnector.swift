@@ -75,23 +75,23 @@ extension ProxyServer {
             configuration: configuration,
             initializer: { $0.close() }
         )
-            .flatMap { mux in
-                connection.releaseBufferedReads().flatMap {
-                    mux.value.createStreamChannel { stream in
-                        self.configureControlledHTTP2Stream(
-                            stream,
-                            resolved: resolved,
-                            target: target,
-                            requestID: requestID,
-                            errorState: errorState
-                        )
-                    }
+        .flatMap { mux in
+            connection.releaseBufferedReads().flatMap {
+                mux.value.createStreamChannel { stream in
+                    self.configureControlledHTTP2Stream(
+                        stream,
+                        resolved: resolved,
+                        target: target,
+                        requestID: requestID,
+                        errorState: errorState
+                    )
                 }
             }
-            .map {
-                HTTPForwardConnection(channel: $0, target: resolved.target.capturedTarget, usesHTTP2Codec: true)
-            }
-            .flatMapError { error in connection.channel.close().flatMapThrowing { throw error } }
+        }
+        .map {
+            HTTPForwardConnection(channel: $0, target: resolved.target.capturedTarget, usesHTTP2Codec: true)
+        }
+        .flatMapError { error in connection.channel.close().flatMapThrowing { throw error } }
     }
 
     private func configureControlledHTTP2Stream(

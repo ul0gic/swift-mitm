@@ -95,16 +95,16 @@ final class Phase3ProxyHTTP2WebSocketClient: Sendable {
             eventLoop: channel.eventLoop
         )
         let stream = try setup.multiplexer
-.createStreamChannel { stream in
-            stream.eventLoop.makeCompletedFuture {
-                try stream.pipeline.syncOperations.addHandler(Phase3ProxyHTTP2WebSocketClientStreamHandler(
-                    capability: capability,
-                    authority: "\(originHost):\(originPort)",
-                    completion: completion
-                ))
+            .createStreamChannel { stream in
+                stream.eventLoop.makeCompletedFuture {
+                    try stream.pipeline.syncOperations.addHandler(Phase3ProxyHTTP2WebSocketClientStreamHandler(
+                        capability: capability,
+                        authority: "\(originHost):\(originPort)",
+                        completion: completion
+                    ))
+                }
             }
-        }
-        .wait()
+            .wait()
         state.withLockedValue { $0.stream = stream }
         return try completion.futureResult.wait()
     }
@@ -163,27 +163,27 @@ final class Phase3ProxyHTTP2WebSocketClient: Sendable {
         )
 
         let configured = channel.eventLoop
-.submit {
-            try channel.pipeline.syncOperations.addHandlers([
-                NIOSSLClientHandler(context: sslContext, serverHostname: originHost),
-                Phase3TLSHandshakeHandler(completion: handshake),
-                Phase3HTTP2SettingsObserver(completion: capability)
-            ])
-        }
-        .flatMap {
-            channel.configureHTTP2SecureUpgrade { channel in
-                channel.configureHTTP2Pipeline(
-                    mode: .client,
-                    connectionConfiguration: .init(),
-                    streamConfiguration: .init()
-                ) { $0.close() }
-                .map { value in multiplexer.complete(.success(value)) }
-            } http1ChannelConfigurator: { channel in
-                let error = Phase2FixtureError.unexpectedBytes
-                multiplexer.complete(.failure(error))
-                return channel.eventLoop.makeFailedFuture(error)
+            .submit {
+                try channel.pipeline.syncOperations.addHandlers([
+                    NIOSSLClientHandler(context: sslContext, serverHostname: originHost),
+                    Phase3TLSHandshakeHandler(completion: handshake),
+                    Phase3HTTP2SettingsObserver(completion: capability)
+                ])
             }
-        }
+            .flatMap {
+                channel.configureHTTP2SecureUpgrade { channel in
+                    channel.configureHTTP2Pipeline(
+                        mode: .client,
+                        connectionConfiguration: .init(),
+                        streamConfiguration: .init()
+                    ) { $0.close() }
+                        .map { value in multiplexer.complete(.success(value)) }
+                } http1ChannelConfigurator: { channel in
+                    let error = Phase2FixtureError.unexpectedBytes
+                    multiplexer.complete(.failure(error))
+                    return channel.eventLoop.makeFailedFuture(error)
+                }
+            }
         try configured.wait()
         guard try handshake.futureResult.wait() == "h2" else {
             throw Phase2FixtureError.unexpectedBytes

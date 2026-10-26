@@ -26,7 +26,7 @@ final class Stage2SharedBudgetAcceptanceTests: XCTestCase {
             let body = Array(("data: " + String(repeating: "x", count: 131_072) + "\n\n").utf8)
             try peer.origin.write(Array(
                 "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: \(body.count)\r\n\r\n"
-.utf8
+                    .utf8
             ) + body)
             let forwarded = try peer.received.wait { $0.suffix(body.count).elementsEqual(body) }
             XCTAssertEqual(Array(forwarded.suffix(body.count)), body)

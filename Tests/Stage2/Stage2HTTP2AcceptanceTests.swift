@@ -77,11 +77,7 @@ final class Stage2HTTP2AcceptanceTests: XCTestCase {
             let tunnel = try client.openTunnel(proxyPort: port, originHost: "localhost", originPort: origin.port)
             channel = tunnel
             let multiplexer = try installedMultiplexer(client: client, tunnel: tunnel, root: root)
-            let downstream = try stage2H2Stream(multiplexer)
-            try downstream.write(.headers(.init(
-                headers: stage2H2Headers(port: origin.port, path: "/stage2.Probe/Call"),
-                endStream: true
-            )))
+            let downstream = try beginSchemaStream(multiplexer, originPort: origin.port)
             let upstream = try origin.stream(0)
             try await schema.exercise(upstream: upstream, downstream: downstream, events: events, raw: raw)
             try await tunnel.close().get()
@@ -223,5 +219,17 @@ final class Stage2HTTP2AcceptanceTests: XCTestCase {
                 action: .editHeaders(remove: [], append: [HTTPHeaderField(name: "x-proof", value: "h2")])
             )
         ], limits: HTTPControlLimits()))
+    }
+
+    private func beginSchemaStream(
+        _ multiplexer: NIOHTTP2Handler.StreamMultiplexer,
+        originPort: Int
+    ) throws -> Release022H2Stream {
+        let downstream = try stage2H2Stream(multiplexer)
+        try downstream.write(.headers(.init(
+            headers: stage2H2Headers(port: originPort, path: "/stage2.Probe/Call"),
+            endStream: true
+        )))
+        return downstream
     }
 }

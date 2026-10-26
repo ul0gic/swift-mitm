@@ -60,7 +60,7 @@ extension ExplicitHTTPProxyHandler {
             !removed.contains($0.name.lowercased()) && !nominated.contains($0.name.lowercased())
                 && !excluded.contains($0.name.lowercased())
         }
-.map { ($0.name, $0.value) })
+        .map { ($0.name, $0.value) })
         if appendVia {
             headers.add(name: "via", value: "1.1 SwiftMITM")
         }

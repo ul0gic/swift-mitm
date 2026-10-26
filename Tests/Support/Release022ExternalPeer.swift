@@ -22,9 +22,9 @@ final class Release022ExternalPeer: @unchecked Sendable {
 
     static var clientsDirectory: URL {
         URL(fileURLWithPath: #filePath)
-.deletingLastPathComponent()
             .deletingLastPathComponent()
-.appendingPathComponent("Clients")
+            .deletingLastPathComponent()
+            .appendingPathComponent("Clients")
     }
 
     init() throws {
@@ -95,8 +95,8 @@ func release022RunProcess(
     process.standardError = error
     try process.run()
     process.waitUntilExit()
-    let result = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-    let diagnostic = String(decoding: error.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    let result = try XCTUnwrap(String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8))
+    let diagnostic = try XCTUnwrap(String(data: error.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8))
     guard process.terminationStatus == 0 else { throw Release022ClientError.commandFailed(diagnostic) }
     return result
 }

@@ -54,7 +54,7 @@ final class TestHTTP2Client {
                     connectionConfiguration: .init(),
                     streamConfiguration: .init()
                 ) { $0.close() }
-                .map { (channel, $0) }
+                    .map { (channel, $0) }
             }
             .wait()
 
@@ -62,14 +62,14 @@ final class TestHTTP2Client {
         let state = state
         let promise = donePromise
         let stream = try connection.1
-.createStreamChannel { stream in
-            stream.setOption(ChannelOptions.autoRead, value: false).flatMapThrowing {
-                try stream.pipeline.syncOperations.addHandler(
-                    ConsumingHandler(authority: authority, state: state, done: promise)
-                )
+            .createStreamChannel { stream in
+                stream.setOption(ChannelOptions.autoRead, value: false).flatMapThrowing {
+                    try stream.pipeline.syncOperations.addHandler(
+                        ConsumingHandler(authority: authority, state: state, done: promise)
+                    )
+                }
             }
-        }
-        .wait()
+            .wait()
         self.stream = stream
     }
 

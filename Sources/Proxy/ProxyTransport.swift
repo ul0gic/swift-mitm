@@ -211,7 +211,7 @@ extension ProxyServer {
                 configuration: connectionConfiguration,
                 initializer: initialize
             )
-.map { _ in () }
+            .map { _ in () }
         }
         return inbound.configureHTTP2Pipeline(
             mode: .server,
@@ -219,7 +219,7 @@ extension ProxyServer {
             streamConfiguration: streamConfiguration,
             inboundStreamInitializer: initialize
         )
-.map { _ in () }
+        .map { _ in () }
     }
 
     private func bridgeHTTP1(
@@ -300,7 +300,7 @@ extension ProxyServer {
     ) -> EventLoopFuture<Void> {
         inbound.eventLoop.makeCompletedFuture {
             guard let destination = HTTPForwardTarget(scheme: "https", authority: authority, requestTarget: "/")
-                else { throw HTTPControlError.invalidConfiguration }
+            else { throw HTTPControlError.invalidConfiguration }
             var configuration = BytePreservingHTTPResponseEncoder.Configuration()
             configuration.automaticallySetFramingHeaders = false
             let encoder = BytePreservingHTTPResponseEncoder(configuration: configuration)

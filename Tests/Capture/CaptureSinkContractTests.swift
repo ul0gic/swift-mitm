@@ -106,7 +106,8 @@ final class CaptureSinkContractTests: XCTestCase {
         defer { _ = try? channel.finish() }
 
         _ = try channel.writeInbound(buffer(
-            "POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n1\r\na\r\n0\r\nDigest: value\r\n\r\n"
+            "POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n"
+                + "1\r\na\r\n0\r\nDigest: value\r\n\r\n"
         ))
 
         XCTAssertEqual(eventKinds(sink.events), ["head", "body", "trailers", "end"])
@@ -117,7 +118,8 @@ final class CaptureSinkContractTests: XCTestCase {
         let completed = DispatchSemaphore(value: 0)
         let outcome = NIOLockedValueBox<String?>(nil)
         let input = buffer(
-            "POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n1\r\na\r\n0\r\nDigest: value\r\n\r\n"
+            "POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n"
+                + "1\r\na\r\n0\r\nDigest: value\r\n\r\n"
         )
         defer {
             sink.release()

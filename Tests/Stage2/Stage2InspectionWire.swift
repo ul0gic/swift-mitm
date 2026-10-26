@@ -37,6 +37,17 @@ struct Stage2WireContext {
     let raw: Release022Events
     let inspected: Stage2InspectionEvents
     let inspector: HTTPInspector
+
+    func close() async throws {
+        if client.isActive {
+            try await client.close().get()
+        }
+        try await proxy.stop()
+        origin.stop()
+        let shutdown = await inspector.shutdown()
+        XCTAssertTrue(shutdown.drained)
+        try await group.shutdownGracefully()
+    }
 }
 
 func stage2WithInspectionWire(
@@ -75,7 +86,7 @@ func stage2WithInspectionWire(
         let received = Release022WireObservation()
         let channel = try release022WireClient(group: group, port: port, observation: received)
         client = channel
-        try await body(Stage2WireContext(
+        let context = Stage2WireContext(
             proxy: proxy,
             group: group,
             origin: origin,
@@ -84,19 +95,17 @@ func stage2WithInspectionWire(
             raw: raw,
             inspected: inspected,
             inspector: inspector
-        ))
-        if channel.isActive {
-            try await channel.close().get()
-        }
-        try await proxy.stop()
-        origin.stop()
-        let shutdown = await inspector.shutdown()
-        XCTAssertTrue(shutdown.drained)
-        try await group.shutdownGracefully()
+        )
+        try await body(context)
+        try await context.close()
     } catch {
         let failure = error
         await stage2CleanupInspectionWire(
-            client: client, proxy: proxy, origin: origin, inspector: inspector, group: group
+            client: client,
+            proxy: proxy,
+            origin: origin,
+            inspector: inspector,
+            group: group
         )
         throw failure
     }

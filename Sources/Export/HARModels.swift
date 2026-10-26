@@ -30,7 +30,7 @@ public struct HARExchangeTiming: Sendable {
         let phases = [send, wait, receive] + [blocked, dns, connect, ssl].compactMap(\.self)
         let total = send + wait + receive + (blocked ?? 0) + (dns ?? 0) + (connect ?? 0)
         guard phases.allSatisfy({ $0.isFinite && $0 >= 0 }), total.isFinite,
-            ssl.map({ value in connect.map { value <= $0 } ?? false }) ?? true
+              ssl.map({ value in connect.map { value <= $0 } ?? false }) ?? true
         else { throw HARExportError.invalidTimings }
         self.send = send
         self.wait = wait

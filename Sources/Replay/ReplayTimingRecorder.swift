@@ -37,7 +37,7 @@ final class ReplayTimingRecorder: Sendable {
                 return ReplayMeasurement(timings: nil, unavailable: .incompleteUpload)
             }
             guard let responseStart = state.responseStart, let responseEnd = state.responseEnd,
-                sendStart <= sendEnd, sendEnd <= responseStart, responseStart <= responseEnd
+                  sendStart <= sendEnd, sendEnd <= responseStart, responseStart <= responseEnd
             else { return ReplayMeasurement(timings: nil, unavailable: .overlappingExchange) }
             return try ReplayMeasurement(
                 timings: HARExchangeTiming(

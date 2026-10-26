@@ -126,20 +126,20 @@ extension Phase3ProxyHTTP2WebSocketClient {
             try channel.setOption(ChannelOptions.autoRead, value: false).wait()
         }
         let stream = try setup.multiplexer
-.createStreamChannel { stream in
-            let readsConfigured = startsStalled
-                ? stream.setOption(ChannelOptions.autoRead, value: false)
-                : stream.eventLoop.makeSucceededVoidFuture()
-            return readsConfigured.flatMapThrowing {
-                try stream.pipeline.syncOperations.addHandler(Phase3StalledWebSocketClientHandler(
-                    authority: authority,
-                    payloadSize: payloadSize,
-                    state: state,
-                    completion: completion
-                ))
+            .createStreamChannel { stream in
+                let readsConfigured = startsStalled
+                    ? stream.setOption(ChannelOptions.autoRead, value: false)
+                    : stream.eventLoop.makeSucceededVoidFuture()
+                return readsConfigured.flatMapThrowing {
+                    try stream.pipeline.syncOperations.addHandler(Phase3StalledWebSocketClientHandler(
+                        authority: authority,
+                        payloadSize: payloadSize,
+                        state: state,
+                        completion: completion
+                    ))
+                }
             }
-        }
-        .wait()
+            .wait()
         return .init(
             connection: channel,
             stream: stream,

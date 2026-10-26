@@ -310,7 +310,7 @@ struct InterceptionLab {
         output: ConsoleOutput
     ) async throws {
         guard let rawURL = arguments.value, let url = URL(string: rawURL),
-            let scheme = url.scheme, ["http", "https"].contains(scheme.lowercased()), url.host != nil
+              let scheme = url.scheme, ["http", "https"].contains(scheme.lowercased()), url.host != nil
         else { throw LabError.invalidURL }
         let sink = ReplayConsoleSink(output: output)
         let capture = ReplayCaptureSink(output: output)
@@ -335,7 +335,7 @@ struct InterceptionLab {
         )
         let result = try await performReplay(request, on: server, sink: sink)
         guard let response = await sink.responseHead, let requestHead = capture.requestHead,
-            requestHead.id == result.requestID else { throw LabError.missingResponse }
+              requestHead.id == result.requestID else { throw LabError.missingResponse }
         output.emit("replay status=\(result.status) bytes=\(result.responseBodyBytes) requestID=\(result.requestID)")
         if let path = arguments.exportPath {
             try await exportHAR(path, result: result, request: requestHead, response: response, output: output)

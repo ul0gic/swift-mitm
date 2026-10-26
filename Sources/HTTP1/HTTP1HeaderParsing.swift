@@ -44,7 +44,7 @@ extension HTTP1MessageParser {
         for field in fields {
             let text = field.value.trimmingASCIIWhitespace()
             guard !text.isEmpty, text.utf8.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }),
-                let length = Int(text) else {
+                  let length = Int(text) else {
                 return .invalid
             }
             distinct.insert(length)

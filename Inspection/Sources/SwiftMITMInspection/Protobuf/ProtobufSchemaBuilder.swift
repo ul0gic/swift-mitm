@@ -104,13 +104,13 @@ struct ProtobufSchemaBuilder {
     ) throws {
         let serviceName = try symbol(service.name, prefix: prefix)
         guard service.unknownFields.data.isEmpty, service.options.unknownFields.data.isEmpty,
-            service.options.uninterpretedOption.isEmpty, !service.options.hasFeatures else {
+              service.options.uninterpretedOption.isEmpty, !service.options.hasFeatures else {
             throw ProtobufInspectionError.unsupportedSchema
         }
         for method in service.method {
             _ = try symbol(method.name, prefix: serviceName)
             guard method.unknownFields.data.isEmpty, method.options.unknownFields.data.isEmpty,
-                method.options.uninterpretedOption.isEmpty, !method.options.hasFeatures else {
+                  method.options.uninterpretedOption.isEmpty, !method.options.hasFeatures else {
                 throw ProtobufInspectionError.unsupportedSchema
             }
             let path = "/" + String(serviceName.dropFirst()) + "/" + method.name
@@ -125,8 +125,8 @@ struct ProtobufSchemaBuilder {
                 let target = try field.typeName.map { try resolve($0, scope: name) }
                 if let target, let owner = symbolFiles[name], let targetOwner = symbolFiles[target],
                    visibleFiles[owner]?.contains(targetOwner) != true {
-                       throw ProtobufInspectionError.missingImport
-                   }
+                    throw ProtobufInspectionError.missingImport
+                }
                 resolved[field.number] = ProtobufField(
                     name: field.name,
                     number: field.number,
@@ -172,9 +172,9 @@ struct ProtobufSchemaBuilder {
             let input = try resolve(method.input, scope: service)
             let output = try resolve(method.output, scope: service)
             guard messages[input] != nil, messages[output] != nil,
-                let owner = symbolFiles[service], let inputOwner = symbolFiles[input],
-                let outputOwner = symbolFiles[output], visibleFiles[owner]?.contains(inputOwner) == true,
-                visibleFiles[owner]?.contains(outputOwner) == true else {
+                  let owner = symbolFiles[service], let inputOwner = symbolFiles[input],
+                  let outputOwner = symbolFiles[output], visibleFiles[owner]?.contains(inputOwner) == true,
+                  visibleFiles[owner]?.contains(outputOwner) == true else {
                 throw ProtobufInspectionError.invalidDescriptor
             }
             methods[path] = (input, output)
@@ -218,14 +218,14 @@ private extension ProtobufSchemaBuilder {
         let name = try symbol(descriptor.name, prefix: prefix)
         guard !descriptor.value.isEmpty, descriptor.unknownFields.data.isEmpty,
               descriptor.options.unknownFields.data.isEmpty, descriptor.options.uninterpretedOption.isEmpty,
-            !descriptor.options.hasFeatures, descriptor.visibility == .visibilityUnset else {
+              !descriptor.options.hasFeatures, descriptor.visibility == .visibilityUnset else {
             throw ProtobufInspectionError.unsupportedSchema
         }
         var values: [Int32: String] = [:]
         for value in descriptor.value {
             _ = try symbol(value.name, prefix: prefix)
             guard value.hasNumber, value.unknownFields.data.isEmpty, value.options.unknownFields.data.isEmpty,
-                value.options.uninterpretedOption.isEmpty, !value.options.hasFeatures else {
+                  value.options.uninterpretedOption.isEmpty, !value.options.hasFeatures else {
                 throw ProtobufInspectionError.unsupportedSchema
             }
             guard values[value.number] == nil || descriptor.options.allowAlias else {
@@ -289,11 +289,11 @@ private extension ProtobufSchemaBuilder {
         fieldCount += 1
         _ = try symbol(field.name, prefix: name)
         guard field.hasNumber, field.number > 0, field.number <= 536_870_911,
-            !(19_000...19_999).contains(field.number), existing[Int(field.number)] == nil,
-            field.hasType, field.hasLabel, !field.hasExtendee,
-            !proto3 || field.label != .required else { throw ProtobufInspectionError.invalidDescriptor }
+              !(19_000...19_999).contains(field.number), existing[Int(field.number)] == nil,
+              field.hasType, field.hasLabel, !field.hasExtendee,
+              !proto3 || field.label != .required else { throw ProtobufInspectionError.invalidDescriptor }
         guard field.type != .group, field.unknownFields.data.isEmpty, field.options.unknownFields.data.isEmpty,
-            field.options.uninterpretedOption.isEmpty, !field.options.hasFeatures else {
+              field.options.uninterpretedOption.isEmpty, !field.options.hasFeatures else {
             throw ProtobufInspectionError.unsupportedSchema
         }
         if field.options.hasPacked && field.options.packed {
@@ -304,7 +304,7 @@ private extension ProtobufSchemaBuilder {
         var oneof: String?
         if field.hasOneofIndex {
             guard field.oneofIndex >= 0, Int(field.oneofIndex) < descriptor.oneofDecl.count,
-                field.label == .optional else { throw ProtobufInspectionError.invalidDescriptor }
+                  field.label == .optional else { throw ProtobufInspectionError.invalidDescriptor }
             oneof = descriptor.oneofDecl[Int(field.oneofIndex)].name
         }
         guard !field.proto3Optional || (proto3 && oneof != nil) else {

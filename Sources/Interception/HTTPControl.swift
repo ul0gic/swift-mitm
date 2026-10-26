@@ -225,10 +225,7 @@ public struct HTTPControlConfiguration: Sendable {
             case .forward:
                 continue
             case let .editHeaders(remove, append):
-                guard !Self.unsupported(message) else { throw HTTPControlError.unsupportedEdit }
-                let names = Set(remove.map { $0.lowercased() })
-                headers.removeAll { names.contains($0.name.lowercased()) }
-                headers.append(contentsOf: append)
+                headers = try Self.editHeaders(headers, removing: remove, appending: append, message: message)
             case let .fault(fault):
                 guard !Self.isUpgrade(message) else { throw HTTPControlError.unsupportedEdit }
                 faults.append(fault)
@@ -260,6 +257,20 @@ public struct HTTPControlConfiguration: Sendable {
             overridesNoTransform: override,
             syntheticResponseHeaders: synthetic
         )
+    }
+
+    private static func editHeaders(
+        _ headers: [HTTPHeaderField],
+        removing names: [String],
+        appending additions: [HTTPHeaderField],
+        message: HTTPControlMessage
+    ) throws -> [HTTPHeaderField] {
+        guard !unsupported(message) else { throw HTTPControlError.unsupportedEdit }
+        let removedNames = Set(names.map { $0.lowercased() })
+        var edited = headers
+        edited.removeAll { removedNames.contains($0.name.lowercased()) }
+        edited.append(contentsOf: additions)
+        return edited
     }
 
     public func evaluateHead(_ message: HTTPControlMessage) throws -> HTTPControlHeadResult {
@@ -320,7 +331,7 @@ public struct HTTPControlConfiguration: Sendable {
             (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0)
                 || "!#$%&'*+-.^_`|~".utf8.contains($0)
         }), multiplexed || field.value.unicodeScalars.allSatisfy({ $0.value <= 255 }),
-        field.value.utf8.allSatisfy({ $0 == 9 || ($0 >= 32 && $0 != 127) }) else {
+              field.value.utf8.allSatisfy({ $0 == 9 || ($0 >= 32 && $0 != 127) }) else {
             throw HTTPControlError.invalidHeaders
         }
         let connectionFields = ["connection", "proxy-connection", "keep-alive", "transfer-encoding", "upgrade"]

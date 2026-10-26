@@ -33,24 +33,7 @@ func release022WithWire(
         let connection = try release022WireClient(group: group, port: port, observation: received)
         client = connection
         if transparent {
-            let header: Phase4ProxyV2Header
-            if ipv6 {
-                let loopback = [UInt8](repeating: 0, count: 15) + [1]
-                header = .ipv6(
-                    source: loopback,
-                    destination: loopback,
-                    sourcePort: 50_000,
-                    destinationPort: origin.port
-                )
-            } else {
-                header = .ipv4(
-                    source: [192, 0, 2, 1],
-                    destination: [127, 0, 0, 1],
-                    sourcePort: 50_000,
-                    destinationPort: origin.port
-                )
-            }
-            try phase4BoundedWait(connection.writeAndFlush(ByteBuffer(bytes: header.bytes)))
+            try release022SendProxyV2(on: connection, originPort: origin.port, ipv6: ipv6)
         }
         try body(origin, connection, received, sink)
         if connection.isActive {
@@ -68,6 +51,27 @@ func release022WithWire(
         try? await group.shutdownGracefully()
         throw error
     }
+}
+
+private func release022SendProxyV2(on connection: Channel, originPort: Int, ipv6: Bool) throws {
+    let header: Phase4ProxyV2Header
+    if ipv6 {
+        let loopback = [UInt8](repeating: 0, count: 15) + [1]
+        header = .ipv6(
+            source: loopback,
+            destination: loopback,
+            sourcePort: 50_000,
+            destinationPort: originPort
+        )
+    } else {
+        header = .ipv4(
+            source: [192, 0, 2, 1],
+            destination: [127, 0, 0, 1],
+            sourcePort: 50_000,
+            destinationPort: originPort
+        )
+    }
+    try phase4BoundedWait(connection.writeAndFlush(ByteBuffer(bytes: header.bytes)))
 }
 
 func release022Requests(_ events: [CaptureEvent]) -> [CapturedRequestHead] {

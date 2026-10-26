@@ -57,11 +57,8 @@ jobs:
           swift run --skip-build HTTP3DependencyProbe | tee "$GITHUB_WORKSPACE/evidence/combined-probe.txt"
       - name: Prepare Crypto5 core consumer for macOS26
         run: |
-          swift build --package-path Examples/FirstCapture -c release -Xswiftc -warnings-as-errors
-          mkdir -p core-consumer
-          binary_directory="$(swift build --package-path Examples/FirstCapture -c release --show-bin-path)"
-          tar -czf core-consumer/FirstCapture.tar.gz -C "$binary_directory" FirstCapture
-          cp evidence/candidate-sha.txt evidence/swift.txt evidence/xcode.txt core-consumer/
+          cp evidence/combined-Package.resolved Examples/FirstCapture/Package.resolved
+          swift package --package-path Examples/FirstCapture resolve
           cp Examples/FirstCapture/Package.resolved evidence/consumer-Package.resolved
           python3 - <<'PYTHON'
           import json
@@ -73,6 +70,11 @@ jobs:
               assert combined[name] == consumer[name], f'Dependency drift: {name}'
           assert consumer['swift-crypto']['version'].startswith('5.')
           PYTHON
+          swift build --package-path Examples/FirstCapture -c release -Xswiftc -warnings-as-errors
+          mkdir -p core-consumer
+          binary_directory="$(swift build --package-path Examples/FirstCapture -c release --show-bin-path)"
+          tar -czf core-consumer/FirstCapture.tar.gz -C "$binary_directory" FirstCapture
+          cp evidence/candidate-sha.txt evidence/swift.txt evidence/xcode.txt core-consumer/
       - name: Retain Crypto5 core consumer
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

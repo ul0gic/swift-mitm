@@ -9,3 +9,5 @@
 --wrap-collections before-first
 --allow-partial-wrapping false
 --enable wrapMultilineFunctionChains
+--modifier-order override,isolated,nonisolated,acl,setteracl,dynamic,mutators,lazy,final,required,convenience,static,class,owned
+--guard-else same-line

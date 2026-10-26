@@ -183,7 +183,6 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
             try await immediate.close().get()
         }
     }
-
 }
 
 extension Stage2ControlResourceAcceptanceTests {
@@ -210,15 +209,15 @@ extension Stage2ControlResourceAcceptanceTests {
                 })
                 XCTAssertEqual(
                     peer.inspected
-.events
-.filter { event in
-                    if case .end = event.payload, event.direction == .response {
-                        true
-                    } else {
-                        false
-                    }
-                }
-.count,
+                        .events
+                        .filter { event in
+                            if case .end = event.payload, event.direction == .response {
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        .count,
                     index + 1
                 )
                 if client.isActive {
@@ -278,7 +277,7 @@ extension Stage2ControlResourceAcceptanceTests {
             _ = try peer.origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
             try peer.origin.write(Array((
                 "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTrailer: X-End\r\n"
-                + "ETag: \"old\"\r\n\r\n4\r\norig\r\n0\r\nX-End: complete\r\n\r\n"
+                    + "ETag: \"old\"\r\n\r\n4\r\norig\r\n0\r\nX-End: complete\r\n\r\n"
             ).utf8))
             _ = try peer.raw.wait { release022ResponseEnds($0).count == 1 }
             let response = try peer.received.wait { String(decoding: $0, as: UTF8.self).contains("X-End: complete") }

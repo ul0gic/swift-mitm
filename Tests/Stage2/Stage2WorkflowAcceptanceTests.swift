@@ -21,7 +21,7 @@ final class Stage2ControlEvents: HTTPControlEventSink {
                     nil
                 }
             })
-.first {
+            .first {
                 return handle
             }
             guard clock.now < deadline else { throw Phase2FixtureError.deadlineExceeded }
@@ -174,17 +174,23 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
             XCTAssertEqual(peer.origin.acceptedConnections, 1)
             XCTAssertEqual(
                 replayEvents.events
-.filter {
-                if case .end = $0 {
-                    true
-                } else {
-                    false
-                }
-            }
-.count,
+                    .filter {
+                        if case .end = $0 {
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    .count,
                 1
             )
-            try await assertIncompleteReplay(peer: peer, destination: destination, sourceID: sourceID, replayEvents: replayEvents, bytes: bytes)
+            try await assertIncompleteReplay(
+                peer: peer,
+                destination: destination,
+                sourceID: sourceID,
+                replayEvents: replayEvents,
+                bytes: bytes
+            )
         }
     }
 
@@ -201,7 +207,7 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
             let body = Array("synthetic-body-secret".utf8)
             try peer.origin.write(Array((
                 "HTTP/1.1 200 OK\r\nSet-Cookie: session=synthetic-response-secret\r\n"
-                + "Content-Type: text/plain\r\nContent-Length: \(body.count)\r\n\r\n"
+                    + "Content-Type: text/plain\r\nContent-Length: \(body.count)\r\n\r\n"
             ).utf8))
             _ = try peer.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
             let firstResponse = clock.now
@@ -219,7 +225,11 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
     }
 
     private func assertIncompleteReplay(
-        peer: Stage2WireContext, destination: URL, sourceID: UUID, replayEvents: Stage2ReplayEvents, bytes: [UInt8]
+        peer: Stage2WireContext,
+        destination: URL,
+        sourceID: UUID,
+        replayEvents: Stage2ReplayEvents,
+        bytes: [UInt8]
     ) async throws {
         let incomplete = ReplayRequest(
             source: ReplaySource(requestID: sourceID, representation: .original),
@@ -246,7 +256,7 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
                 nil
             }
         }
-.first)
+        .first)
         let exchange = HARExchange(
             representation: .original,
             request: requestHead,
@@ -313,7 +323,6 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
             XCTAssertFalse(output.contains(secret), "Export leaked \(secret)")
         }
     }
-
 }
 
 func stage2Milliseconds(_ duration: Duration) -> Double {

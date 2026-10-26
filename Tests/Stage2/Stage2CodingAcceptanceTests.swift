@@ -21,7 +21,7 @@ final class Stage2CodingAcceptanceTests: XCTestCase {
                 _ = try peer.origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
                 try peer.origin.write(Array((
                     "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Encoding: \(coding)\r\n"
-                    + "Content-Length: \(encoded.count)\r\n\r\n"
+                        + "Content-Length: \(encoded.count)\r\n\r\n"
                 ).utf8) + encoded)
                 let forwarded = try peer.received.wait { $0.suffix(encoded.count).elementsEqual(encoded) }
                 XCTAssertEqual(Array(forwarded.suffix(encoded.count)), encoded)
@@ -69,7 +69,7 @@ final class Stage2CodingAcceptanceTests: XCTestCase {
                 let body = Array(("data: " + String(repeating: "x", count: size) + "\n\n").utf8)
                 try peer.origin.write(Array(
                     "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: \(body.count)\r\n\r\n"
-.utf8
+                        .utf8
                 ) + body)
                 let forwarded = try peer.received.wait { $0.suffix(body.count).elementsEqual(body) }
                 XCTAssertEqual(Array(forwarded.suffix(body.count)), body)
@@ -89,15 +89,15 @@ final class Stage2CodingAcceptanceTests: XCTestCase {
                     XCTAssertTrue(messages.isEmpty)
                     XCTAssertEqual(
                         peer.inspected
-.events
-.filter { event in
-                        if case .diagnostic(.malformedSSE(.eventLimitExceeded)) = event.payload {
-                            true
-                        } else {
-                            false
-                        }
-                    }
-.count,
+                            .events
+                            .filter { event in
+                                if case .diagnostic(.malformedSSE(.eventLimitExceeded)) = event.payload {
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
+                            .count,
                         1
                     )
                 }

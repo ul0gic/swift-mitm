@@ -96,7 +96,7 @@ struct Stage2SchemaProbe {
                 nil
             }
         }
-.first)
+        .first)
         XCTAssertEqual(decoded.name, "stage2.Envelope")
         XCTAssertEqual(decoded.digest, original.digest)
         XCTAssertEqual(decoded.fields.map(\.number), [1, 99])

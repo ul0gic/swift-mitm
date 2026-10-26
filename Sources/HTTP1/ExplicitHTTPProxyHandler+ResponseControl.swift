@@ -216,7 +216,7 @@ extension ExplicitHTTPProxyHandler {
                     truncated: false
                 ))
                 context.writeAndFlush(self.wrapOutboundOut(.end(exchange.responseControlTrailers)))
-.assumeIsolated()
+                    .assumeIsolated()
                     .whenComplete { _ in self.finish(exchange) }
             }
             if let writer = exchange.responseFaultWriter {

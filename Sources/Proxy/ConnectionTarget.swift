@@ -45,8 +45,8 @@ struct ConnectionTarget: Sendable {
 
     init?(proxyV2Metadata metadata: ProxyV2Metadata) {
         guard let host = metadata.destinationAddress.ipAddress,
-            let port = metadata.destinationAddress.port,
-            (1...65535).contains(port) else {
+              let port = metadata.destinationAddress.port,
+              (1...65535).contains(port) else {
             return nil
         }
         connectionHost = host

@@ -133,25 +133,25 @@ extension ProxyServer {
             ChannelOptions.recvAllocator,
             value: FixedSizeRecvByteBufferAllocator(capacity: 65_536)
         )
-.get()
+        .get()
         try await channel.setOption(ChannelOptions.maxMessagesPerRead, value: 1).get()
         let asyncChannel = try await channel.eventLoop
-.submit {
-            var encoder = BytePreservingHTTPRequestEncoder.Configuration()
-            encoder.automaticallySetFramingHeaders = false
-            try channel.pipeline.syncOperations.addHandlers([
-                BytePreservingHTTPRequestEncoder(configuration: encoder),
-                ByteToMessageHandler(BytePreservingHTTPResponseDecoder(
-                    leftOverBytesStrategy: .dropBytes,
-                    informationalResponseStrategy: .forward
-                ))
-            ])
-            return try NIOAsyncChannel<HTTPClientResponsePart, HTTPClientRequestPart>(
-                wrappingChannelSynchronously: channel,
-                configuration: .init(backPressureStrategy: .init(lowWatermark: 1, highWatermark: 1))
-            )
-        }
-.get()
+            .submit {
+                var encoder = BytePreservingHTTPRequestEncoder.Configuration()
+                encoder.automaticallySetFramingHeaders = false
+                try channel.pipeline.syncOperations.addHandlers([
+                    BytePreservingHTTPRequestEncoder(configuration: encoder),
+                    ByteToMessageHandler(BytePreservingHTTPResponseDecoder(
+                        leftOverBytesStrategy: .dropBytes,
+                        informationalResponseStrategy: .forward
+                    ))
+                ])
+                return try NIOAsyncChannel<HTTPClientResponsePart, HTTPClientRequestPart>(
+                    wrappingChannelSynchronously: channel,
+                    configuration: .init(backPressureStrategy: .init(lowWatermark: 1, highWatermark: 1))
+                )
+            }
+            .get()
         if let release = connection.releaseBufferedReads {
             try await release().get()
         }

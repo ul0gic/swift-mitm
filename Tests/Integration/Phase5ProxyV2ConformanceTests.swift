@@ -78,7 +78,7 @@ final class Phase5ProxyV2ConformanceTests: XCTestCase {
                 destinationPort: destination.port,
                 tlvs: try tlv.tlvBytes
             )
-.bytes,
+            .bytes,
             try tlv.headerBytes
         )
     }

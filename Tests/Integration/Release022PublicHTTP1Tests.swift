@@ -112,13 +112,7 @@ final class Release022PublicHTTP1Tests: XCTestCase {
             ).utf8)
             try origin.write(response)
             _ = try received.waitForBytes(response.count)
-            _ = try sink.wait { $0.contains {
-                if case .webSocketOpen = $0 {
-                    true
-                } else {
-                    false
-                }
-            } }
+            _ = try sink.wait { $0.contains(where: self.isWebSocketOpen) }
             try phase4BoundedWait(client.writeAndFlush(ByteBuffer(bytes: WebSocketWire.clientFrames)))
             _ = try origin.received.waitForBytes(request.count + WebSocketWire.clientFrames.count)
             _ = try sink.wait { $0.filter {
@@ -128,7 +122,7 @@ final class Release022PublicHTTP1Tests: XCTestCase {
                     false
                 }
             }
-.count == 2
+            .count == 2
             }
             XCTAssertFalse(sink.events.contains {
                 if case .webSocketClose = $0 {
@@ -215,5 +209,13 @@ final class Release022PublicHTTP1Tests: XCTestCase {
                 false
             }
         })
+    }
+
+    private func isWebSocketOpen(_ event: CaptureEvent) -> Bool {
+        if case .webSocketOpen = event {
+            true
+        } else {
+            false
+        }
     }
 }

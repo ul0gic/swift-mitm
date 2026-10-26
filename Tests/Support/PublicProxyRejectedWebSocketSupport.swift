@@ -235,7 +235,7 @@ final class RejectedWebSocketClientHandler: ChannelDuplexHandler {
         Array(
             (
                 "GET /socket HTTP/1.1\r\nHost: localhost:\(originPort)\r\n"
-                + "Upgrade: websocket\r\nConnection: Upgrade\r\n\r\n"
+                    + "Upgrade: websocket\r\nConnection: Upgrade\r\n\r\n"
             ).utf8
         )
     }

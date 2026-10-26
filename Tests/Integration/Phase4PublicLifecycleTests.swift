@@ -282,7 +282,7 @@ private enum Phase4StopStage: String, CaseIterable {
             sourcePort: 50_003,
             destinationPort: destinationPort
         )
-.bytes
+        .bytes
         switch self {
         case .partialHeader:
             return Array(header.prefix(8))

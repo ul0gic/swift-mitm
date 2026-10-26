@@ -161,25 +161,25 @@ extension ProxyServer {
         let alpnHandler = UpstreamALPNHandler(negotiatedProtocol: negotiatedProtocol)
         let loopBoundALPNHandler = NIOLoopBound(alpnHandler, eventLoop: channel.eventLoop)
         return channel.eventLoop
-.makeCompletedFuture {
-            try channel.pipeline.syncOperations.addHandler(
-                NIOSSLClientHandler(context: context, serverHostname: target.tlsServerName)
-            )
-            try channel.pipeline.syncOperations.addHandler(alpnHandler)
-        }
-        .flatMap { negotiatedProtocol.futureResult }
-        .map {
-            ResolvedUpstreamConnection(
-                connection: NegotiatedUpstreamConnection(
-                    channel: channel,
-                    applicationProtocol: $0,
-                    alpnHandler: loopBoundALPNHandler
-                ),
-                target: resolvedTarget
-            )
-        }
-        .flatMapError { error in
-            channel.close().flatMapThrowing { throw error }
-        }
+            .makeCompletedFuture {
+                try channel.pipeline.syncOperations.addHandler(
+                    NIOSSLClientHandler(context: context, serverHostname: target.tlsServerName)
+                )
+                try channel.pipeline.syncOperations.addHandler(alpnHandler)
+            }
+            .flatMap { negotiatedProtocol.futureResult }
+            .map {
+                ResolvedUpstreamConnection(
+                    connection: NegotiatedUpstreamConnection(
+                        channel: channel,
+                        applicationProtocol: $0,
+                        alpnHandler: loopBoundALPNHandler
+                    ),
+                    target: resolvedTarget
+                )
+            }
+            .flatMapError { error in
+                channel.close().flatMapThrowing { throw error }
+            }
     }
 }

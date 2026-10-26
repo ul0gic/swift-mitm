@@ -44,7 +44,7 @@ final class HTTP1ExchangeCorrelator: Sendable {
         state.withLockedValue { state in
             let bytes = method.utf8.count
             guard !state.failed, state.count < policy.maximumPendingExchanges,
-                bytes <= policy.maximumPendingMethodBytes - state.methodBytes else { return false }
+                  bytes <= policy.maximumPendingMethodBytes - state.methodBytes else { return false }
             let reservation: ResourceReservation?
             do { reservation = try admission?.acquire(.stream) }
             catch { return false }

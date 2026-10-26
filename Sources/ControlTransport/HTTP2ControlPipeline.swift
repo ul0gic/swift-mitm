@@ -19,10 +19,10 @@ enum HTTP2ControlPipeline {
                 targetWindowSize: 65_535,
                 inboundStreamInitializer: { stream in
                     stream.eventLoop
-.makeCompletedFuture {
-                        try stream.pipeline.syncOperations.addHandler(HTTP2StreamReadCreditHandler(gate: gate))
-                    }
-.flatMap { initializer(stream) }
+                        .makeCompletedFuture {
+                            try stream.pipeline.syncOperations.addHandler(HTTP2StreamReadCreditHandler(gate: gate))
+                        }
+                        .flatMap { initializer(stream) }
                 }
             )
             try channel.pipeline.syncOperations.addHandlers([

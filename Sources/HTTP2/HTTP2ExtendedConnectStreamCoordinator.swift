@@ -46,7 +46,7 @@ struct HTTP2ExtendedConnectStreamCoordinator {
             return .forwardHTTP
         }
         guard isValidWebSocketExtendedConnect(headers, pseudoHeaders: pseudoHeaders),
-            extendedConnectEnabled, !endStream else {
+              extendedConnectEnabled, !endStream else {
             return fail()
         }
 
@@ -144,11 +144,11 @@ struct HTTP2ExtendedConnectStreamCoordinator {
         ]
         let requiredNames = Set([":method", ":protocol", ":scheme", ":path", ":authority"])
         guard pseudoHeaders.count == requiredNames.count,
-            Set(pseudoHeaders.map(\.0)) == requiredNames,
+              Set(pseudoHeaders.map(\.0)) == requiredNames,
               !headers.contains(where: { name, _, _ in
-            let normalizedName = name.lowercased()
-            return normalizedName == "connection" || normalizedName == "upgrade"
-        }) else {
+                  let normalizedName = name.lowercased()
+                  return normalizedName == "connection" || normalizedName == "upgrade"
+              }) else {
             return false
         }
         let values = Dictionary(uniqueKeysWithValues: pseudoHeaders)

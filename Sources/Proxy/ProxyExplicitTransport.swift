@@ -41,26 +41,31 @@ extension ProxyServer {
                     tlsRuntime: tlsRuntime
                 ))
             } else {
-                try sync.addHandler(
-                    ConnectHandler(onRejected: { [self] reason, code in
-                        sink.receive(.connectionFailure(CapturedConnectionFailure(
-                            id: connectionID,
-                            timestamp: Date(),
-                            reason: reason,
-                            stage: .admission,
-                            code: code
-                        )))
-                    }) { [self] tunnel, authority in
-                        onConnectEstablished(
-                            channel: tunnel,
-                            authority: authority,
-                            connectionID: connectionID,
-                            tlsRuntime: tlsRuntime
-                        )
-                    }
-                )
+                try sync.addHandler(makeConnectHandler(connectionID: connectionID, tlsRuntime: tlsRuntime))
             }
         }
+    }
+
+    private func makeConnectHandler(connectionID: UUID, tlsRuntime: ProxyTLSRuntime) -> ConnectHandler {
+        ConnectHandler(
+            onRejected: { [self] reason, code in
+                sink.receive(.connectionFailure(CapturedConnectionFailure(
+                    id: connectionID,
+                    timestamp: Date(),
+                    reason: reason,
+                    stage: .admission,
+                    code: code
+                )))
+            },
+            onEstablished: { [self] tunnel, authority in
+                onConnectEstablished(
+                    channel: tunnel,
+                    authority: authority,
+                    connectionID: connectionID,
+                    tlsRuntime: tlsRuntime
+                )
+            }
+        )
     }
 
     private func makeExplicitHTTPHandler(
@@ -139,7 +144,7 @@ extension ProxyServer {
     private func configureControlReads(_ connection: HTTPForwardConnection) -> EventLoopFuture<HTTPForwardConnection> {
         guard controlRuntime != nil else { return connection.channel.eventLoop.makeSucceededFuture(connection) }
         return connection.channel
-.setOption(ChannelOptions.maxMessagesPerRead, value: 1)
+            .setOption(ChannelOptions.maxMessagesPerRead, value: 1)
             .map { connection }
             .flatMapError { error in
                 connection.channel.close().flatMapThrowing { throw error }

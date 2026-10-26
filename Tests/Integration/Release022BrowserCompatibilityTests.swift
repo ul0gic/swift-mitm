@@ -41,7 +41,7 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
                 .write(
                     Data(
                         "CLIENT-MATRIX WKWebView os=\(ProcessInfo.processInfo.operatingSystemVersionString) trusted=true sse=true websocket=true\n"
-                .utf8
+                            .utf8
                     )
                 )
             view.stopLoading()
@@ -175,24 +175,24 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
     private func assertBrowserWebSocketCapture(_ events: [CaptureEvent]) {
         XCTAssertEqual(
             events.filter {
-            if case .webSocketOpen = $0 {
-                true
-            } else {
-                false
+                if case .webSocketOpen = $0 {
+                    true
+                } else {
+                    false
+                }
             }
-        }
-.count,
+            .count,
             1
         )
         XCTAssertEqual(
             events.filter {
-            if case .webSocketClose = $0 {
-                true
-            } else {
-                false
+                if case .webSocketClose = $0 {
+                    true
+                } else {
+                    false
+                }
             }
-        }
-.count,
+            .count,
             1
         )
         XCTAssertFalse(events.contains {

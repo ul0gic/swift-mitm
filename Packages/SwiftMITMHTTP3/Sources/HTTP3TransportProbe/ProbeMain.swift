@@ -21,7 +21,8 @@ struct ProbeMain {
         do {
             let state = try await loop.submit {
                 NIOLoopBound(try ProbeTransport(arguments: arguments), eventLoop: loop)
-            }.get()
+            }
+            .get()
             let verifier = try AsyncVerifier(trustRootsPath: arguments.originRootPath, eventLoop: loop)
             try await serve(arguments, state: state, loop: loop, authenticator: authenticator, verifier: verifier)
         } catch {
@@ -44,7 +45,7 @@ struct ProbeMain {
             server = try await loop.flatSubmit {
                 ProbeTransport.startServer(state: state, loop: loop, authenticator: authenticator)
             }
-.get()
+            .get()
         } catch {
             try await client.close().get()
             throw error

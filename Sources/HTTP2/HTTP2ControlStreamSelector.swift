@@ -103,15 +103,15 @@ final class HTTP2ControlStreamSelector: ChannelInboundHandler, RemovableChannelH
                 extendedConnectEnabled: extendedConnectEnabled
             )
         )
-            .assumeIsolated()
-.whenComplete { result in
-                let handler = owner.value
-                guard !handler.stopped else { return }
-                switch result {
-                case .failure: handler.fail(context)
-                case .success: handler.handoff(context)
-                }
+        .assumeIsolated()
+        .whenComplete { result in
+            let handler = owner.value
+            guard !handler.stopped else { return }
+            switch result {
+            case .failure: handler.fail(context)
+            case .success: handler.handoff(context)
             }
+        }
     }
 
     private func handoff(_ context: ChannelHandlerContext) {

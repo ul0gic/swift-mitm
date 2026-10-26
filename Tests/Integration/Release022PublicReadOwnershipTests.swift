@@ -24,13 +24,7 @@ final class Release022PublicReadOwnershipTests: XCTestCase {
             let upstreamHead = try origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
             try origin.write(WebSocketWire.responseHead)
             let downstreamHead = try received.wait { $0.suffix(4) == [13, 10, 13, 10] }
-            _ = try sink.wait { $0.contains {
-                if case .webSocketOpen = $0 {
-                    true
-                } else {
-                    false
-                }
-            } }
+            _ = try sink.wait { $0.contains(where: self.isWebSocketOpen) }
             for count in 1 ... 2 {
                 try phase4BoundedWait(client.writeAndFlush(ByteBuffer(bytes: WebSocketWire.clientTextFrame)))
                 let bytes = try origin.received.waitForBytes(
@@ -78,15 +72,7 @@ final class Release022PublicReadOwnershipTests: XCTestCase {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 2)
         let origin = Release022WireOrigin(group: group)
         let sink = Release022Events()
-        let ingress = try XCTUnwrap(TrustedProxyV2Ingress(trustedPeers: .loopback))
-        let proxy = ProxyServer(
-            certificateAuthority: try CertificateAuthority.generate().authority,
-            sink: sink,
-            group: group,
-            egressPolicy: .init(allowInternal: true),
-            ingress: .trustedProxyV2(ingress),
-            captureBodyLimit: 8
-        )
+        let proxy = try readOwnershipProxy(group: group, sink: sink)
         var client: Channel?
         do {
             try origin.start()
@@ -149,13 +135,13 @@ final class Release022PublicReadOwnershipTests: XCTestCase {
         ])
         XCTAssertEqual(
             events.filter {
-            if case .webSocketClose = $0 {
-                true
-            } else {
-                false
+                if case .webSocketClose = $0 {
+                    true
+                } else {
+                    false
+                }
             }
-        }
-.count,
+            .count,
             1
         )
         XCTAssertTrue(release022Errors(events).isEmpty)
@@ -173,5 +159,25 @@ final class Release022PublicReadOwnershipTests: XCTestCase {
         XCTAssertEqual(requestEnds, release022Requests(events).map(\.id))
         XCTAssertEqual(release022Errors(events), release022Requests(events).map(\.id))
         XCTAssertTrue(release022ResponseEnds(events).isEmpty)
+    }
+
+    private func isWebSocketOpen(_ event: CaptureEvent) -> Bool {
+        if case .webSocketOpen = event {
+            true
+        } else {
+            false
+        }
+    }
+
+    private func readOwnershipProxy(group: EventLoopGroup, sink: Release022Events) throws -> ProxyServer {
+        let ingress = try XCTUnwrap(TrustedProxyV2Ingress(trustedPeers: .loopback))
+        return ProxyServer(
+            certificateAuthority: try CertificateAuthority.generate().authority,
+            sink: sink,
+            group: group,
+            egressPolicy: .init(allowInternal: true),
+            ingress: .trustedProxyV2(ingress),
+            captureBodyLimit: 8
+        )
     }
 }

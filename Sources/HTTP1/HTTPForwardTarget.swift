@@ -31,9 +31,9 @@ struct HTTPForwardTarget: Sendable {
     init?(head: HTTPRequestHead, scheme: String = "http") {
         let uri = head.uri
         guard uri.utf8.allSatisfy({ $0 > 0x20 && $0 < 0x7F }),
-            !uri.contains("#"), let separator = uri.range(of: "://"),
-            ["http", "https"].contains(scheme),
-            uri[..<separator.lowerBound].lowercased() == scheme else { return nil }
+              !uri.contains("#"), let separator = uri.range(of: "://"),
+              ["http", "https"].contains(scheme),
+              uri[..<separator.lowerBound].lowercased() == scheme else { return nil }
         let remainder = uri[separator.upperBound...]
         let authorityEnd = remainder.firstIndex(where: { $0 == "/" || $0 == "?" }) ?? remainder.endIndex
         let rawAuthority = String(remainder[..<authorityEnd])

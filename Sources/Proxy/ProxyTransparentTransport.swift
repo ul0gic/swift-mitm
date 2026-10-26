@@ -136,20 +136,20 @@ extension ProxyServer {
                 setupToken: setupToken,
                 allowHalfClosure: true
             )
-                .flatMap { [self] upstream in
-                    bridgeOpaque(
-                        inbound: channel,
-                        upstream: upstream,
-                        failureHandler: failureHandler,
-                        reason: opaqueReason
-                    )
-                }
-                .map { .manual }
+            .flatMap { [self] upstream in
+                bridgeOpaque(
+                    inbound: channel,
+                    upstream: upstream,
+                    failureHandler: failureHandler,
+                    reason: opaqueReason
+                )
+            }
+            .map { .manual }
         }
         return setup.always { result in
             if case .success = result, case .interceptedTLS = classification {
                 failureHandler.value
-.handoffFuture(on: channel.eventLoop)
+                    .handoffFuture(on: channel.eventLoop)
                     .whenComplete { _ in setupToken.complete() }
             } else {
                 setupToken.complete()
@@ -221,38 +221,38 @@ extension ProxyServer {
         upstream.channel.closeFuture.whenComplete { _ in inbound.close(promise: nil) }
         inbound.closeFuture.whenComplete { _ in upstream.channel.close(promise: nil) }
         return inbound.eventLoop
-.makeCompletedFuture {
-            try upstream.channel.pipeline.syncOperations.addHandlers([
-                HTTP1CaptureTapHandler(
-                    direction: .response,
-                    authority: target.logicalAuthority,
-                    scheme: "http",
-                    target: target,
-                    correlator: correlator,
-                    sink: sink,
-                    captureBodyLimit: captureBodyLimit,
-                    webSocketSession: webSocketSession,
-                    onResourceLimit: reportResourceLimit
-                ),
-                pair.value.1
-            ])
-            try inbound.pipeline.syncOperations.addHandlers([
-                HTTP1CaptureTapHandler(
-                    direction: .request,
-                    authority: target.logicalAuthority,
-                    scheme: "http",
-                    target: target,
-                    correlator: correlator,
-                    sink: sink,
-                    captureBodyLimit: captureBodyLimit,
-                    webSocketSession: webSocketSession,
-                    onResourceLimit: reportResourceLimit
-                ),
-                pair.value.0
-            ])
-        }
-        .flatMap { [self] in removeTransparentFailureHandler(failureHandler, from: inbound) }
-        .flatMap { upstream.channel.setOption(ChannelOptions.autoRead, value: true) }
+            .makeCompletedFuture {
+                try upstream.channel.pipeline.syncOperations.addHandlers([
+                    HTTP1CaptureTapHandler(
+                        direction: .response,
+                        authority: target.logicalAuthority,
+                        scheme: "http",
+                        target: target,
+                        correlator: correlator,
+                        sink: sink,
+                        captureBodyLimit: captureBodyLimit,
+                        webSocketSession: webSocketSession,
+                        onResourceLimit: reportResourceLimit
+                    ),
+                    pair.value.1
+                ])
+                try inbound.pipeline.syncOperations.addHandlers([
+                    HTTP1CaptureTapHandler(
+                        direction: .request,
+                        authority: target.logicalAuthority,
+                        scheme: "http",
+                        target: target,
+                        correlator: correlator,
+                        sink: sink,
+                        captureBodyLimit: captureBodyLimit,
+                        webSocketSession: webSocketSession,
+                        onResourceLimit: reportResourceLimit
+                    ),
+                    pair.value.0
+                ])
+            }
+            .flatMap { [self] in removeTransparentFailureHandler(failureHandler, from: inbound) }
+            .flatMap { upstream.channel.setOption(ChannelOptions.autoRead, value: true) }
     }
 
     func bridgeOpaque(
@@ -278,15 +278,15 @@ extension ProxyServer {
             eventLoop: inbound.eventLoop
         )
         return inbound.eventLoop
-.makeCompletedFuture {
-            try upstream.channel.pipeline.syncOperations.addHandler(pair.value.1)
-            try inbound.pipeline.syncOperations.addHandler(pair.value.0)
-        }
-        .flatMap { [self] in removeTransparentFailureHandler(failureHandler, from: inbound) }
-        .map {
-            stageObserver?.didEnterTransparentIngressStage(.opaqueBridgeReady)
-            upstream.channel.read()
-        }
+            .makeCompletedFuture {
+                try upstream.channel.pipeline.syncOperations.addHandler(pair.value.1)
+                try inbound.pipeline.syncOperations.addHandler(pair.value.0)
+            }
+            .flatMap { [self] in removeTransparentFailureHandler(failureHandler, from: inbound) }
+            .map {
+                stageObserver?.didEnterTransparentIngressStage(.opaqueBridgeReady)
+                upstream.channel.read()
+            }
     }
 
     func connectUpstreamRaw(

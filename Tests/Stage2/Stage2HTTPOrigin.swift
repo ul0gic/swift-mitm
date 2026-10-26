@@ -73,7 +73,7 @@ final class Stage2HTTPOrigin: Sendable {
                 }
             }
             .bind(host: "127.0.0.1", port: 0)
-.get()
+            .get()
         state.withLockedValue { $0.listener = listener }
     }
 

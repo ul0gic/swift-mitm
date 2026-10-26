@@ -358,7 +358,8 @@ private extension GRPCStreamDecoder {
         var index = 0
         while index < input.count {
             if input[index] == 37, index + 2 < input.count,
-               let byte = UInt8(String(decoding: input[(index + 1)...(index + 2)], as: UTF8.self), radix: 16) {
+               let digits = String(bytes: input[(index + 1)...(index + 2)], encoding: .utf8),
+               let byte = UInt8(digits, radix: 16) {
                 output.append(byte)
                 index += 3
             } else {
@@ -366,6 +367,8 @@ private extension GRPCStreamDecoder {
                 index += 1
             }
         }
+        // Malformed percent-decoded gRPC status text retains replacement characters.
+        // swiftlint:disable:next optional_data_string_conversion
         return String(decoding: output, as: UTF8.self)
     }
 }

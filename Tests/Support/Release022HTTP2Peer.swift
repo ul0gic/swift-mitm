@@ -81,25 +81,25 @@ final class Release022HTTP2Origin: @unchecked Sendable {
             .childChannelInitializer { channel in
                 children.withLockedValue { $0.append(channel) }
                 return channel.eventLoop
-.makeCompletedFuture {
-                    try channel.pipeline.syncOperations.addHandler(NIOSSLServerHandler(context: ssl))
-                }
-.flatMap {
-                    channel.configureHTTP2Pipeline(
-                        mode: .server,
-                        connectionConfiguration: .init(),
-                        streamConfiguration: .init()
-                    ) { stream in
-                        let observation = Release022H2Stream()
-                        return stream.eventLoop.makeCompletedFuture {
-                            try stream.pipeline.syncOperations.addHandler(observation)
-                            self.condition.withLock {
-                                self.streams.append(observation)
-                                self.condition.broadcast()
+                    .makeCompletedFuture {
+                        try channel.pipeline.syncOperations.addHandler(NIOSSLServerHandler(context: ssl))
+                    }
+                    .flatMap {
+                        channel.configureHTTP2Pipeline(
+                            mode: .server,
+                            connectionConfiguration: .init(),
+                            streamConfiguration: .init()
+                        ) { stream in
+                            let observation = Release022H2Stream()
+                            return stream.eventLoop.makeCompletedFuture {
+                                try stream.pipeline.syncOperations.addHandler(observation)
+                                self.condition.withLock {
+                                    self.streams.append(observation)
+                                    self.condition.broadcast()
+                                }
                             }
-                        }
-                    }.map { _ in () }
-                }
+                        }.map { _ in () }
+                    }
             }
             .bind(host: "127.0.0.1", port: 0))
     }

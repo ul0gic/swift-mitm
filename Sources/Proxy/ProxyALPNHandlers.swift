@@ -93,7 +93,7 @@ final class UpstreamALPNHandler: ChannelInboundHandler, RemovableChannelHandler 
                 guard !completed else { break }
                 completed = true
                 context.channel
-.setOption(ChannelOptions.autoRead, value: false)
+                    .setOption(ChannelOptions.autoRead, value: false)
                     .map { negotiated }
                     .cascade(to: negotiatedProtocol)
             case let .failure(error):
@@ -352,7 +352,7 @@ final class PendingTLSReads: ChannelInboundHandler, RemovableChannelHandler {
             guard let metadata = try inspector.append(buffer.readableBytesView) else { return }
             completed = true
             context.channel
-.setOption(ChannelOptions.autoRead, value: false)
+                .setOption(ChannelOptions.autoRead, value: false)
                 .map { metadata }
                 .cascade(to: clientHelloPromise)
         } catch {

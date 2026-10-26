@@ -13,7 +13,7 @@ final class Release022PublicHTTP1ForwardingTests: XCTestCase {
                 + "X-Secret: remove\r\nProxy-Authorization: Basic c2VjcmV0\r\nX-End: retain\r\n\r\n"
             try phase4BoundedWait(client.writeAndFlush(ByteBuffer(string: request)))
             let bytes = try origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
-            let wire = String(decoding: bytes, as: UTF8.self).lowercased()
+            let wire = try XCTUnwrap(String(bytes: bytes, encoding: .utf8)).lowercased()
             XCTAssertTrue(wire.hasPrefix("get /target?q=1 http/1.1\r\n"))
             XCTAssertTrue(wire.contains("host: 127.0.0.1:\(origin.port)\r\n"))
             XCTAssertTrue(wire.contains("x-end: retain\r\n"))
@@ -21,7 +21,7 @@ final class Release022PublicHTTP1ForwardingTests: XCTestCase {
             XCTAssertFalse(wire.contains("x-secret:"))
             XCTAssertFalse(wire.contains("proxy-authorization:"))
             try origin.write(Array("HTTP/1.1 204 No Content\r\n\r\n".utf8))
-            _ = try received.wait { String(decoding: $0, as: UTF8.self).contains("204") }
+            _ = try received.wait { String(bytes: $0, encoding: .utf8)?.contains("204") == true }
             let events = try sink.wait { release022ResponseEnds($0).count == 1 }
             let host = release022Requests(events).first?.headers.first { $0.name.lowercased() == "host" }
             XCTAssertEqual(host?.value, "attacker.invalid")
@@ -33,7 +33,7 @@ final class Release022PublicHTTP1ForwardingTests: XCTestCase {
             let request = "OPTIONS http://127.0.0.1:\(origin.port) HTTP/1.1\r\nHost: ignored.invalid\r\n\r\n"
             try phase4BoundedWait(client.writeAndFlush(ByteBuffer(string: request)))
             let wire = try origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
-            XCTAssertTrue(String(decoding: wire, as: UTF8.self).hasPrefix("OPTIONS * HTTP/1.1\r\n"))
+            XCTAssertTrue(try XCTUnwrap(String(bytes: wire, encoding: .utf8)).hasPrefix("OPTIONS * HTTP/1.1\r\n"))
             try origin.write(Array("HTTP/1.1 204 No Content\r\n\r\n".utf8))
             _ = try sink.wait { release022ResponseEnds($0).count == 1 }
         }
@@ -45,7 +45,7 @@ final class Release022PublicHTTP1ForwardingTests: XCTestCase {
                 + "Content-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"
             try phase4BoundedWait(client.writeAndFlush(ByteBuffer(string: request)))
             try received.waitForClose()
-            XCTAssertTrue(String(decoding: received.bytes, as: UTF8.self).hasPrefix("HTTP/1.1 400"))
+            XCTAssertTrue(try XCTUnwrap(String(bytes: received.bytes, encoding: .utf8)).hasPrefix("HTTP/1.1 400"))
             XCTAssertTrue(origin.received.bytes.isEmpty)
             XCTAssertEqual(origin.acceptedConnections, 0)
         }
@@ -58,7 +58,7 @@ final class Release022PublicHTTP1ForwardingTests: XCTestCase {
             try phase4BoundedWait(client.writeAndFlush(ByteBuffer(string: request)))
             let head = try origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
             try origin.write(Array("HTTP/1.1 100 Continue\r\n\r\n".utf8))
-            _ = try received.wait { String(decoding: $0, as: UTF8.self).contains("100 Continue") }
+            _ = try received.wait { String(bytes: $0, encoding: .utf8)?.contains("100 Continue") == true }
             XCTAssertFalse(sink.events.contains {
                 if case .requestEnd = $0 {
                     true
@@ -90,7 +90,7 @@ final class Release022PublicHTTP1ForwardingTests: XCTestCase {
             _ = try origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
             let response = "HTTP/1.1 413 Content Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
             try origin.write(Array(response.utf8))
-            _ = try received.wait { String(decoding: $0, as: UTF8.self).contains("413") }
+            _ = try received.wait { String(bytes: $0, encoding: .utf8)?.contains("413") == true }
             let events = try sink.wait { release022ResponseEnds($0).count == 1 }
             XCTAssertEqual(release022Requests(events).count, 1)
             XCTAssertFalse(events.contains {
@@ -127,18 +127,18 @@ final class Release022PublicHTTP1ForwardingTests: XCTestCase {
                 + "GET http://127.0.0.1:\(second.port)/two HTTP/1.1\r\nHost: ignored\r\n\r\n"
             try phase4BoundedWait(channel.writeAndFlush(ByteBuffer(string: requests)))
             let firstRequest = try first.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
-            XCTAssertTrue(String(decoding: firstRequest, as: UTF8.self).hasPrefix("GET /one HTTP/1.1\r\n"))
+            XCTAssertTrue(try XCTUnwrap(String(bytes: firstRequest, encoding: .utf8)).hasPrefix("GET /one HTTP/1.1\r\n"))
             XCTAssertTrue(second.received.bytes.isEmpty)
             try first.write(Array("HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nA".utf8))
             let secondRequest = try second.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
-            XCTAssertTrue(String(decoding: secondRequest, as: UTF8.self).hasPrefix("GET /two HTTP/1.1\r\n"))
+            XCTAssertTrue(try XCTUnwrap(String(bytes: secondRequest, encoding: .utf8)).hasPrefix("GET /two HTTP/1.1\r\n"))
             XCTAssertEqual(first.received.bytes, firstRequest)
             try second.write(Array("HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nB".utf8))
             let events = try sink.wait { release022ResponseEnds($0).count == 2 }
             XCTAssertEqual(release022Requests(events).map(\.path), ["/one", "/two"])
             XCTAssertEqual(release022ResponseEnds(events), release022Requests(events).map(\.id))
-            let wire = try received.wait { String(decoding: $0, as: UTF8.self).hasSuffix("\r\n\r\nB") }
-            XCTAssertTrue(String(decoding: wire, as: UTF8.self).contains("\r\n\r\nAHTTP/1.1 200"))
+            let wire = try received.wait { String(bytes: $0, encoding: .utf8)?.hasSuffix("\r\n\r\nB") == true }
+            XCTAssertTrue(try XCTUnwrap(String(bytes: wire, encoding: .utf8)).contains("\r\n\r\nAHTTP/1.1 200"))
             try await channel.close().get()
             try await proxy.stop()
             first.stop()
@@ -162,7 +162,7 @@ final class Release022PublicHTTP1ForwardingTests: XCTestCase {
                 + "Content-Length: 1\r\nContent-Length: 2\r\n\r\nz"
             try phase4BoundedWait(client.writeAndFlush(ByteBuffer(string: request)))
             try received.waitForClose()
-            XCTAssertTrue(String(decoding: received.bytes, as: UTF8.self).hasPrefix("HTTP/1.1 400"))
+            XCTAssertTrue(try XCTUnwrap(String(bytes: received.bytes, encoding: .utf8)).hasPrefix("HTTP/1.1 400"))
             XCTAssertEqual(origin.acceptedConnections, 0)
         }
     }

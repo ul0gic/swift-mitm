@@ -91,7 +91,7 @@ public actor HTTPControlRuntime {
     private var holds: [UUID: Hold] = [:]
     private var callbacks: [UUID: Callback] = [:]
     private var byteReservations: [UUID: ByteReservation] = [:]
-    nonisolated private let budget: HTTPControlBudget
+    private nonisolated let budget: HTTPControlBudget
     private var retainedBytes: Int { budget.state.withLockedValue { $0.bytes } }
     private var stopped = false
     private var activeOwner: UUID?
@@ -127,11 +127,11 @@ public actor HTTPControlRuntime {
         return stop()
     }
 
-    nonisolated public var configurationSnapshot: HTTPControlConfiguration {
+    public nonisolated var configurationSnapshot: HTTPControlConfiguration {
         budget.state.withLockedValue { $0.configuration }
     }
 
-    nonisolated public func reserveTransportBytes(_ bytes: Int) throws -> HTTPControlByteReservation {
+    public nonisolated func reserveTransportBytes(_ bytes: Int) throws -> HTTPControlByteReservation {
         try budget.state.withLockedValue { value in
             guard !value.stopped else { throw HTTPControlError.cancelled }
             guard bytes > 0, value.reservations < value.configuration.limits.maximumTasks * 4,
@@ -163,11 +163,11 @@ public actor HTTPControlRuntime {
 
     private var taskSlots: Int {
         holds.count + callbacks.values
-.filter { callback in
-            guard let id = callback.breakpointID else { return true }
-            return holds[id] == nil
-        }
-.count
+            .filter { callback in
+                guard let id = callback.breakpointID else { return true }
+                return holds[id] == nil
+            }
+            .count
     }
 
     public func replaceConfiguration(_ replacement: HTTPControlConfiguration) throws {
@@ -188,7 +188,7 @@ public actor HTTPControlRuntime {
         guard !stopped else { throw HTTPControlError.cancelled }
         guard sharingHold != nil || taskSlots < configuration.limits.maximumTasks,
               bytes <= configuration.limits.maximumRetainedBytes - retainedBytes
-              else { throw HTTPControlError.capacityExceeded }
+        else { throw HTTPControlError.capacityExceeded }
         try budget.charge(bytes)
     }
 
@@ -212,7 +212,7 @@ public actor HTTPControlRuntime {
         guard !stopped, bytes > 0,
               byteReservations.count < configuration.limits.maximumTasks,
               bytes <= configuration.limits.maximumRetainedBytes - retainedBytes
-              else { throw HTTPControlError.capacityExceeded }
+        else { throw HTTPControlError.capacityExceeded }
         let id = UUID()
         try budget.charge(bytes)
         let global = try reserveGlobalBytes(bytes)
@@ -284,7 +284,7 @@ public actor HTTPControlRuntime {
     ) async throws -> HTTPControlDecision {
         guard !Task.isCancelled else { throw HTTPControlError.cancelled }
         guard (message.body?.count ?? 0) <= configuration.limits.maximumBodyBytes
-            else { throw HTTPControlError.bodyLimitExceeded }
+        else { throw HTTPControlError.bodyLimitExceeded }
         let bytes = message.retainedBytes + (retainedSnapshot ?? configuration).retainedBytes
             + (retainedDecision.map(\.retainedBytes) ?? 0)
         let id = UUID()

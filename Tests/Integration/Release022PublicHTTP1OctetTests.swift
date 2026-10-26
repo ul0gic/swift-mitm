@@ -11,10 +11,10 @@ final class Release022PublicHTTP1OctetTests: XCTestCase {
             let first = Array("POST http://127.0.0.1:\(origin.port)/octets HTTP/1.1\r\nHost: localhost\r\nX-Request: "
                 .utf8)
                 + octets +
-                    Array(
-                        "\r\nTransfer-Encoding: chunked\r\nTrailer: X-Request-Trailer\r\n\r\n1\r\nz\r\n0\r\nX-Request-Trailer: "
-                    .utf8
-                    )
+                Array(
+                    "\r\nTransfer-Encoding: chunked\r\nTrailer: X-Request-Trailer\r\n\r\n1\r\nz\r\n0\r\nX-Request-Trailer: "
+                        .utf8
+                )
                 + octets + Array("\r\n\r\n".utf8)
             try phase4BoundedWait(client.writeAndFlush(ByteBuffer(bytes: first)))
             let upstream = try origin.received.wait {
@@ -25,10 +25,10 @@ final class Release022PublicHTTP1OctetTests: XCTestCase {
             XCTAssertTrue(containsField("x-request-trailer", octets: octets, bytes: upstream))
             let response = Array("HTTP/1.1 200 OK\r\nX-Response: ".utf8) + octets
                 +
-                    Array(
-                        "\r\nTransfer-Encoding: chunked\r\nTrailer: X-Response-Trailer\r\n\r\n1\r\na\r\n0\r\nX-Response-Trailer: "
-                    .utf8
-                    )
+                Array(
+                    "\r\nTransfer-Encoding: chunked\r\nTrailer: X-Response-Trailer\r\n\r\n1\r\na\r\n0\r\nX-Response-Trailer: "
+                        .utf8
+                )
                 + octets + Array("\r\n\r\n".utf8)
             try origin.write(response)
             _ = try sink.wait { responseEnds($0).count == 1 }

@@ -84,16 +84,16 @@ extension ExplicitHTTPProxyHandler {
                 ))
             }
             context.writeAndFlush(self.wrapOutboundOut(end)).assumeIsolated().whenComplete { result in
-            switch result {
-            case .success:
-                if exchange.upgrading {
-                    self.upgradeWebSocket(exchange)
-                } else {
-                    self.finish(exchange)
+                switch result {
+                case .success:
+                    if exchange.upgrading {
+                        self.upgradeWebSocket(exchange)
+                    } else {
+                        self.finish(exchange)
+                    }
+                case .failure:
+                    self.abort(message: "HTTP/1 response write failed")
                 }
-            case .failure:
-                self.abort(message: "HTTP/1 response write failed")
-            }
             }
         }
         if let writer = exchange.responseFaultWriter {
@@ -123,7 +123,7 @@ extension ExplicitHTTPProxyHandler {
             exchange.reusableFraming = exchange.head.method == .HEAD || !receivedHead.status.mayHaveResponseBody
                 || receivedHead.headers.contains(name: "content-length")
                 || HTTP1MessageParser.tokens(Self.fields(receivedHead.headers), named: "transfer-encoding")
-                    .contains("chunked")
+                .contains("chunked")
             exchange.responseStarted = true
             exchange.originKeepAlive = isKeepAlive
             exchange.responseConnectionTokens = HTTP1MessageParser.tokens(
@@ -245,7 +245,7 @@ extension ExplicitHTTPProxyHandler {
             return
         }
         guard !stopped, let exchange = active, !exchange.requestEnded, !exchange.earlyResponse || typedHTTP2,
-            upstream?.isWritable == true else { return }
+              upstream?.isWritable == true else { return }
         context?.read()
     }
 

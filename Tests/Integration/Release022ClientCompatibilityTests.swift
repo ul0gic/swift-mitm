@@ -32,7 +32,8 @@ final class Release022ClientCompatibilityTests: XCTestCase {
             try secure.start()
             let port = try await proxy.start(port: 0)
             try assertCurlRequests(
-                port: port, urls: ["http://localhost:\(clear.localPort)/", "https://localhost:\(secure.localPort)/"],
+                port: port,
+                urls: ["http://localhost:\(clear.localPort)/", "https://localhost:\(secure.localPort)/"],
                 certificate: certificate
             )
             try assertCurlCapture(sink)
@@ -102,7 +103,7 @@ final class Release022ClientCompatibilityTests: XCTestCase {
                 false
             }
         }
-.count == 2
+        .count == 2
         }
         let schemes = events.compactMap { event -> String? in
             if case let .requestHead(head) = event {
@@ -115,7 +116,9 @@ final class Release022ClientCompatibilityTests: XCTestCase {
     }
 
     private func assertURLSessionCapture(
-        _ sink: Release022Events, protocolName: String, version: HTTPProtocolVersion
+        _ sink: Release022Events,
+        protocolName: String,
+        version: HTTPProtocolVersion
     ) throws {
         let events = try sink.wait { $0.contains {
             if case .responseEnd = $0 {
@@ -137,7 +140,7 @@ final class Release022ClientCompatibilityTests: XCTestCase {
             .write(
                 Data(
                     "CLIENT-MATRIX URLSession protocol=\(protocolName) os=\(ProcessInfo.processInfo.operatingSystemVersionString) trusted=true\n"
-            .utf8
+                        .utf8
                 )
             )
     }
@@ -148,7 +151,7 @@ final class Release022ClientCompatibilityTests: XCTestCase {
             .write(
                 Data(
                     "CLIENT-MATRIX curl=\(version.output) os=\(ProcessInfo.processInfo.operatingSystemVersionString)\n"
-            .utf8
+                        .utf8
                 )
             )
         for url in urls {
@@ -203,8 +206,8 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         process.waitUntilExit()
         return CurlResult(
             status: process.terminationStatus,
-            output: String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self),
-            error: String(decoding: error.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            output: try XCTUnwrap(String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)),
+            error: try XCTUnwrap(String(data: error.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8))
         )
     }
 }

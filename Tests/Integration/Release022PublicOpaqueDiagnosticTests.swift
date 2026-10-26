@@ -33,24 +33,7 @@ final class Release022PublicOpaqueDiagnosticTests: XCTestCase {
             try phase4BoundedWait(channel.writeAndFlush(ByteBuffer(string: request)))
             try received.waitForClose()
             try await server.stop()
-            let failures = sink.events.compactMap { event -> CapturedConnectionFailure? in
-                if case let .connectionFailure(failure) = event {
-                    failure
-                } else {
-                    nil
-                }
-            }
-            XCTAssertEqual(failures.count, 1)
-            XCTAssertEqual(failures.first?.stage, .connect)
-            XCTAssertEqual(failures.first?.code, .upstreamConnectFailed)
-            XCTAssertEqual(failures.first?.target?.destination.port, originPort)
-            XCTAssertFalse(sink.events.contains {
-                if case .opaqueOpen = $0 {
-                    true
-                } else {
-                    false
-                }
-            })
+            assertConnectFailure(sink: sink, originPort: originPort)
             if channel.isActive {
                 try await channel.close().get()
             }
@@ -66,5 +49,27 @@ final class Release022PublicOpaqueDiagnosticTests: XCTestCase {
             try? await group.shutdownGracefully()
             throw error
         }
+    }
+
+
+    private func assertConnectFailure(sink: Release022Events, originPort: Int) {
+        let failures = sink.events.compactMap { event -> CapturedConnectionFailure? in
+            if case let .connectionFailure(failure) = event {
+                failure
+            } else {
+                nil
+            }
+        }
+        XCTAssertEqual(failures.count, 1)
+        XCTAssertEqual(failures.first?.stage, .connect)
+        XCTAssertEqual(failures.first?.code, .upstreamConnectFailed)
+        XCTAssertEqual(failures.first?.target?.destination.port, originPort)
+        XCTAssertFalse(sink.events.contains {
+            if case .opaqueOpen = $0 {
+                true
+            } else {
+                false
+            }
+        })
     }
 }
