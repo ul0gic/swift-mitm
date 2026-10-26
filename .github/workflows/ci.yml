@@ -261,6 +261,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install pinned formatting tools
+        id: formatting-tools
         run: |
           mkdir -p "$RUNNER_TEMP/swiftformat" "$RUNNER_TEMP/swiftlint"
           curl --fail --location --output "$RUNNER_TEMP/swiftformat.zip" \
@@ -274,9 +275,28 @@ jobs:
           "$RUNNER_TEMP/swiftformat/swiftformat" --version
           "$RUNNER_TEMP/swiftlint/swiftlint" version
       - name: Check formatting
-        run: '"$RUNNER_TEMP/swiftformat/swiftformat" --lint Sources Tests Examples Package.swift'
+        id: formatting
+        run: |
+          for source_path in Sources Tests Examples Inspection Packages Package.swift; do
+            "$RUNNER_TEMP/swiftformat/swiftformat" "$source_path" --lint
+          done
       - name: Check lint
+        if: ${{ !cancelled() && steps.formatting-tools.outcome == 'success' }}
         run: '"$RUNNER_TEMP/swiftlint/swiftlint" lint --strict --quiet'
+      - name: Prepare formatting repair patch
+        if: ${{ failure() && steps.formatting.outcome == 'failure' }}
+        run: |
+          for source_path in Sources Tests Examples Inspection Packages Package.swift; do
+            "$RUNNER_TEMP/swiftformat/swiftformat" "$source_path"
+          done
+          git diff --binary > "$RUNNER_TEMP/formatting.patch"
+      - name: Retain formatting repair patch
+        if: ${{ failure() && steps.formatting.outcome == 'failure' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: formatting-repair-${{ github.sha }}
+          path: ${{ runner.temp }}/formatting.patch
+          if-no-files-found: error
 
   distribution:
     name: Candidate distribution

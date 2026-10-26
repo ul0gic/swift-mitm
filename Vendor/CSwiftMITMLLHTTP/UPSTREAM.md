@@ -20,6 +20,7 @@ C lexical identifiers are renamed consistently in declarations, definitions and 
 - `llhttp*` type/tag/helper identifiers gain the `swiftmitm_` prefix.
 - `wasm_on_*` callback/helper identifiers gain the `swiftmitm_` prefix, including conditional WebAssembly declarations.
 - `HTTP_*`, `HPE_*`, `F_*`, `LENIENT_*` and `LLHTTP_*` enum/macro identifiers gain the `SWIFTMITM_` prefix, except `LLHTTP_STRICT_MODE`.
+- Token-pasted suffixes and stringified labels in mapping macros retain their upstream spelling; the consuming macro supplies the namespace prefix.
 - Header guards `INCLUDE_LLHTTP*`, `LLLLHTTP_C_HEADERS_` and `C_NIO_LLHTTP_SWIFT` gain the `SWIFTMITM_` prefix.
 
 The target retains upstream's `_GNU_SOURCE` and `LLHTTP_STRICT_MODE` preprocessor definitions. No unsafe compiler flags or external package override are required. C types, enum constants and header guards are namespaced as well as linkable functions so this module can coexist with official NIO's parser module.

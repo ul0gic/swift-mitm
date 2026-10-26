@@ -7,6 +7,8 @@ on:
       - 'Package.swift'
       - 'Package.resolved'
       - 'Packages/SwiftMITMHTTP3/**'
+      - 'Sources/**'
+      - 'Vendor/**'
       - '.github/workflows/stage2-feasibility.yml'
 
 permissions:

@@ -22,7 +22,7 @@ public struct EgressPolicy: Sendable {
 
     public static let `default` = EgressPolicy()
 
-    func denies(_ address: SocketAddress) -> Bool {
+    public func denies(_ address: SocketAddress) -> Bool {
         guard !allowInternal else { return false }
         return Self.isInternal(address)
     }
