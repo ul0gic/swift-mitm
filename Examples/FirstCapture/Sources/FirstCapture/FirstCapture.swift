@@ -38,34 +38,43 @@ struct Options {
                 allowInternal = true
                 continue
             }
-            guard index < arguments.count else { throw CommandError.invalidArguments }
-            let value = arguments[index]
+            let value = try Self.argument(arguments, at: index)
             index += 1
             switch flag {
             case "--ca-cert": certificate = value
             case "--ca-key": key = value
             case "--port":
-                guard let number = Int(value), (0...65535).contains(number) else {
-                    throw CommandError.invalidArguments
-                }
-                port = number
+                port = try Self.number(value, range: 0...65535)
             case "--capture-bytes":
-                guard let number = Int(value), number >= 0 else { throw CommandError.invalidArguments }
-                captureBytes = number
+                captureBytes = try Self.number(value, range: 0...Int.max)
             case "--passthrough": passThrough.append(value)
             case "--upstream-ca": upstreamCAPaths.append(value)
             default: throw CommandError.invalidArguments
             }
         }
-        guard let certificate, let key else { throw CommandError.invalidArguments }
-        certificatePath = certificate
-        keyPath = key
+        certificatePath = try Self.required(certificate)
+        keyPath = try Self.required(key)
         self.port = port
         self.captureBytes = captureBytes
         self.asynchronous = asynchronous
         self.allowInternal = allowInternal
         self.passThrough = passThrough
         self.upstreamCAPaths = upstreamCAPaths
+    }
+
+    private static func number(_ value: String, range: ClosedRange<Int>) throws -> Int {
+        guard let number = Int(value), range.contains(number) else { throw CommandError.invalidArguments }
+        return number
+    }
+
+    private static func required(_ value: String?) throws -> String {
+        guard let value else { throw CommandError.invalidArguments }
+        return value
+    }
+
+    private static func argument(_ arguments: [String], at index: Int) throws -> String {
+        guard index < arguments.count else { throw CommandError.invalidArguments }
+        return arguments[index]
     }
 
     func makeServer(output: CaptureOutput) throws -> ProxyServer {
@@ -117,14 +126,7 @@ struct FirstCapture {
             throw error
         }
         let signals = AsyncStream<Int32>.makeStream(bufferingPolicy: .bufferingNewest(1))
-        signal(SIGINT, SIG_IGN)
-        signal(SIGTERM, SIG_IGN)
-        let sources = [SIGINT, SIGTERM].map { number in
-            let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
-            source.setEventHandler { signals.continuation.yield(number) }
-            source.resume()
-            return source
-        }
+        let sources = stopSources(signals.continuation)
         defer {
             for source in sources { source.cancel() }
             signals.continuation.finish()
@@ -165,5 +167,16 @@ struct FirstCapture {
         output.finishDelivery(cancel: cancelDelivery && options.asynchronous)
         await consumer.value
         try await output.complete()
+    }
+
+    private static func stopSources(_ continuation: AsyncStream<Int32>.Continuation) -> [DispatchSourceSignal] {
+        signal(SIGINT, SIG_IGN)
+        signal(SIGTERM, SIG_IGN)
+        return [SIGINT, SIGTERM].map { number in
+            let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
+            source.setEventHandler { continuation.yield(number) }
+            source.resume()
+            return source
+        }
     }
 }

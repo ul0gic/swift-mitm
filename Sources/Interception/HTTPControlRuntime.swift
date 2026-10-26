@@ -91,7 +91,7 @@ public actor HTTPControlRuntime {
     private var holds: [UUID: Hold] = [:]
     private var callbacks: [UUID: Callback] = [:]
     private var byteReservations: [UUID: ByteReservation] = [:]
-    private nonisolated let budget: HTTPControlBudget
+    nonisolated private let budget: HTTPControlBudget
     private var retainedBytes: Int { budget.state.withLockedValue { $0.bytes } }
     private var stopped = false
     private var activeOwner: UUID?
@@ -127,11 +127,11 @@ public actor HTTPControlRuntime {
         return stop()
     }
 
-    public nonisolated var configurationSnapshot: HTTPControlConfiguration {
+    nonisolated public var configurationSnapshot: HTTPControlConfiguration {
         budget.state.withLockedValue { $0.configuration }
     }
 
-    public nonisolated func reserveTransportBytes(_ bytes: Int) throws -> HTTPControlByteReservation {
+    nonisolated public func reserveTransportBytes(_ bytes: Int) throws -> HTTPControlByteReservation {
         try budget.state.withLockedValue { value in
             guard !value.stopped else { throw HTTPControlError.cancelled }
             guard bytes > 0, value.reservations < value.configuration.limits.maximumTasks * 4,

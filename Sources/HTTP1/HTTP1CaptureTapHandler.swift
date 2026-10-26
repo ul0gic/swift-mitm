@@ -119,15 +119,7 @@ final class HTTP1CaptureTapHandler: ChannelInboundHandler {
                     : .responseTrailers(requestID: id, headers: headers)
             )
         case .messageComplete:
-            guard let id = currentID else { return }
-            let truncated = bodyBuffer.truncated
-            sink.receive(
-                direction == .request
-                    ? .requestEnd(requestID: id, truncated: truncated)
-                    : .responseEnd(requestID: id, truncated: truncated)
-            )
-            correlator.end(id: id, request: direction == .request)
-            currentID = nil
+            completeMessage()
         case .upgradeRequested:
             upgradeRequestID = currentID
         case .upgraded:
@@ -135,6 +127,18 @@ final class HTTP1CaptureTapHandler: ChannelInboundHandler {
         case .failed:
             correlator.failOutstanding(sink: sink, message: "HTTP/1 capture parser failed")
         }
+    }
+
+    private func completeMessage() {
+        guard let id = currentID else { return }
+        let truncated = bodyBuffer.truncated
+        sink.receive(
+            direction == .request
+                ? .requestEnd(requestID: id, truncated: truncated)
+                : .responseEnd(requestID: id, truncated: truncated)
+        )
+        correlator.end(id: id, request: direction == .request)
+        currentID = nil
     }
 
     private func handleWebSocketUpgrade() {

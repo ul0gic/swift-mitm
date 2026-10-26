@@ -21,29 +21,10 @@ struct Arguments {
         if command == "serve" {
             value = nil
             exportPath = nil
-            var allowInternal = false
-            var originCAPath: String?
-            var editHeader: (name: String, value: String)?
-            var index = 3
-            while index < arguments.count {
-                switch arguments[index] {
-                case "--allow-internal":
-                    allowInternal = true
-                    index += 1
-                case "--origin-ca" where index + 1 < arguments.count:
-                    originCAPath = arguments[index + 1]
-                    index += 2
-                case "--edit-header" where index + 1 < arguments.count:
-                    let value = arguments[index + 1]
-                    guard let separator = value.firstIndex(of: "=") else { throw LabError.usage }
-                    editHeader = (String(value[..<separator]), String(value[value.index(after: separator)...]))
-                    index += 2
-                default: throw LabError.usage
-                }
-            }
-            self.allowInternal = allowInternal
-            self.originCAPath = originCAPath
-            self.editHeader = editHeader
+            let options = try ServeOptions(arguments)
+            allowInternal = options.allowInternal
+            originCAPath = options.originCAPath
+            editHeader = options.editHeader
         } else if command == "replay", arguments.count >= 4 {
             value = arguments[3]
             var allowInternal = false
@@ -72,6 +53,39 @@ struct Arguments {
             throw LabError.usage
         }
     }
+}
+
+private struct ServeOptions {
+    var allowInternal = false
+    var originCAPath: String?
+    var editHeader: (name: String, value: String)?
+
+    init(_ arguments: [String]) throws {
+        var index = 3
+        while index < arguments.count {
+            switch arguments[index] {
+            case "--allow-internal":
+                allowInternal = true
+                index += 1
+            case "--origin-ca" where index + 1 < arguments.count:
+                originCAPath = arguments[index + 1]
+                index += 2
+            case "--edit-header" where index + 1 < arguments.count:
+                let value = arguments[index + 1]
+                guard let separator = value.firstIndex(of: "=") else { throw LabError.usage }
+                editHeader = (String(value[..<separator]), String(value[value.index(after: separator)...]))
+                index += 2
+            default: throw LabError.usage
+            }
+        }
+    }
+}
+
+private struct LabServer {
+    let server: ProxyServer
+    let inspector: HTTPInspector
+    let breakpoints: ConsoleBreakpointSink
+    let limits: HTTPControlLimits
 }
 
 enum LabError: Error {
@@ -151,11 +165,15 @@ struct InterceptionLab {
         authority: CertificateAuthority,
         output: ConsoleOutput
     ) async throws -> Bool {
-        let (server, inspector, breakpoints, limits) = try makeServer(
+        let components = try makeServer(
             arguments,
             authority: authority,
             output: output
         )
+        let server = components.server
+        let inspector = components.inspector
+        let breakpoints = components.breakpoints
+        let limits = components.limits
         let editHeader = arguments.editHeader
         let breakpointConsumer = Task {
             for await handle in breakpoints.handles {
@@ -169,14 +187,7 @@ struct InterceptionLab {
                 "listening http://127.0.0.1:\(port); requests to /debug pause for a configured decision; "
                     + "internal-egress=\(arguments.allowInternal)"
             )
-            var receivedSignal: Int32?
-            for await number in signals.stream {
-                receivedSignal = number
-                if number == SIGTERM {
-                    output.finish(cancel: true)
-                }
-                break
-            }
+            let receivedSignal = await waitForStop(signals.stream, output: output)
             try await server.stop()
             breakpoints.finish()
             breakpointConsumer.cancel()
@@ -198,19 +209,28 @@ struct InterceptionLab {
             signals.cancel()
             breakpoints.finish()
             breakpointConsumer.cancel()
-            do { try await server.stop() }
-            catch { writeError("Proxy cleanup failed.") }
+            do { try await server.stop() } catch { writeError("Proxy cleanup failed.") }
             await breakpointConsumer.value
             _ = await inspector.shutdown()
             throw error
         }
     }
 
+    private static func waitForStop(_ signals: AsyncStream<Int32>, output: ConsoleOutput) async -> Int32? {
+        for await number in signals {
+            if number == SIGTERM {
+                output.finish(cancel: true)
+            }
+            return number
+        }
+        return nil
+    }
+
     private static func makeServer(
         _ arguments: Arguments,
         authority: CertificateAuthority,
         output: ConsoleOutput
-    ) throws -> (ProxyServer, HTTPInspector, ConsoleBreakpointSink, HTTPControlLimits) {
+    ) throws -> LabServer {
         let inspection = ConsoleInspectionSink(output: output)
         let admission = ResourceAdmissionController(configuration: try ResourceAdmissionConfiguration())
         let inspector = try HTTPInspector(
@@ -242,7 +262,7 @@ struct InterceptionLab {
             controlEventSink: breakpoints,
             admission: admission
         )
-        return (server, inspector, breakpoints, limits)
+        return LabServer(server: server, inspector: inspector, breakpoints: breakpoints, limits: limits)
     }
 
     private static func resolve(
@@ -368,8 +388,7 @@ struct InterceptionLab {
             try await server.stop()
             return result
         } catch {
-            do { try await server.stop() }
-            catch { writeError("Replay proxy cleanup failed.") }
+            do { try await server.stop() } catch { writeError("Replay proxy cleanup failed.") }
             throw error
         }
     }

@@ -243,14 +243,7 @@ extension ExplicitHTTPProxyHandler {
             guard maximum <= snapshot.limits.maximumBodyBytes, body.count <= snapshot.limits.maximumBodyBytes,
                   exchange.head.method != .HEAD,
                   exchange.head.method != .CONNECT else { throw HTTPControlError.unsupportedEdit }
-            let headers: [HTTPHeaderField]
-            if phase == .request {
-                headers = Self.fields(exchange.head.headers)
-            } else if let head = exchange.responseControlHead {
-                headers = Self.fields(head.headers)
-            } else {
-                throw HTTPControlError.unsupportedEdit
-            }
+            let headers = try controlledOriginalHeaders(exchange, phase: phase)
             guard override || !HTTPControlConfiguration.hasNoTransform(headers)
                 else { throw HTTPControlError.noTransform }
             let bytes = phase == .request ? exchange.controlBody.count : exchange.responseControlBody.count
@@ -260,6 +253,14 @@ extension ExplicitHTTPProxyHandler {
                   exchange.head.method != .HEAD || body.isEmpty else { throw HTTPControlError.unsupportedEdit }
         default: break
         }
+    }
+
+    private func controlledOriginalHeaders(_ exchange: Exchange, phase: HTTPControlPhase) throws -> [HTTPHeaderField] {
+        if phase == .request {
+            return Self.fields(exchange.head.headers)
+        }
+        guard let head = exchange.responseControlHead else { throw HTTPControlError.unsupportedEdit }
+        return Self.fields(head.headers)
     }
 
     func selectedFault(_ decision: HTTPControlDecision, direction: HTTPFaultDirection) throws -> HTTPFault? {

@@ -92,73 +92,14 @@ final class Stage2PriorKnowledgeAcceptanceTests: XCTestCase {
         var client: Channel?
         do {
             try await origin.start()
-            let ingress = try XCTUnwrap(HTTP2PriorKnowledgeIngress(authority: "127.0.0.1:\(origin.port)"))
-            let server = ProxyServer(
-                certificateAuthority: try CertificateAuthority.generate().authority,
-                sink: raw,
-                group: group,
-                egressPolicy: .init(allowInternal: true),
-                ingress: .priorKnowledgeHTTP2(ingress),
-                captureBodyLimit: 0,
-                observationSink: inspector
-            )
+            let server = try priorKnowledgeProxy(group: group, originPort: origin.port, raw: raw, inspector: inspector)
             proxy = server
             let port = try await server.start(port: 0)
             let muxPromise = group.next().makePromise(of: NIOHTTP2Handler.StreamMultiplexer.self)
-            let connection = try await ClientBootstrap(group: group)
-.channelInitializer { channel in
-                channel.configureHTTP2Pipeline(
-                    mode: .client,
-                    connectionConfiguration: .init(),
-                    streamConfiguration: .init()
-                ) { stream in
-                    stream.close()
-                }.map { muxPromise.succeed($0) }
-            }
-.connect(host: "127.0.0.1", port: port)
-.get()
+            let connection = try await connectPriorKnowledge(group: group, port: port, muxPromise: muxPromise)
             client = connection
             let mux = try phase4BoundedWait(muxPromise.futureResult)
-            let stream = try stage2H2Stream(mux)
-            try stream.write(.headers(.init(
-                headers: stage2H2Headers(
-                    port: origin.port,
-                    path: "/stage2.Probe/Call",
-                    scheme: "http",
-                    host: "127.0.0.1"
-                ),
-                endStream: true
-            )))
-            try stream.wait(until: stage2H2Ended)
-            XCTAssertEqual(stage2H2Bytes(stream.frames), [0, 0, 0, 0, 1, 42])
-            let inspected = try await events.wait { events in
-                events.contains {
-                    if case let .grpc(.status(status)) = $0.payload {
-                        status.code == 0
-                    } else {
-                        false
-                    }
-                }
-            }
-            XCTAssertTrue(inspected.contains {
-                if case let .grpc(.message(message)) = $0.payload {
-                    message.bytes == [42]
-                } else {
-                    false
-                }
-            })
-            XCTAssertEqual(origin.requests.count, 1)
-            let bad = Release022H2Stream()
-            let badChannel = try phase4BoundedWait(mux.createStreamChannel { channel in
-                channel.eventLoop.makeCompletedFuture { try channel.pipeline.syncOperations.addHandler(bad) }
-            })
-            try bad.write(.headers(.init(
-                headers: stage2H2Headers(port: origin.port, path: "/wrong", scheme: "http", host: "localhost"),
-                endStream: true
-            )))
-            try phase4BoundedWait(badChannel.closeFuture)
-            XCTAssertEqual(origin.requests.count, 1)
-            XCTAssertTrue(connection.isActive)
+            try await assertPriorKnowledgeExchange(mux: mux, origin: origin, events: events, connection: connection)
             try await connection.close().get()
             try await server.stop()
             try await origin.stop()
@@ -182,5 +123,85 @@ final class Stage2PriorKnowledgeAcceptanceTests: XCTestCase {
             }
             throw failure
         }
+    }
+
+
+    private func priorKnowledgeProxy(
+        group: MultiThreadedEventLoopGroup, originPort: Int, raw: Release022Events, inspector: HTTPInspector
+    ) throws -> ProxyServer {
+        let ingress = try XCTUnwrap(HTTP2PriorKnowledgeIngress(authority: "127.0.0.1:\(originPort)"))
+        return ProxyServer(
+            certificateAuthority: try CertificateAuthority.generate().authority,
+            sink: raw,
+            group: group,
+            egressPolicy: .init(allowInternal: true),
+            ingress: .priorKnowledgeHTTP2(ingress),
+            captureBodyLimit: 0,
+            observationSink: inspector
+        )
+    }
+
+    private func connectPriorKnowledge(
+        group: MultiThreadedEventLoopGroup, port: Int,
+        muxPromise: EventLoopPromise<NIOHTTP2Handler.StreamMultiplexer>
+    ) async throws -> Channel {
+        return try await ClientBootstrap(group: group)
+.channelInitializer { channel in
+            channel.configureHTTP2Pipeline(
+                mode: .client,
+                connectionConfiguration: .init(),
+                streamConfiguration: .init()
+            ) { stream in
+                stream.close()
+            }.map { muxPromise.succeed($0) }
+        }
+.connect(host: "127.0.0.1", port: port)
+.get()
+    }
+
+    private func assertPriorKnowledgeExchange(
+        mux: NIOHTTP2Handler.StreamMultiplexer, origin: Stage2ClearH2Origin,
+        events: Stage2InspectionEvents, connection: Channel
+    ) async throws {
+        let stream = try stage2H2Stream(mux)
+        try stream.write(.headers(.init(
+            headers: stage2H2Headers(
+                port: origin.port,
+                path: "/stage2.Probe/Call",
+                scheme: "http",
+                host: "127.0.0.1"
+            ),
+            endStream: true
+        )))
+        try stream.wait(until: stage2H2Ended)
+        XCTAssertEqual(stage2H2Bytes(stream.frames), [0, 0, 0, 0, 1, 42])
+        let inspected = try await events.wait { events in
+            events.contains {
+                if case let .grpc(.status(status)) = $0.payload {
+                    status.code == 0
+                } else {
+                    false
+                }
+            }
+        }
+        XCTAssertTrue(inspected.contains {
+            if case let .grpc(.message(message)) = $0.payload {
+                message.bytes == [42]
+            } else {
+                false
+            }
+        })
+        XCTAssertEqual(origin.requests.count, 1)
+        let bad = Release022H2Stream()
+        let badChannel = try phase4BoundedWait(mux.createStreamChannel { channel in
+            channel.eventLoop.makeCompletedFuture { try channel.pipeline.syncOperations.addHandler(bad) }
+        })
+        try bad.write(.headers(.init(
+            headers: stage2H2Headers(port: origin.port, path: "/wrong", scheme: "http", host: "localhost"),
+            endStream: true
+        )))
+        try phase4BoundedWait(badChannel.closeFuture)
+        XCTAssertEqual(origin.requests.count, 1)
+        XCTAssertTrue(connection.isActive)
     }
 }

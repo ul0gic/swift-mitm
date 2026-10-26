@@ -135,6 +135,9 @@ final class Release022PublicTrustTests: XCTestCase {
         }
     }
 
+}
+
+extension Release022PublicTrustTests {
     func testStopDuringHeldUpstreamHandshakeClosesBothPeersBeforeReturn() async throws {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 2)
         let origin = Release022WireOrigin(group: group)

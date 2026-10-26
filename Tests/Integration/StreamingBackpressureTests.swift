@@ -107,21 +107,7 @@ final class StreamingBackpressureTests: XCTestCase {
             throw error
         }
         do {
-            try await Task.sleep(for: .milliseconds(300))
-            let baseline = try MachMemory.residentBytes()
-            var peak = baseline
-            let deadline = Date().addingTimeInterval(1.5)
-            while Date() < deadline {
-                peak = max(peak, try MachMemory.residentBytes())
-                try await Task.sleep(for: .milliseconds(20))
-            }
-            let stalledDelta = MachMemory.growth(from: baseline, to: peak)
-            XCTAssertLessThan(
-                stalledDelta,
-                UInt64(32 * 1024 * 1024),
-                "RSS grew \(stalledDelta) bytes while the consumer was stalled on a \(bodySize)-byte body — "
-                    + "backpressure is not holding across the two proxy legs"
-            )
+            try await assertStalledMemory(bodySize: bodySize)
 
             try await fetch.resume()
             let received = try await fetch.completion.get()
@@ -181,6 +167,30 @@ final class StreamingBackpressureTests: XCTestCase {
         }
         let elapsed = Date().timeIntervalSince(start)
         let peakDelta = MachMemory.growth(from: baseline, to: try sampler.stop())
+        assertFullSpeedMeasurement(received: received, bodySize: bodySize, elapsed: elapsed, peakDelta: peakDelta)
+    }
+
+
+    private func assertStalledMemory(bodySize: Int) async throws {
+        try await Task.sleep(for: .milliseconds(300))
+        let baseline = try MachMemory.residentBytes()
+        var peak = baseline
+        let deadline = Date().addingTimeInterval(1.5)
+        while Date() < deadline {
+            peak = max(peak, try MachMemory.residentBytes())
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let stalledDelta = MachMemory.growth(from: baseline, to: peak)
+        XCTAssertLessThan(
+            stalledDelta,
+            UInt64(32 * 1024 * 1024),
+            "RSS grew \(stalledDelta) bytes while the consumer was stalled on a \(bodySize)-byte body — "
+                + "backpressure is not holding across the two proxy legs"
+        )
+
+    }
+
+    private func assertFullSpeedMeasurement(received: Int, bodySize: Int, elapsed: TimeInterval, peakDelta: UInt64) {
         let throughputMBps = Double(bodySize) / 1_000_000 / elapsed
         let measurement =
             "STREAMING-MEASURE full-speed: body=\(bodySize / (1024 * 1024))MiB "

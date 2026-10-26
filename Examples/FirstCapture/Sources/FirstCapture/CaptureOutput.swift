@@ -61,6 +61,13 @@ struct OutputRecord: Encodable, Sendable {
             direction = frame.direction.rawValue
             payload(frame.bytes, count: frame.byteCount)
             truncated = frame.truncated
+        default:
+            setFlowDetails(event)
+        }
+    }
+
+    private mutating func setFlowDetails(_ event: CaptureEvent) {
+        switch event {
         case let .opaqueOpen(flow):
             authority = String(flow.target.logicalAuthority.prefix(256))
             reason = flow.reason.rawValue
@@ -79,7 +86,7 @@ struct OutputRecord: Encodable, Sendable {
             reason = failure.reason.rawValue
             stage = failure.stage?.rawValue
             code = failure.code?.rawValue
-        case .requestTrailers, .responseTrailers, .streamError, .webSocketOpen, .webSocketClose:
+        default:
             break
         }
     }
@@ -140,7 +147,7 @@ final class CaptureOutput: CaptureEventSink {
     }
 
     func receive(_ event: CaptureEvent) {
-        if let delivery, Self.payloadSize(event) > BoundedDelivery.maximumBytes {
+        if delivery != nil, Self.payloadSize(event) > BoundedDelivery.maximumBytes {
             reportLoss(.overflow)
             return
         }
@@ -191,7 +198,8 @@ final class CaptureOutput: CaptureEventSink {
                 asynchronousOutput.reportLoss(delivery?.failure ?? error)
                 return
             }
-            let line = "{\"type\":\"deliveryLoss\",\"reason\":\"\(error.rawValue)\",\"allActiveCapturesIncomplete\":true}"
+            let line = "{\"type\":\"deliveryLoss\",\"reason\":\"\(error.rawValue)\","
+                + "\"allActiveCapturesIncomplete\":true}"
             Console.line(Data(line.utf8))
         }
     }

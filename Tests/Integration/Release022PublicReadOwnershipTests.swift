@@ -70,26 +70,7 @@ final class Release022PublicReadOwnershipTests: XCTestCase {
                     false
                 }
             } }
-            XCTAssertEqual(self.frames(events).map(\.direction), [
-                .clientToServer,
-                .clientToServer,
-                .serverToClient,
-                .serverToClient,
-                .clientToServer,
-                .serverToClient
-            ])
-            XCTAssertEqual(
-                events.filter {
-                if case .webSocketClose = $0 {
-                    true
-                } else {
-                    false
-                }
-            }
-.count,
-                1
-            )
-            XCTAssertTrue(release022Errors(events).isEmpty)
+            assertWebSocketDirectionsAndTerminal(events)
         }
     }
 
@@ -130,18 +111,7 @@ final class Release022PublicReadOwnershipTests: XCTestCase {
             try await proxy.stop()
             try received.waitForClose()
             try origin.received.waitForClose()
-            let events = sink.events
-            XCTAssertEqual(release022Requests(events).map(\.path), ["/held"])
-            let requestEnds = events.compactMap { event -> UUID? in
-                if case let .requestEnd(id, _) = event {
-                    id
-                } else {
-                    nil
-                }
-            }
-            XCTAssertEqual(requestEnds, release022Requests(events).map(\.id))
-            XCTAssertEqual(release022Errors(events), release022Requests(events).map(\.id))
-            XCTAssertTrue(release022ResponseEnds(events).isEmpty)
+            assertStoppedResponse(sink.events)
             if channel.isActive {
                 try await channel.close().get()
             }
@@ -166,5 +136,42 @@ final class Release022PublicReadOwnershipTests: XCTestCase {
                 nil
             }
         }
+    }
+
+    private func assertWebSocketDirectionsAndTerminal(_ events: [CaptureEvent]) {
+        XCTAssertEqual(self.frames(events).map(\.direction), [
+            .clientToServer,
+            .clientToServer,
+            .serverToClient,
+            .serverToClient,
+            .clientToServer,
+            .serverToClient
+        ])
+        XCTAssertEqual(
+            events.filter {
+            if case .webSocketClose = $0 {
+                true
+            } else {
+                false
+            }
+        }
+.count,
+            1
+        )
+        XCTAssertTrue(release022Errors(events).isEmpty)
+    }
+
+    private func assertStoppedResponse(_ events: [CaptureEvent]) {
+        XCTAssertEqual(release022Requests(events).map(\.path), ["/held"])
+        let requestEnds = events.compactMap { event -> UUID? in
+            if case let .requestEnd(id, _) = event {
+                id
+            } else {
+                nil
+            }
+        }
+        XCTAssertEqual(requestEnds, release022Requests(events).map(\.id))
+        XCTAssertEqual(release022Errors(events), release022Requests(events).map(\.id))
+        XCTAssertTrue(release022ResponseEnds(events).isEmpty)
     }
 }

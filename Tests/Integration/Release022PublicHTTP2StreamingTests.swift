@@ -124,21 +124,8 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
                     false
                 }
             } }
-            let requests = sink.events.compactMap { event -> CapturedRequestHead? in
-                if case let .requestHead(head) = event {
-                    head
-                } else {
-                    nil
-                }
-            }
-            let controlID = try XCTUnwrap(requests.first { $0.path == "/rpc/control" }?.id)
-            XCTAssertFalse(sink.events.contains {
-                if case let .streamError(id, _) = $0 {
-                    id == controlID
-                } else {
-                    false
-                }
-            })
+            try self.assertControlStreamHasNoError(sink)
+
         }
     }
 
@@ -231,6 +218,24 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
         }
     }
 
+    private func assertControlStreamHasNoError(_ sink: Release022Events) throws {
+        let requests = sink.events.compactMap { event -> CapturedRequestHead? in
+            if case let .requestHead(head) = event {
+                head
+            } else {
+                nil
+            }
+        }
+        let controlID = try XCTUnwrap(requests.first { $0.path == "/rpc/control" }?.id)
+        XCTAssertFalse(sink.events.contains {
+            if case let .streamError(id, _) = $0 {
+                id == controlID
+            } else {
+                false
+            }
+        })
+    }
+
     private func grpc(
         requestMessages: [[UInt8]],
         responseMessages: [[UInt8]],
@@ -274,64 +279,80 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
                 }
             } }
             let released = interleave ? min(requestMessages.count, responseMessages.count) : 0
-            for (index, bytes) in responseMessages.enumerated().dropFirst(released) {
-                try upstream.write(.data(.init(data: .byteBuffer(ByteBuffer(bytes: bytes)))))
-                let expected = responseMessages.prefix(index + 1).flatMap(\.self)
-                try client.wait { self.dataBytes($0) == expected }
-                _ = try sink.wait { self.responseBytes($0) == expected }
-                XCTAssertFalse(sink.events.contains {
-                    if case .responseEnd = $0 {
-                        true
-                    } else {
-                        false
-                    }
-                })
-            }
-            try upstream.write(.headers(.init(
-                headers: HPACKHeaders([("grpc-status", "0"), ("grpc-message", "ok"), ("trailer-bin", "//4=")]),
-                endStream: true
-            )))
-            try client.wait { $0.contains {
-                if case let .headers(h) = $0 {
-                    h.endStream
-                } else {
-                    false
-                }
-            } }
-            let events = try sink.wait { $0.contains {
+            let events = try self.finishGRPCResponse(
+                client: client, upstream: upstream, sink: sink, responseMessages: responseMessages, released: released
+            )
+            self.assertGRPCExchange(client: client, events: events, requestMessages: requestMessages, responseMessages: responseMessages)
+        }
+    }
+
+    private func finishGRPCResponse(
+        client: Release022H2Stream, upstream: Release022H2Stream, sink: Release022Events,
+        responseMessages: [[UInt8]], released: Int
+    ) throws -> [CaptureEvent] {
+        for (index, bytes) in responseMessages.enumerated().dropFirst(released) {
+            try upstream.write(.data(.init(data: .byteBuffer(ByteBuffer(bytes: bytes)))))
+            let expected = responseMessages.prefix(index + 1).flatMap(\.self)
+            try client.wait { self.dataBytes($0) == expected }
+            _ = try sink.wait { self.responseBytes($0) == expected }
+            XCTAssertFalse(sink.events.contains {
                 if case .responseEnd = $0 {
-                    true
-                } else {
-                    false
-                }
-            } }
-            XCTAssertEqual(self.dataBytes(client.frames), responseMessages.flatMap(\.self))
-            XCTAssertEqual(self.responseBytes(events), responseMessages.flatMap(\.self))
-            let requestBytes = events.flatMap { event -> [UInt8] in
-                if case let .requestBodyChunk(_, bytes, _) = event {
-                    bytes
-                } else {
-                    []
-                }
-            }
-            XCTAssertEqual(requestBytes, requestMessages.flatMap(\.self))
-            let trailers = events.flatMap { event -> [HTTPHeaderField] in
-                if case let .responseTrailers(_, headers) = event {
-                    headers
-                } else {
-                    []
-                }
-            }
-            XCTAssertEqual(trailers.first { $0.name == "grpc-status" }?.value, "0")
-            XCTAssertEqual(trailers.first { $0.name == "trailer-bin" }?.value, "//4=")
-            XCTAssertFalse(events.contains {
-                if case .streamError = $0 {
                     true
                 } else {
                     false
                 }
             })
         }
+        try upstream.write(.headers(.init(
+            headers: HPACKHeaders([("grpc-status", "0"), ("grpc-message", "ok"), ("trailer-bin", "//4=")]),
+            endStream: true
+        )))
+        try client.wait { $0.contains {
+            if case let .headers(h) = $0 {
+                h.endStream
+            } else {
+                false
+            }
+        } }
+        let events = try sink.wait { $0.contains {
+            if case .responseEnd = $0 {
+                true
+            } else {
+                false
+            }
+        } }
+        return events
+    }
+
+    private func assertGRPCExchange(
+        client: Release022H2Stream, events: [CaptureEvent], requestMessages: [[UInt8]], responseMessages: [[UInt8]]
+    ) {
+        XCTAssertEqual(self.dataBytes(client.frames), responseMessages.flatMap(\.self))
+        XCTAssertEqual(self.responseBytes(events), responseMessages.flatMap(\.self))
+        let requestBytes = events.flatMap { event -> [UInt8] in
+            if case let .requestBodyChunk(_, bytes, _) = event {
+                bytes
+            } else {
+                []
+            }
+        }
+        XCTAssertEqual(requestBytes, requestMessages.flatMap(\.self))
+        let trailers = events.flatMap { event -> [HTTPHeaderField] in
+            if case let .responseTrailers(_, headers) = event {
+                headers
+            } else {
+                []
+            }
+        }
+        XCTAssertEqual(trailers.first { $0.name == "grpc-status" }?.value, "0")
+        XCTAssertEqual(trailers.first { $0.name == "trailer-bin" }?.value, "//4=")
+        XCTAssertFalse(events.contains {
+            if case .streamError = $0 {
+                true
+            } else {
+                false
+            }
+        })
     }
 
     private func requestHeaders(port: Int, path: String = "/rpc/Exchange") -> HPACKHeaders {

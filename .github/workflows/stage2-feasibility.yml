@@ -178,10 +178,17 @@ jobs:
             --force-resolved-versions -Xswiftc -warnings-as-errors 2>&1 | tee evidence/http3-build.log
           binary_directory="$(swift build --package-path Packages/SwiftMITMHTTP3 --show-bin-path)"
           echo "SWIFTMITM_HTTP3_PROBE=$binary_directory/HTTP3TransportProbe" >> "$GITHUB_ENV"
+      - name: Set up independent peer Python
+        id: peer-python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.14.9'
+          architecture: arm64
       - name: Install isolated independent peers
+        env:
+          PEER_PYTHON: ${{ steps.peer-python.outputs.python-path }}
         run: |
-          peer_python="$(find "$RUNNER_TOOL_CACHE/Python" -path '*/3.14.*/arm64/bin/python3' -print -quit)"
-          test -n "$peer_python"
+          peer_python="$PEER_PYTHON"
           "$peer_python" --version | tee evidence/python.txt
           "$peer_python" -m venv "$RUNNER_TEMP/http3-peers"
           "$RUNNER_TEMP/http3-peers/bin/python" -m pip install --require-hashes --only-binary=:all: \

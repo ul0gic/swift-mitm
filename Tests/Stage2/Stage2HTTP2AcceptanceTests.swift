@@ -76,16 +76,7 @@ final class Stage2HTTP2AcceptanceTests: XCTestCase {
             let client = ProxyTestClient(group: group)
             let tunnel = try client.openTunnel(proxyPort: port, originHost: "localhost", originPort: origin.port)
             channel = tunnel
-            let tls = try client.installTLS(
-                on: tunnel,
-                serverHostname: "localhost",
-                mitmCACertificatePEM: root.caCertificatePEM,
-                applicationProtocols: ["h2"],
-                configuresHTTP2: true
-            )
-            try phase4BoundedWait(tls.installed)
-            XCTAssertEqual(try phase4BoundedWait(tls.handshake), "h2")
-            let multiplexer = try XCTUnwrap(try phase4BoundedWait(try XCTUnwrap(tls.multiplexer)))
+            let multiplexer = try installedMultiplexer(client: client, tunnel: tunnel, root: root)
             let downstream = try stage2H2Stream(multiplexer)
             try downstream.write(.headers(.init(
                 headers: stage2H2Headers(port: origin.port, path: "/stage2.Probe/Call"),
@@ -119,18 +110,7 @@ final class Stage2HTTP2AcceptanceTests: XCTestCase {
         let origin = try TLSOriginServer(group: group, bodySize: 13, applicationProtocols: ["h2"])
         let root = try CertificateAuthority.generate().authority
         let controls = Stage2ControlEvents()
-        let runtime = HTTPControlRuntime(configuration: try HTTPControlConfiguration(rules: [
-            HTTPRule(
-                id: "hold-h2",
-                match: HTTPRuleMatch(phase: .request, path: "/hold"),
-                action: .breakpoint
-            ),
-            HTTPRule(
-                id: "edit-h2",
-                match: HTTPRuleMatch(phase: .request),
-                action: .editHeaders(remove: [], append: [HTTPHeaderField(name: "x-proof", value: "h2")])
-            )
-        ], limits: HTTPControlLimits()))
+        let runtime = try pausedStreamRuntime()
         let proxy = ProxyServer(
             certificateAuthority: root,
             sink: Release022Events(),
@@ -147,16 +127,7 @@ final class Stage2HTTP2AcceptanceTests: XCTestCase {
             let client = ProxyTestClient(group: group)
             let tunnel = try client.openTunnel(proxyPort: port, originHost: "localhost", originPort: origin.localPort)
             channel = tunnel
-            let tls = try client.installTLS(
-                on: tunnel,
-                serverHostname: "localhost",
-                mitmCACertificatePEM: root.caCertificatePEM,
-                applicationProtocols: ["h2"],
-                configuresHTTP2: true
-            )
-            try phase4BoundedWait(tls.installed)
-            XCTAssertEqual(try phase4BoundedWait(tls.handshake), "h2")
-            let multiplexer = try XCTUnwrap(try phase4BoundedWait(try XCTUnwrap(tls.multiplexer)))
+            let multiplexer = try installedMultiplexer(client: client, tunnel: tunnel, root: root)
             try await assertPausedStreamIsolation(
                 multiplexer: multiplexer,
                 originPort: origin.localPort,
@@ -220,5 +191,37 @@ final class Stage2HTTP2AcceptanceTests: XCTestCase {
             }
         }
         XCTAssertEqual(effectiveRequests.count, 31)
+    }
+
+    private func installedMultiplexer(
+        client: ProxyTestClient,
+        tunnel: Channel,
+        root: CertificateAuthority
+    ) throws -> NIOHTTP2Handler.StreamMultiplexer {
+        let tls = try client.installTLS(
+            on: tunnel,
+            serverHostname: "localhost",
+            mitmCACertificatePEM: root.caCertificatePEM,
+            applicationProtocols: ["h2"],
+            configuresHTTP2: true
+        )
+        try phase4BoundedWait(tls.installed)
+        XCTAssertEqual(try phase4BoundedWait(tls.handshake), "h2")
+        return try XCTUnwrap(try phase4BoundedWait(try XCTUnwrap(tls.multiplexer)))
+    }
+
+    private func pausedStreamRuntime() throws -> HTTPControlRuntime {
+        return HTTPControlRuntime(configuration: try HTTPControlConfiguration(rules: [
+            HTTPRule(
+                id: "hold-h2",
+                match: HTTPRuleMatch(phase: .request, path: "/hold"),
+                action: .breakpoint
+            ),
+            HTTPRule(
+                id: "edit-h2",
+                match: HTTPRuleMatch(phase: .request),
+                action: .editHeaders(remove: [], append: [HTTPHeaderField(name: "x-proof", value: "h2")])
+            )
+        ], limits: HTTPControlLimits()))
     }
 }

@@ -75,7 +75,7 @@ final class WebSocketFrameDecoder {
         shouldContinue: () -> Bool,
         emit: (Frame) -> Void
     ) -> Bool where Bytes.Element == UInt8 {
-        return withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 16_384) { scratch in
+        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 16_384) { scratch in
             var count = 0
             defer {
                 if count > 0 {

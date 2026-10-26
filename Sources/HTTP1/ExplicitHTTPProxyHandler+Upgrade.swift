@@ -4,7 +4,7 @@ import SwiftMITMHTTP1Codec
 
 extension ExplicitHTTPProxyHandler {
     func establishCONNECT(_ exchange: Exchange) {
-        guard !stopped, let context, count == 1 else {
+        guard !stopped, let context, pendingExchangeCount == 1 else {
             reject(status: .badRequest, message: "CONNECT cannot follow pipelined requests")
             return
         }

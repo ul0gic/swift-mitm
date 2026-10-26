@@ -40,53 +40,7 @@ final class Release022PublicHTTP1OctetTests: XCTestCase {
             _ = try origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
             try origin.write(Array("HTTP/1.1 204 No Content\r\n\r\n".utf8))
             let events = try sink.wait { responseEnds($0).count == 2 }
-            let requests = events.compactMap { event -> CapturedRequestHead? in
-                if case let .requestHead(head) = event {
-                    head
-                } else {
-                    nil
-                }
-            }
-            XCTAssertEqual(requests.map(\.path), ["/octets", "/next"])
-            XCTAssertEqual(responseEnds(events), requests.map(\.id))
-            XCTAssertEqual(
-                requests.first?.headers.first { $0.name.lowercased() == "x-request" }?.value,
-                "\u{0080}\u{00FF}"
-            )
-            let responses = events.compactMap { event -> CapturedResponseHead? in
-                if case let .responseHead(head) = event {
-                    head
-                } else {
-                    nil
-                }
-            }
-            XCTAssertEqual(
-                responses.first?.headers.first { $0.name.lowercased() == "x-response" }?.value,
-                "\u{0080}\u{00FF}"
-            )
-            let requestTrailers = events.flatMap { event -> [HTTPHeaderField] in
-                if case let .requestTrailers(_, headers) = event {
-                    headers
-                } else {
-                    []
-                }
-            }
-            let responseTrailers = events.flatMap { event -> [HTTPHeaderField] in
-                if case let .responseTrailers(_, headers) = event {
-                    headers
-                } else {
-                    []
-                }
-            }
-            XCTAssertEqual(requestTrailers.first?.value, "\u{0080}\u{00FF}")
-            XCTAssertEqual(responseTrailers.first?.value, "\u{0080}\u{00FF}")
-            XCTAssertFalse(events.contains {
-                if case .streamError = $0 {
-                    true
-                } else {
-                    false
-                }
-            })
+            assertOctetCapture(events)
         }
     }
 
@@ -105,5 +59,55 @@ final class Release022PublicHTTP1OctetTests: XCTestCase {
         let folded = bytes.map { (65 ... 90).contains($0) ? $0 + 32 : $0 }
         guard folded.count >= marker.count else { return false }
         return (0 ... folded.count - marker.count).contains { Array(folded[$0 ..< $0 + marker.count]) == marker }
+    }
+
+    private func assertOctetCapture(_ events: [CaptureEvent]) {
+        let requests = events.compactMap { event -> CapturedRequestHead? in
+            if case let .requestHead(head) = event {
+                head
+            } else {
+                nil
+            }
+        }
+        XCTAssertEqual(requests.map(\.path), ["/octets", "/next"])
+        XCTAssertEqual(responseEnds(events), requests.map(\.id))
+        XCTAssertEqual(
+            requests.first?.headers.first { $0.name.lowercased() == "x-request" }?.value,
+            "\u{0080}\u{00FF}"
+        )
+        let responses = events.compactMap { event -> CapturedResponseHead? in
+            if case let .responseHead(head) = event {
+                head
+            } else {
+                nil
+            }
+        }
+        XCTAssertEqual(
+            responses.first?.headers.first { $0.name.lowercased() == "x-response" }?.value,
+            "\u{0080}\u{00FF}"
+        )
+        let requestTrailers = events.flatMap { event -> [HTTPHeaderField] in
+            if case let .requestTrailers(_, headers) = event {
+                headers
+            } else {
+                []
+            }
+        }
+        let responseTrailers = events.flatMap { event -> [HTTPHeaderField] in
+            if case let .responseTrailers(_, headers) = event {
+                headers
+            } else {
+                []
+            }
+        }
+        XCTAssertEqual(requestTrailers.first?.value, "\u{0080}\u{00FF}")
+        XCTAssertEqual(responseTrailers.first?.value, "\u{0080}\u{00FF}")
+        XCTAssertFalse(events.contains {
+            if case .streamError = $0 {
+                true
+            } else {
+                false
+            }
+        })
     }
 }

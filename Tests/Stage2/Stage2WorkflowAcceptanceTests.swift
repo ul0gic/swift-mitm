@@ -60,6 +60,12 @@ private struct Stage2HARDocument: Decodable {
 }
 
 final class Stage2WorkflowAcceptanceTests: XCTestCase {
+    private struct EffectiveRequest {
+        let id: UUID
+        let headers: [HTTPHeaderField]
+        let rules: [String]
+    }
+
     func testHeaderEditChangesOriginWithoutOverwritingOriginalEvidence() async throws {
         let configuration = try HTTPControlConfiguration(rules: [
             HTTPRule(
@@ -87,17 +93,17 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
             _ = try peer.raw.wait { release022ResponseEnds($0).count == 1 }
             let original = try XCTUnwrap(release022Requests(peer.raw.events).first)
             XCTAssertEqual(original.headers.first { $0.name.lowercased() == "x-probe" }?.value, "original")
-            let effective = controls.events.compactMap { event -> (UUID, [HTTPHeaderField], [String])? in
+            let effective = controls.events.compactMap { event -> EffectiveRequest? in
                 if case let .effectiveHead(id, .request, headers, rules) = event {
-                    (id, headers, rules)
+                    EffectiveRequest(id: id, headers: headers, rules: rules)
                 } else {
                     nil
                 }
             }
             XCTAssertEqual(effective.count, 1)
-            XCTAssertEqual(effective.first?.0, original.id)
-            XCTAssertEqual(effective.first?.1.first { $0.name.lowercased() == "x-probe" }?.value, "effective")
-            XCTAssertEqual(effective.first?.2, ["replace-probe"])
+            XCTAssertEqual(effective.first?.id, original.id)
+            XCTAssertEqual(effective.first?.headers.first { $0.name.lowercased() == "x-probe" }?.value, "effective")
+            XCTAssertEqual(effective.first?.rules, ["replace-probe"])
         }
     }
 
@@ -178,20 +184,7 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
 .count,
                 1
             )
-            let incomplete = ReplayRequest(
-                source: ReplaySource(requestID: sourceID, representation: .original),
-                destination: destination,
-                method: "POST",
-                headers: [],
-                body: [1],
-                bodyIsComplete: false
-            )
-            do {
-                _ = try await proxy.replay(incomplete, responseSink: replayEvents)
-                XCTFail("Truncated input reached replay")
-            } catch ReplayError.incompleteBody {} catch { throw error }
-            XCTAssertEqual(peer.origin.acceptedConnections, 1)
-            XCTAssertEqual(peer.origin.received.bytes, bytes)
+            try await assertIncompleteReplay(peer: peer, destination: destination, sourceID: sourceID, replayEvents: replayEvents, bytes: bytes)
         }
     }
 
@@ -221,74 +214,106 @@ final class Stage2WorkflowAcceptanceTests: XCTestCase {
                 wait: stage2Milliseconds(sendEnd.duration(to: firstResponse)),
                 receive: stage2Milliseconds(firstResponse.duration(to: responseEnd))
             )
-            let requestHead = try XCTUnwrap(release022Requests(captured).first)
-            let responseHead = try XCTUnwrap(captured.compactMap { event -> CapturedResponseHead? in
-                if case let .responseHead(head) = event {
-                    head
-                } else {
-                    nil
-                }
-            }
-.first)
-            let exchange = HARExchange(
-                representation: .original,
-                request: requestHead,
-                response: responseHead,
-                responseBody: HARBody(bytes: body, mimeType: "text/plain", isText: true, truncated: false),
-                completed: true,
-                timings: timings,
-                responseContentBytes: stage2ResponseCount(captured)
-            )
-            let withoutTiming = HARExchange(
-                representation: .original,
-                request: requestHead,
-                response: responseHead,
-                completed: true,
-                responseContentBytes: stage2ResponseCount(captured)
-            )
-            let missing = AsyncStream<HARExchange>(bufferingPolicy: .bufferingOldest(1)) { continuation in
-                continuation.yield(withoutTiming)
-                continuation.finish()
-            }
-            do {
-                try await HARExporter.export(
-                    missing,
-                    configuration: HARExportConfiguration(representation: .original),
-                    writer: Stage2HARBytes()
-                )
-                XCTFail("HAR exporter invented mandatory timings")
-            } catch HARExportError.missingTimings {
-                XCTAssertNil(withoutTiming.timings)
-            } catch { throw error }
-            let entries = AsyncStream<HARExchange>(bufferingPolicy: .bufferingOldest(1)) { continuation in
-                continuation.yield(exchange)
-                continuation.finish()
-            }
-            let writer = Stage2HARBytes()
-            try await HARExporter.export(
-                entries,
-                configuration: HARExportConfiguration(representation: .original),
-                writer: writer
-            )
-            let data = Data(writer.bytes)
-            let document = try JSONDecoder().decode(Stage2HARDocument.self, from: data)
-            XCTAssertEqual(document.log.version, "1.2")
-            XCTAssertEqual(document.log.entries.count, 1)
-            XCTAssertEqual(document.log.entries.first?.request.method, "GET")
-            XCTAssertEqual(document.log.entries.first?.response.status, 200)
-            XCTAssertTrue(document.log.entries.first?.request.url.contains("keep=yes") ?? false)
-            let output = String(decoding: writer.bytes, as: UTF8.self)
-            for secret in [
-                "synthetic-query-secret",
-                "synthetic-header-secret",
-                "synthetic-cookie-secret",
-                "synthetic-response-secret",
-                "synthetic-body-secret"
-            ] {
-                XCTAssertFalse(output.contains(secret), "Export leaked \(secret)")
-            }
+            try await assertHARExport(captured: captured, body: body, timings: timings)
         }
     }
+
+    private func assertIncompleteReplay(
+        peer: Stage2WireContext, destination: URL, sourceID: UUID, replayEvents: Stage2ReplayEvents, bytes: [UInt8]
+    ) async throws {
+        let incomplete = ReplayRequest(
+            source: ReplaySource(requestID: sourceID, representation: .original),
+            destination: destination,
+            method: "POST",
+            headers: [],
+            body: [1],
+            bodyIsComplete: false
+        )
+        do {
+            _ = try await peer.proxy.replay(incomplete, responseSink: replayEvents)
+            XCTFail("Truncated input reached replay")
+        } catch ReplayError.incompleteBody {} catch { throw error }
+        XCTAssertEqual(peer.origin.acceptedConnections, 1)
+        XCTAssertEqual(peer.origin.received.bytes, bytes)
+    }
+
+    private func assertHARExport(captured: [CaptureEvent], body: [UInt8], timings: HARExchangeTiming) async throws {
+        let requestHead = try XCTUnwrap(release022Requests(captured).first)
+        let responseHead = try XCTUnwrap(captured.compactMap { event -> CapturedResponseHead? in
+            if case let .responseHead(head) = event {
+                head
+            } else {
+                nil
+            }
+        }
+.first)
+        let exchange = HARExchange(
+            representation: .original,
+            request: requestHead,
+            response: responseHead,
+            responseBody: HARBody(bytes: body, mimeType: "text/plain", isText: true, truncated: false),
+            completed: true,
+            timings: timings,
+            responseContentBytes: stage2ResponseCount(captured)
+        )
+        let withoutTiming = HARExchange(
+            representation: .original,
+            request: requestHead,
+            response: responseHead,
+            completed: true,
+            responseContentBytes: stage2ResponseCount(captured)
+        )
+        try await assertMissingHARTiming(withoutTiming)
+        try await assertRedactedHAR(exchange)
+    }
+
+    private func assertMissingHARTiming(_ withoutTiming: HARExchange) async throws {
+        let missing = AsyncStream<HARExchange>(bufferingPolicy: .bufferingOldest(1)) { continuation in
+            continuation.yield(withoutTiming)
+            continuation.finish()
+        }
+        do {
+            try await HARExporter.export(
+                missing,
+                configuration: HARExportConfiguration(representation: .original),
+                writer: Stage2HARBytes()
+            )
+            XCTFail("HAR exporter invented mandatory timings")
+        } catch HARExportError.missingTimings {
+            XCTAssertNil(withoutTiming.timings)
+        } catch { throw error }
+    }
+
+    private func assertRedactedHAR(_ exchange: HARExchange) async throws {
+        let entries = AsyncStream<HARExchange>(bufferingPolicy: .bufferingOldest(1)) { continuation in
+            continuation.yield(exchange)
+            continuation.finish()
+        }
+        let writer = Stage2HARBytes()
+        try await HARExporter.export(
+            entries,
+            configuration: HARExportConfiguration(representation: .original),
+            writer: writer
+        )
+        let data = Data(writer.bytes)
+        let document = try JSONDecoder().decode(Stage2HARDocument.self, from: data)
+        XCTAssertEqual(document.log.version, "1.2")
+        XCTAssertEqual(document.log.entries.count, 1)
+        XCTAssertEqual(document.log.entries.first?.request.method, "GET")
+        XCTAssertEqual(document.log.entries.first?.response.status, 200)
+        XCTAssertTrue(document.log.entries.first?.request.url.contains("keep=yes") ?? false)
+        let output = String(decoding: writer.bytes, as: UTF8.self)
+        for secret in [
+            "synthetic-query-secret",
+            "synthetic-header-secret",
+            "synthetic-cookie-secret",
+            "synthetic-response-secret",
+            "synthetic-body-secret"
+        ] {
+            XCTAssertFalse(output.contains(secret), "Export leaked \(secret)")
+        }
+    }
+
 }
 
 func stage2Milliseconds(_ duration: Duration) -> Double {

@@ -20,7 +20,10 @@ extension HTTPInspector {
         processCurrent(&state)
         let continuing = state.current != nil
         cleanupTerminals(&state)
-        worker.withLock { $0 = state }
+        worker.withLock { value in
+            value = state
+            state = Worker()
+        }
         let schedule = ingress.withLock { value in
             if continuing || !value.items.isEmpty || !value.losses.isEmpty || value.stopping {
                 return true

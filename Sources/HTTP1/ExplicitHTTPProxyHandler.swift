@@ -25,7 +25,7 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
     let authorizeReuse: @Sendable (HTTPForwardTarget, Channel) -> Bool
     var queue: [Exchange?]
     var first = 0
-    var count = 0
+    var pendingExchangeCount = 0
     var receiving: Exchange?
     var active: Exchange?
     var upstream: Channel?
@@ -204,8 +204,8 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
             bodyLimit: captureBodyLimit,
             requestKeepAlive: isKeepAlive
         )
-        queue[(first + count) % queue.count] = exchange
-        count += 1
+        queue[(first + pendingExchangeCount) % queue.count] = exchange
+        pendingExchangeCount += 1
         receiving = exchange
         do {
             if !typedHTTP2 {

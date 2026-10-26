@@ -108,17 +108,7 @@ extension ExplicitHTTPProxyHandler {
         case .head:
             break
         case let .body(buffer):
-            if let writer = exchange.requestFaultWriter {
-                do {
-                    if exchange.requestEnded, exchange.controlSnapshot != nil {
-                        try writer.enqueueRepresentation(buffer)
-                    } else {
-                        try writer.enqueue(buffer)
-                    }
-                } catch { controlFailed(exchange, error: error) }
-            } else {
-                writeRequestBody(buffer, exchange: exchange, to: channel)
-            }
+            enqueueRequestBody(buffer, exchange: exchange, to: channel)
         case let .end(trailers):
             let end = HTTPClientRequestPart.end(trailers.map {
                 Self.hopHeaders(
@@ -157,6 +147,20 @@ extension ExplicitHTTPProxyHandler {
             } else {
                 complete()
             }
+        }
+    }
+
+    private func enqueueRequestBody(_ buffer: ByteBuffer, exchange: Exchange, to channel: Channel) {
+        if let writer = exchange.requestFaultWriter {
+            do {
+                if exchange.requestEnded, exchange.controlSnapshot != nil {
+                    try writer.enqueueRepresentation(buffer)
+                } else {
+                    try writer.enqueue(buffer)
+                }
+            } catch { controlFailed(exchange, error: error) }
+        } else {
+            writeRequestBody(buffer, exchange: exchange, to: channel)
         }
     }
 

@@ -152,17 +152,7 @@ final class Release022ConsumerCompatibilityTests: XCTestCase {
             }
             example.requestStop(signal: SIGTERM)
             XCTAssertEqual(try example.waitForExit(timeout: 2), 0)
-            let records = try example.wait { records in
-                records.contains {
-                    $0["_stream"] as? String == "stderr" && $0["type"] as? String == "deliveryLoss"
-                }
-            }
-            let losses = records.filter {
-                $0["_stream"] as? String == "stderr" && $0["type"] as? String == "deliveryLoss"
-            }
-            XCTAssertEqual(losses.count, 1)
-            XCTAssertEqual(losses.first?["reason"] as? String, "outputFailed")
-            XCTAssertEqual(losses.first?["allActiveCapturesIncomplete"] as? Bool, true)
+            try assertTerminalLoss(example, reason: "outputFailed")
             origin.stop()
             try await group.shutdownGracefully()
         } catch {
@@ -204,17 +194,7 @@ final class Release022ConsumerCompatibilityTests: XCTestCase {
                 ])
             }
             example.resumeOutput()
-            let records = try example.wait { records in
-                records.contains {
-                    $0["_stream"] as? String == "stderr" && $0["type"] as? String == "deliveryLoss"
-                }
-            }
-            let losses = records.filter {
-                $0["_stream"] as? String == "stderr" && $0["type"] as? String == "deliveryLoss"
-            }
-            XCTAssertEqual(losses.count, 1)
-            XCTAssertEqual(losses.first?["reason"] as? String, "overflow")
-            XCTAssertEqual(losses.first?["allActiveCapturesIncomplete"] as? Bool, true)
+            try assertTerminalLoss(example, reason: "overflow")
             example.requestStop()
             XCTAssertEqual(try example.waitForExit(timeout: 2), 0)
             origin.stop()
@@ -224,5 +204,19 @@ final class Release022ConsumerCompatibilityTests: XCTestCase {
             try? await group.shutdownGracefully()
             throw error
         }
+    }
+
+    private func assertTerminalLoss(_ example: Release022ExampleProcess, reason: String) throws {
+        let records = try example.wait { records in
+            records.contains {
+                $0["_stream"] as? String == "stderr" && $0["type"] as? String == "deliveryLoss"
+            }
+        }
+        let losses = records.filter {
+            $0["_stream"] as? String == "stderr" && $0["type"] as? String == "deliveryLoss"
+        }
+        XCTAssertEqual(losses.count, 1)
+        XCTAssertEqual(losses.first?["reason"] as? String, reason)
+        XCTAssertEqual(losses.first?["allActiveCapturesIncomplete"] as? Bool, true)
     }
 }

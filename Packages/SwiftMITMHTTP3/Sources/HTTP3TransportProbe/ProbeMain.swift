@@ -18,8 +18,10 @@ struct ProbeMain {
         let authenticator = try Authenticator(certificates: identity.certificateChain, privateKey: identity.privateKey)
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         let loop = group.next()
-        let state = NIOLoopBound(try ProbeTransport(arguments: arguments), eventLoop: loop)
         do {
+            let state = try await loop.submit {
+                NIOLoopBound(try ProbeTransport(arguments: arguments), eventLoop: loop)
+            }.get()
             let verifier = try AsyncVerifier(trustRootsPath: arguments.originRootPath, eventLoop: loop)
             try await serve(arguments, state: state, loop: loop, authenticator: authenticator, verifier: verifier)
         } catch {

@@ -10,7 +10,7 @@ extension HTTPInspector {
             try responseHead(head, key: key, state: &state)
         case let .requestTrailers(_, headers), let .responseTrailers(_, headers):
             try state.bodies[key]?.setTrailers(headers)
-        case .requestEnd(_, _), .responseEnd:
+        case .requestEnd, .responseEnd:
             return try endBody(key, state: &state)
         case let .streamError(id, _):
             streamError(id, key: key, state: &state)

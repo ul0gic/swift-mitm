@@ -6,22 +6,7 @@ import SwiftMITM
 
 final class Stage2ProvenanceAcceptanceTests: XCTestCase {
     func testSyntheticResponseKeepsEditedRequestAndResponseHeadersInTheirOwnRepresentations() async throws {
-        let runtime = HTTPControlRuntime(configuration: try HTTPControlConfiguration(rules: [
-            HTTPRule(
-                id: "request-edit",
-                match: HTTPRuleMatch(phase: .request, path: "/synthetic"),
-                action: .editHeaders(remove: ["X-Probe"], append: [HTTPHeaderField(name: "X-Probe", value: "edited")])
-            ),
-            HTTPRule(
-                id: "local-response",
-                match: HTTPRuleMatch(phase: .request, path: "/synthetic"),
-                action: .respond(
-                    status: 202,
-                    headers: [HTTPHeaderField(name: "X-Response", value: "generated")],
-                    body: Data("synthetic-body".utf8)
-                )
-            )
-        ], limits: HTTPControlLimits()))
+        let runtime = try syntheticResponseRuntime()
         let controls = Stage2ControlEvents()
         try await stage2WithHTTPOrigin(runtime: runtime, controlSink: controls) { peer in
             let received = Release022WireObservation()
@@ -61,5 +46,23 @@ final class Stage2ProvenanceAcceptanceTests: XCTestCase {
             XCTAssertNil(effective.first { $0.name.lowercased() == "x-response" })
             try await client.close().get()
         }
+    }
+    private func syntheticResponseRuntime() throws -> HTTPControlRuntime {
+        return HTTPControlRuntime(configuration: try HTTPControlConfiguration(rules: [
+            HTTPRule(
+                id: "request-edit",
+                match: HTTPRuleMatch(phase: .request, path: "/synthetic"),
+                action: .editHeaders(remove: ["X-Probe"], append: [HTTPHeaderField(name: "X-Probe", value: "edited")])
+            ),
+            HTTPRule(
+                id: "local-response",
+                match: HTTPRuleMatch(phase: .request, path: "/synthetic"),
+                action: .respond(
+                    status: 202,
+                    headers: [HTTPHeaderField(name: "X-Response", value: "generated")],
+                    body: Data("synthetic-body".utf8)
+                )
+            )
+        ], limits: HTTPControlLimits()))
     }
 }

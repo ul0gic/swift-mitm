@@ -31,49 +31,11 @@ final class Release022ClientCompatibilityTests: XCTestCase {
             try clear.start()
             try secure.start()
             let port = try await proxy.start(port: 0)
-            let version = try curl(["--version"])
-            FileHandle.standardError
-                .write(
-                    Data(
-                        "CLIENT-MATRIX curl=\(version.output) os=\(ProcessInfo.processInfo.operatingSystemVersionString)\n"
-                .utf8
-                    )
-                )
-            for url in ["http://localhost:\(clear.localPort)/", "https://localhost:\(secure.localPort)/"] {
-                let result = try curl([
-                    "--silent",
-                    "--show-error",
-                    "--fail",
-                    "--max-time",
-                    "10",
-                    "--noproxy",
-                    "",
-                    "--proxy",
-                    "http://127.0.0.1:\(port)",
-                    "--cacert",
-                    certificate.path,
-                    url
-                ])
-                XCTAssertEqual(result.status, 0, result.error)
-                XCTAssertEqual(result.output, String(repeating: "A", count: 32))
-            }
-            let events = try sink.wait { $0.filter {
-                if case .responseEnd = $0 {
-                    true
-                } else {
-                    false
-                }
-            }
-.count == 2
-            }
-            let schemes = events.compactMap { event -> String? in
-                if case let .requestHead(head) = event {
-                    head.scheme
-                } else {
-                    nil
-                }
-            }
-            XCTAssertEqual(schemes, ["http", "https"])
+            try assertCurlRequests(
+                port: port, urls: ["http://localhost:\(clear.localPort)/", "https://localhost:\(secure.localPort)/"],
+                certificate: certificate
+            )
+            try assertCurlCapture(sink)
             try await proxy.stop()
             clear.stop()
             secure.stop()
@@ -112,45 +74,13 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         do {
             try origin.start()
             let port = try await proxy.start(port: 0)
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.timeoutIntervalForRequest = 10
-            let proxyPort = try XCTUnwrap(UInt16(exactly: port))
-            let endpointPort = try XCTUnwrap(NWEndpoint.Port(rawValue: proxyPort))
-            configuration.proxyConfigurations = [
-                ProxyConfiguration(httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: endpointPort))
-            ]
-            let der = try NIOSSLCertificate(bytes: Array(authority.caCertificatePEM.utf8), format: .pem).toDERBytes()
-            let root = try XCTUnwrap(SecCertificateCreateWithData(nil, Data(der) as CFData))
-            let delegate = Release022URLSessionTrust(root: root)
-            let client = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+            let client = try trustedURLSession(port: port, authority: authority)
             session = client
             let url = try XCTUnwrap(URL(string: "https://localhost:\(origin.localPort)/"))
             let (data, response) = try await client.data(from: url)
             XCTAssertEqual(data, Data(repeating: 0x41, count: 32))
             XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
-            let events = try sink.wait { $0.contains {
-                if case .responseEnd = $0 {
-                    true
-                } else {
-                    false
-                }
-            } }
-            let heads = events.compactMap { event -> CapturedRequestHead? in
-                if case let .requestHead(head) = event {
-                    head
-                } else {
-                    nil
-                }
-            }
-            XCTAssertEqual(heads.count, 1)
-            XCTAssertEqual(heads.first?.version, version)
-            FileHandle.standardError
-                .write(
-                    Data(
-                        "CLIENT-MATRIX URLSession protocol=\(protocolName) os=\(ProcessInfo.processInfo.operatingSystemVersionString) trusted=true\n"
-                .utf8
-                    )
-                )
+            try assertURLSessionCapture(sink, protocolName: protocolName, version: version)
             client.invalidateAndCancel()
             try await proxy.stop()
             origin.stop()
@@ -162,6 +92,97 @@ final class Release022ClientCompatibilityTests: XCTestCase {
             try? await group.shutdownGracefully()
             throw error
         }
+    }
+
+    private func assertCurlCapture(_ sink: Release022Events) throws {
+        let events = try sink.wait { $0.filter {
+            if case .responseEnd = $0 {
+                true
+            } else {
+                false
+            }
+        }
+.count == 2
+        }
+        let schemes = events.compactMap { event -> String? in
+            if case let .requestHead(head) = event {
+                head.scheme
+            } else {
+                nil
+            }
+        }
+        XCTAssertEqual(schemes, ["http", "https"])
+    }
+
+    private func assertURLSessionCapture(
+        _ sink: Release022Events, protocolName: String, version: HTTPProtocolVersion
+    ) throws {
+        let events = try sink.wait { $0.contains {
+            if case .responseEnd = $0 {
+                true
+            } else {
+                false
+            }
+        } }
+        let heads = events.compactMap { event -> CapturedRequestHead? in
+            if case let .requestHead(head) = event {
+                head
+            } else {
+                nil
+            }
+        }
+        XCTAssertEqual(heads.count, 1)
+        XCTAssertEqual(heads.first?.version, version)
+        FileHandle.standardError
+            .write(
+                Data(
+                    "CLIENT-MATRIX URLSession protocol=\(protocolName) os=\(ProcessInfo.processInfo.operatingSystemVersionString) trusted=true\n"
+            .utf8
+                )
+            )
+    }
+
+    private func assertCurlRequests(port: Int, urls: [String], certificate: URL) throws {
+        let version = try curl(["--version"])
+        FileHandle.standardError
+            .write(
+                Data(
+                    "CLIENT-MATRIX curl=\(version.output) os=\(ProcessInfo.processInfo.operatingSystemVersionString)\n"
+            .utf8
+                )
+            )
+        for url in urls {
+            let result = try curl([
+                "--silent",
+                "--show-error",
+                "--fail",
+                "--max-time",
+                "10",
+                "--noproxy",
+                "",
+                "--proxy",
+                "http://127.0.0.1:\(port)",
+                "--cacert",
+                certificate.path,
+                url
+            ])
+            XCTAssertEqual(result.status, 0, result.error)
+            XCTAssertEqual(result.output, String(repeating: "A", count: 32))
+        }
+    }
+
+    private func trustedURLSession(port: Int, authority: CertificateAuthority) throws -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 10
+        let proxyPort = try XCTUnwrap(UInt16(exactly: port))
+        let endpointPort = try XCTUnwrap(NWEndpoint.Port(rawValue: proxyPort))
+        configuration.proxyConfigurations = [
+            ProxyConfiguration(httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: endpointPort))
+        ]
+        let der = try NIOSSLCertificate(bytes: Array(authority.caCertificatePEM.utf8), format: .pem).toDERBytes()
+        let root = try XCTUnwrap(SecCertificateCreateWithData(nil, Data(der) as CFData))
+        let delegate = Release022URLSessionTrust(root: root)
+        return URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
     }
 
     private struct CurlResult {

@@ -147,44 +147,7 @@ final class Release022PublicHTTP1Tests: XCTestCase {
                     false
                 }
             } }
-            let events = sink.events
-            XCTAssertEqual(
-                events.filter {
-                if case .webSocketClose = $0 {
-                    true
-                } else {
-                    false
-                }
-            }
-.count,
-                1
-            )
-            let terminal = try XCTUnwrap(events.firstIndex {
-                if case .webSocketClose = $0 {
-                    true
-                } else {
-                    false
-                }
-            })
-            XCTAssertEqual(
-                events[..<terminal]
-.filter {
-                if case .webSocketFrame = $0 {
-                    true
-                } else {
-                    false
-                }
-            }
-.count,
-                4
-            )
-            XCTAssertFalse(events.suffix(from: terminal + 1).contains {
-                if case .webSocketFrame = $0 {
-                    true
-                } else {
-                    false
-                }
-            })
+            try assertWebSocketTerminalOrdering(sink.events)
         }
     }
 
@@ -219,5 +182,38 @@ final class Release022PublicHTTP1Tests: XCTestCase {
         XCTAssertEqual(Set(release022Errors(events)), Set(ids))
         XCTAssertEqual(release022Errors(events).count, 2)
         XCTAssertTrue(release022ResponseEnds(events).isEmpty)
+    }
+
+    private func assertWebSocketTerminalOrdering(_ events: [CaptureEvent]) throws {
+        let closes = events.filter {
+            if case .webSocketClose = $0 {
+                true
+            } else {
+                false
+            }
+        }
+        XCTAssertEqual(closes.count, 1)
+        let terminal = try XCTUnwrap(events.firstIndex {
+            if case .webSocketClose = $0 {
+                true
+            } else {
+                false
+            }
+        })
+        let precedingFrames = events[..<terminal].filter {
+            if case .webSocketFrame = $0 {
+                true
+            } else {
+                false
+            }
+        }
+        XCTAssertEqual(precedingFrames.count, 4)
+        XCTAssertFalse(events.suffix(from: terminal + 1).contains {
+            if case .webSocketFrame = $0 {
+                true
+            } else {
+                false
+            }
+        })
     }
 }

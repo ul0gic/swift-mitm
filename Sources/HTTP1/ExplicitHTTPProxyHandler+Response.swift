@@ -19,7 +19,18 @@ extension ExplicitHTTPProxyHandler {
             pendingResponseKeepAlive = nil
             receiveHead(head, exchange: exchange, context: context, isKeepAlive: isKeepAlive)
         case let .body(body):
-            if !externallyCaptured {
+            receiveBody(body, exchange: exchange, context: context)
+        case let .end(trailers):
+            if exchange.responseControlHead != nil {
+                completeControlledResponse(trailers, exchange: exchange)
+                return
+            }
+            receiveEnd(trailers, exchange: exchange, context: context)
+        }
+    }
+
+    private func receiveBody(_ body: ByteBuffer, exchange: Exchange, context: ChannelHandlerContext) {
+        if !externallyCaptured {
             (sink as? ObservationCaptureSink)?.receiveBody(
                 requestID: exchange.id,
                 direction: .response,
@@ -30,22 +41,15 @@ extension ExplicitHTTPProxyHandler {
                 bytes: exchange.responseBody.take(body.readableBytesView),
                 byteCount: body.readableBytes
             ))
-            }
-            if retainControlledResponse(body, exchange: exchange) {
-                return
-            }
-            if let writer = exchange.responseFaultWriter {
-                do { try writer.enqueue(body) }
-                catch { controlFailed(exchange, error: error) }
-            } else {
-                writeResponseBody(body, exchange: exchange, context: context)
-            }
-        case let .end(trailers):
-            if exchange.responseControlHead != nil {
-                completeControlledResponse(trailers, exchange: exchange)
-                return
-            }
-            receiveEnd(trailers, exchange: exchange, context: context)
+        }
+        if retainControlledResponse(body, exchange: exchange) {
+            return
+        }
+        if let writer = exchange.responseFaultWriter {
+            do { try writer.enqueue(body) }
+            catch { controlFailed(exchange, error: error) }
+        } else {
+            writeResponseBody(body, exchange: exchange, context: context)
         }
     }
 
@@ -221,9 +225,9 @@ extension ExplicitHTTPProxyHandler {
         exchange.responseFaultWriter?.cancel()
         exchange.admissionReservation?.release()
         first = (first + 1) % queue.count
-        count -= 1
+        pendingExchangeCount -= 1
         active = nil
-        if count > 0 {
+        if pendingExchangeCount > 0 {
             startNext()
         } else if inputClosed {
             context?.close(promise: nil)
@@ -332,7 +336,7 @@ extension ExplicitHTTPProxyHandler {
         queue = Array(repeating: nil, count: queue.count)
         receiving = nil
         active = nil
-        count = 0
+        pendingExchangeCount = 0
         if close {
             context?.close(promise: nil)
         }

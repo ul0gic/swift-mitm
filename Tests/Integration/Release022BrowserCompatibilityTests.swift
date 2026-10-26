@@ -24,14 +24,7 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
             let server = try makeProxy(group: group, ready: ready, authority: authority, sink: sink)
             proxy = server
             let port = try await server.start(port: 0)
-            let configuration = WKWebViewConfiguration()
-            configuration.websiteDataStore = .nonPersistent()
-            let endpointPort = try XCTUnwrap(NWEndpoint.Port(rawValue: try XCTUnwrap(UInt16(exactly: port))))
-            configuration.websiteDataStore.proxyConfigurations = [
-                ProxyConfiguration(httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: endpointPort))
-            ]
-            let der = try NIOSSLCertificate(bytes: Array(authority.caCertificatePEM.utf8), format: .pem).toDERBytes()
-            let root = try XCTUnwrap(SecCertificateCreateWithData(nil, Data(der) as CFData))
+            let (configuration, root) = try browserConfiguration(port: port, authority: authority)
             let completion = Phase2FixtureCompletion<String>(eventLoop: group.next(), timeout: .seconds(20))
             let observer = Release022BrowserObserver(root: root, completion: completion)
             configuration.userContentController.add(observer, name: "result")
@@ -161,6 +154,25 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
             }
         }
         XCTAssertEqual(body, Array(": heartbeat\n\ndata: €-first\n\ndata: second\n\n".utf8))
+        assertBrowserWebSocketCapture(events)
+    }
+
+    private func browserConfiguration(
+        port: Int,
+        authority: CertificateAuthority
+    ) throws -> (WKWebViewConfiguration, SecCertificate) {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let endpointPort = try XCTUnwrap(NWEndpoint.Port(rawValue: try XCTUnwrap(UInt16(exactly: port))))
+        configuration.websiteDataStore.proxyConfigurations = [
+            ProxyConfiguration(httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: endpointPort))
+        ]
+        let der = try NIOSSLCertificate(bytes: Array(authority.caCertificatePEM.utf8), format: .pem).toDERBytes()
+        let root = try XCTUnwrap(SecCertificateCreateWithData(nil, Data(der) as CFData))
+        return (configuration, root)
+    }
+
+    private func assertBrowserWebSocketCapture(_ events: [CaptureEvent]) {
         XCTAssertEqual(
             events.filter {
             if case .webSocketOpen = $0 {

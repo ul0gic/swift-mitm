@@ -7,123 +7,6 @@ import XCTest
 import SwiftMITM
 import SwiftMITMInspection
 
-final class Stage2InspectionEvents: InspectionEventSink {
-    private let storage = NIOLockedValueBox<[InspectionEvent]>([])
-
-    var events: [InspectionEvent] { storage.withLockedValue { $0 } }
-
-    func receive(_ event: InspectionEvent) { storage.withLockedValue { $0.append(event) } }
-
-    func wait(until predicate: ([InspectionEvent]) -> Bool) async throws -> [InspectionEvent] {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(5))
-        while true {
-            let current = events
-            if predicate(current) {
-                return current
-            }
-            guard clock.now < deadline else { throw Phase2FixtureError.deadlineExceeded }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-    }
-}
-
-struct Stage2WireContext {
-    let proxy: ProxyServer
-    let group: EventLoopGroup
-    let origin: Release022WireOrigin
-    let client: Channel
-    let received: Release022WireObservation
-    let raw: Release022Events
-    let inspected: Stage2InspectionEvents
-    let inspector: HTTPInspector
-}
-
-func stage2WithInspectionWire(
-    controlRuntime: HTTPControlRuntime? = nil,
-    controlEventSink: any HTTPControlEventSink? = nil,
-    inspectionConfiguration: InspectionConfiguration? = nil,
-    admission: ResourceAdmissionController? = nil,
-    reusePolicy: HTTP1ReusePolicy? = nil,
-    body: (Stage2WireContext) async throws -> Void
-) async throws {
-    let group = MultiThreadedEventLoopGroup(numberOfThreads: 2)
-    let origin = Release022WireOrigin(group: group)
-    let raw = Release022Events()
-    let inspected = Stage2InspectionEvents()
-    let inspector = try HTTPInspector(
-        configuration: try inspectionConfiguration ?? InspectionConfiguration(budget: InspectionMemoryBudget()),
-        sink: inspected
-    )
-    let proxy = ProxyServer(
-        certificateAuthority: try CertificateAuthority.generate().authority,
-        sink: raw,
-        group: group,
-        egressPolicy: .init(allowInternal: true),
-        ingress: .explicitHTTP,
-        captureBodyLimit: 0,
-        observationSink: inspector,
-        controlRuntime: controlRuntime,
-        controlEventSink: controlEventSink,
-        admission: admission,
-        http1ReusePolicy: reusePolicy
-    )
-    var client: Channel?
-    do {
-        try origin.start()
-        let port = try await proxy.start(port: 0)
-        let received = Release022WireObservation()
-        let channel = try release022WireClient(group: group, port: port, observation: received)
-        client = channel
-        try await body(Stage2WireContext(
-            proxy: proxy,
-            group: group,
-            origin: origin,
-            client: channel,
-            received: received,
-            raw: raw,
-            inspected: inspected,
-            inspector: inspector
-        ))
-        if channel.isActive {
-            try await channel.close().get()
-        }
-        try await proxy.stop()
-        origin.stop()
-        let shutdown = await inspector.shutdown()
-        XCTAssertTrue(shutdown.drained)
-        try await group.shutdownGracefully()
-    } catch {
-        let failure = error
-        do {
-            if let client, client.isActive {
-                try await client.close().get()
-            }
-            try await proxy.stop()
-        } catch { XCTFail("Proxy cleanup failed: \(error)") }
-        origin.stop()
-        let shutdown = await inspector.shutdown()
-        XCTAssertTrue(shutdown.drained)
-        do { try await group.shutdownGracefully() }
-        catch { XCTFail("Event loop cleanup failed: \(error)") }
-        throw failure
-    }
-}
-
-func stage2WriteChunk(_ bytes: [UInt8], origin: Release022WireOrigin) throws {
-    try origin.write(Array("\(String(bytes.count, radix: 16))\r\n".utf8) + bytes + [13, 10])
-}
-
-func stage2ResponseCount(_ events: [CaptureEvent]) -> Int {
-    events.reduce(0) { count, event in
-        if case let .responseBodyChunk(_, _, byteCount) = event {
-            count + byteCount
-        } else {
-            count
-        }
-    }
-}
-
 final class Stage2InspectionAcceptanceTests: XCTestCase {
     func testSSEPublishesFragmentedUTF8BeforeEOFWithZeroRawRetention() async throws {
         try await stage2WithInspectionWire { peer in
@@ -156,19 +39,7 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
                     }
                 }
             }
-            let messages = events.compactMap { event -> SSEEvent? in
-                if case let .sse(message) = event.payload {
-                    message
-                } else {
-                    nil
-                }
-            }
-            XCTAssertEqual(messages.count, 1)
-            XCTAssertEqual(messages.first?.data, "€\nsecond")
-            XCTAssertEqual(messages.first?.event, "update")
-            XCTAssertEqual(messages.first?.lastEventID, "evt-1")
-            XCTAssertTrue(release022ResponseEnds(peer.raw.events).isEmpty)
-            XCTAssertTrue(release022ResponseBodyBytes(peer.raw.events).isEmpty)
+            assertEarlySSE(events, raw: peer.raw.events)
             try stage2WriteChunk(Array("data: discarded-at-eof".utf8), origin: peer.origin)
             try peer.origin.write(Array("0\r\n\r\n".utf8))
             _ = try peer.raw.wait { release022ResponseEnds($0).count == 1 }
@@ -252,15 +123,7 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
                     }
                 }
             }
-            let messages = early.compactMap { event -> GRPCMessage? in
-                if case let .grpc(.message(message)) = event.payload, event.direction == .response {
-                    message
-                } else {
-                    nil
-                }
-            }
-            XCTAssertEqual(messages.map(\.bytes), [[8, 42]])
-            XCTAssertTrue(release022ResponseEnds(peer.raw.events).isEmpty)
+            assertEarlyGRPC(early, raw: peer.raw.events)
             let trailerText = Array("grpc-status: 0\r\n".utf8)
             let trailer = [UInt8(0x80), 0, 0, 0, UInt8(trailerText.count)] + trailerText
             try stage2WriteChunk(Array(Data(trailer).base64EncodedString().utf8), origin: peer.origin)
@@ -291,24 +154,7 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
 
     func testFragmentedDeflateWebSocketMessageDoesNotDependOnFrameRetention() async throws {
         try await stage2WithInspectionWire { peer in
-            let request = "GET http://127.0.0.1:\(peer.origin.port)/socket HTTP/1.1\r\nHost: localhost\r\n"
-                + "Connection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\n"
-                + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
-                + "Sec-WebSocket-Extensions: permessage-deflate; server_no_context_takeover; client_no_context_takeover\r\n\r\n"
-            try phase4BoundedWait(peer.client.writeAndFlush(ByteBuffer(string: request)))
-            _ = try peer.origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
-            try peer.origin.write(Array((
-                "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n"
-                + "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n"
-                + "Sec-WebSocket-Extensions: permessage-deflate; server_no_context_takeover; client_no_context_takeover\r\n\r\n"
-            ).utf8))
-            _ = try peer.raw.wait { $0.contains {
-                if case .webSocketOpen = $0 {
-                    true
-                } else {
-                    false
-                }
-            } }
+            try openFragmentedWebSocket(peer)
             // RFC7692 section7.2.3.1 Hello vector, fragmented around an interleaved ping.
             let frames: [UInt8] = [0x41, 3, 0xF2, 0x48, 0xCD, 0x89, 0, 0x80, 4, 0xC9, 0xC9, 0x07, 0x00]
             try peer.origin.write(frames)
@@ -360,23 +206,7 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
         let frames = [UInt8](try Data(contentsOf: base.appendingPathComponent("websocket-context.bin")))
         let expected = [UInt8](try Data(contentsOf: base.appendingPathComponent("websocket-context-plain.bin")))
         try await stage2WithInspectionWire { peer in
-            let request = "GET http://127.0.0.1:\(peer.origin.port)/context HTTP/1.1\r\nHost: localhost\r\n"
-                + "Connection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\n"
-                + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Extensions: permessage-deflate\r\n\r\n"
-            try phase4BoundedWait(peer.client.writeAndFlush(ByteBuffer(string: request)))
-            _ = try peer.origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
-            try peer.origin.write(Array((
-                "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n"
-                + "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n"
-                + "Sec-WebSocket-Extensions: permessage-deflate\r\n\r\n"
-            ).utf8))
-            _ = try peer.raw.wait { $0.contains {
-                if case .webSocketOpen = $0 {
-                    true
-                } else {
-                    false
-                }
-            } }
+            try openContextWebSocket(peer)
             try peer.origin.write(frames)
             let forwarded = try peer.received.wait { $0.suffix(frames.count).elementsEqual(frames) }
             XCTAssertEqual(Array(forwarded.suffix(frames.count)), frames)
@@ -406,5 +236,77 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
                 }
             })
         }
+    }
+
+}
+
+extension Stage2InspectionAcceptanceTests {
+    private func assertEarlySSE(_ events: [InspectionEvent], raw: [CaptureEvent]) {
+        let messages = events.compactMap { event -> SSEEvent? in
+            if case let .sse(message) = event.payload {
+                message
+            } else {
+                nil
+            }
+        }
+        XCTAssertEqual(messages.count, 1)
+        XCTAssertEqual(messages.first?.data, "€\nsecond")
+        XCTAssertEqual(messages.first?.event, "update")
+        XCTAssertEqual(messages.first?.lastEventID, "evt-1")
+        XCTAssertTrue(release022ResponseEnds(raw).isEmpty)
+        XCTAssertTrue(release022ResponseBodyBytes(raw).isEmpty)
+    }
+
+    private func assertEarlyGRPC(_ early: [InspectionEvent], raw: [CaptureEvent]) {
+        let messages = early.compactMap { event -> GRPCMessage? in
+            if case let .grpc(.message(message)) = event.payload, event.direction == .response {
+                message
+            } else {
+                nil
+            }
+        }
+        XCTAssertEqual(messages.map(\.bytes), [[8, 42]])
+        XCTAssertTrue(release022ResponseEnds(raw).isEmpty)
+    }
+
+    private func openFragmentedWebSocket(_ peer: Stage2WireContext) throws {
+        let request = "GET http://127.0.0.1:\(peer.origin.port)/socket HTTP/1.1\r\nHost: localhost\r\n"
+            + "Connection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\n"
+            + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+            + "Sec-WebSocket-Extensions: permessage-deflate; server_no_context_takeover; client_no_context_takeover\r\n\r\n"
+        try phase4BoundedWait(peer.client.writeAndFlush(ByteBuffer(string: request)))
+        _ = try peer.origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
+        try peer.origin.write(Array((
+            "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n"
+            + "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n"
+            + "Sec-WebSocket-Extensions: permessage-deflate; server_no_context_takeover; client_no_context_takeover\r\n\r\n"
+        ).utf8))
+        _ = try peer.raw.wait { $0.contains {
+            if case .webSocketOpen = $0 {
+                true
+            } else {
+                false
+            }
+        } }
+    }
+
+    private func openContextWebSocket(_ peer: Stage2WireContext) throws {
+        let request = "GET http://127.0.0.1:\(peer.origin.port)/context HTTP/1.1\r\nHost: localhost\r\n"
+            + "Connection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\n"
+            + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Extensions: permessage-deflate\r\n\r\n"
+        try phase4BoundedWait(peer.client.writeAndFlush(ByteBuffer(string: request)))
+        _ = try peer.origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
+        try peer.origin.write(Array((
+            "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n"
+            + "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n"
+            + "Sec-WebSocket-Extensions: permessage-deflate\r\n\r\n"
+        ).utf8))
+        _ = try peer.raw.wait { $0.contains {
+            if case .webSocketOpen = $0 {
+                true
+            } else {
+                false
+            }
+        } }
     }
 }

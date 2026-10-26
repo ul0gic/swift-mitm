@@ -93,33 +93,7 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
                 throw failure
             }
         }
-        let deniedRuntime = HTTPControlRuntime(configuration: try HTTPControlConfiguration(
-            rules: [],
-            limits: HTTPControlLimits()
-        ))
-        let controls = Stage2ControlEvents()
-        try await stage2WithHTTPOrigin(runtime: deniedRuntime, controlSink: controls, egressPolicy: .default) { peer in
-            try await deniedRuntime.replaceConfiguration(HTTPControlConfiguration(rules: [
-                HTTPRule(
-                    id: "deny-map",
-                    match: HTTPRuleMatch(phase: .request, path: "/map"),
-                    action: .route(authority: "127.0.0.1:\(peer.origin.port)", sensitiveHeaders: [])
-                )
-            ], limits: HTTPControlLimits()))
-            let received = Release022WireObservation()
-            let client = try release022WireClient(group: peer.group, port: peer.proxyPort, observation: received)
-            try phase4BoundedWait(client.writeAndFlush(ByteBuffer(string:
-                "GET http://reserved.invalid:80/map HTTP/1.1\r\nHost: reserved.invalid\r\n\r\n")))
-            try received.waitForClose()
-            XCTAssertEqual(peer.origin.acceptedConnections, 0)
-            XCTAssertTrue(peer.raw.events.contains { event in
-                if case let .connectionFailure(failure) = event {
-                    failure.code == .egressDenied
-                } else {
-                    false
-                }
-            })
-        }
+        try await assertMappedDestinationIsReauthorized()
     }
 
     func testOneHundredEligibleExchangesReuseOnlyTheirDownstreamSession() async throws {
@@ -210,6 +184,9 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
         }
     }
 
+}
+
+extension Stage2ControlResourceAcceptanceTests {
     func testTwentyTerminalAndRejectedUpgradeCyclesReleaseInspectionState() async throws {
         let budget = try InspectionMemoryBudget()
         let configuration = try InspectionConfiguration(budget: budget, maximumActiveBodies: 2)
@@ -313,6 +290,35 @@ final class Stage2ControlResourceAcceptanceTests: XCTestCase {
             XCTAssertTrue(peer.raw.events.contains { event in
                 if case let .responseTrailers(_, headers) = event {
                     headers.contains { $0.name.lowercased() == "x-end" && $0.value == "complete" }
+                } else {
+                    false
+                }
+            })
+        }
+    }
+    private func assertMappedDestinationIsReauthorized() async throws {
+        let deniedRuntime = HTTPControlRuntime(configuration: try HTTPControlConfiguration(
+            rules: [],
+            limits: HTTPControlLimits()
+        ))
+        let controls = Stage2ControlEvents()
+        try await stage2WithHTTPOrigin(runtime: deniedRuntime, controlSink: controls, egressPolicy: .default) { peer in
+            try await deniedRuntime.replaceConfiguration(HTTPControlConfiguration(rules: [
+                HTTPRule(
+                    id: "deny-map",
+                    match: HTTPRuleMatch(phase: .request, path: "/map"),
+                    action: .route(authority: "127.0.0.1:\(peer.origin.port)", sensitiveHeaders: [])
+                )
+            ], limits: HTTPControlLimits()))
+            let received = Release022WireObservation()
+            let client = try release022WireClient(group: peer.group, port: peer.proxyPort, observation: received)
+            try phase4BoundedWait(client.writeAndFlush(ByteBuffer(string:
+                "GET http://reserved.invalid:80/map HTTP/1.1\r\nHost: reserved.invalid\r\n\r\n")))
+            try received.waitForClose()
+            XCTAssertEqual(peer.origin.acceptedConnections, 0)
+            XCTAssertTrue(peer.raw.events.contains { event in
+                if case let .connectionFailure(failure) = event {
+                    failure.code == .egressDenied
                 } else {
                     false
                 }

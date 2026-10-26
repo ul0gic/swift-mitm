@@ -27,21 +27,7 @@ final class Release022IndependentGRPCCompatibilityTests: XCTestCase {
             )
             proxy = server
             let port = try await server.start(port: 0)
-            var environment = ProcessInfo.processInfo.environment
-            environment["grpc_proxy"] = "http://127.0.0.1:\(port)"
-            environment["https_proxy"] = "http://127.0.0.1:\(port)"
-            environment["http_proxy"] = "http://127.0.0.1:\(port)"
-            environment["no_grpc_proxy"] = ""
-            environment["no_proxy"] = ""
-            environment["NO_PROXY"] = ""
-            let result = try release022RunProcess(executable: peer.python, arguments: [
-                Release022ExternalPeer.clientsDirectory.appendingPathComponent("grpc_peer.py").path,
-                "client",
-                "--target",
-                "localhost:\(ready.port)",
-                "--root",
-                proxyRoot.path
-            ], environment: environment)
+            let result = try independentClient(peer: peer, port: port, originPort: ready.port, proxyRoot: proxyRoot)
             FileHandle.standardError.write(Data("CLIENT-MATRIX \(result)".utf8))
             XCTAssertTrue(result.contains("trailers-only"))
             let events = try sink.wait {
@@ -64,6 +50,24 @@ final class Release022IndependentGRPCCompatibilityTests: XCTestCase {
             try? await group.shutdownGracefully()
             throw error
         }
+    }
+
+    private func independentClient(peer: Release022ExternalPeer, port: Int, originPort: Int, proxyRoot: URL) throws -> String {
+        var environment = ProcessInfo.processInfo.environment
+        environment["grpc_proxy"] = "http://127.0.0.1:\(port)"
+        environment["https_proxy"] = "http://127.0.0.1:\(port)"
+        environment["http_proxy"] = "http://127.0.0.1:\(port)"
+        environment["no_grpc_proxy"] = ""
+        environment["no_proxy"] = ""
+        environment["NO_PROXY"] = ""
+        return try release022RunProcess(executable: peer.python, arguments: [
+            Release022ExternalPeer.clientsDirectory.appendingPathComponent("grpc_peer.py").path,
+            "client",
+            "--target",
+            "localhost:\(originPort)",
+            "--root",
+            proxyRoot.path
+        ], environment: environment)
     }
 
     private func assertIndependentGRPCEvents(_ events: [CaptureEvent]) {

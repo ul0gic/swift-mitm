@@ -46,11 +46,19 @@ jobs:
           grep -Fx 'Xcode 27.1' evidence/xcode.txt
           grep -Fx 'Build version 27A9275' evidence/xcode.txt
           grep -Eq 'Swift version 6\.4([ .]|$)' evidence/swift.txt
+      - name: Set up independent peer Python
+        if: matrix.partition == 'compatibility'
+        id: peer-python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.14.9'
+          architecture: arm64
       - name: Install pinned independent clients
         if: matrix.partition == 'compatibility'
+        env:
+          PEER_PYTHON: ${{ steps.peer-python.outputs.python-path }}
         run: |
-          client_python="$(find "$RUNNER_TOOL_CACHE/Python" -path '*/3.14.*/arm64/bin/python3' -print -quit)"
-          test -n "$client_python"
+          client_python="$PEER_PYTHON"
           "$client_python" --version | grep -E '^Python 3\.14\.'
           "$client_python" -m venv "$RUNNER_TEMP/clients"
           "$RUNNER_TEMP/clients/bin/python" -m pip install --only-binary=:all: \

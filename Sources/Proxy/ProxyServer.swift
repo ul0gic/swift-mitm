@@ -108,18 +108,7 @@ public final class ProxyServer: Sendable {
         guard allowNonLoopbackBind || Self.isLoopbackHost(host) else {
             throw ProxyServerError.nonLoopbackBindRejected(host)
         }
-        try lifecycleState.withLockedValue { state in
-            switch state {
-            case .ready:
-                state = .starting
-            case .running:
-                throw ProxyServerError.alreadyRunning
-            case .starting, .stopping:
-                throw ProxyServerError.lifecycleOperationInProgress
-            case .shutdown:
-                throw ProxyServerError.eventLoopGroupShutdown
-            }
-        }
+        try transitionToStarting()
         connectionRegistry.startAccepting()
         var tlsRuntime: ProxyTLSRuntime?
         var controlRuntimeBound = false
@@ -156,6 +145,21 @@ public final class ProxyServer: Sendable {
                 }
             }
             throw error
+        }
+    }
+
+    private func transitionToStarting() throws {
+        try lifecycleState.withLockedValue { state in
+            switch state {
+            case .ready:
+                state = .starting
+            case .running:
+                throw ProxyServerError.alreadyRunning
+            case .starting, .stopping:
+                throw ProxyServerError.lifecycleOperationInProgress
+            case .shutdown:
+                throw ProxyServerError.eventLoopGroupShutdown
+            }
         }
     }
 
