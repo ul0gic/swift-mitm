@@ -23,7 +23,7 @@ swift build --build-tests
 swift package dump-symbol-graph --minimum-access-level public
 symbol_graph_directory="$(find .build -type d -name symbolgraph -print -quit)"
 test -n "$symbol_graph_directory"
-xcrun docc convert Sources/SwiftMITM/SwiftMITM.docc \
+xcrun docc convert Sources/SwiftMITM.docc \
     --additional-symbol-graph-dir "$symbol_graph_directory" \
     --output-path "$documentation_output/SwiftMITM.doccarchive" \
     --fallback-display-name SwiftMITM \

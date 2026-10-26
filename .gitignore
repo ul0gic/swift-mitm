@@ -1,9 +1,5 @@
 .DS_Store
-AGENTS.md
-.agents/
 .build/
-.codex/
-.project/
 .swiftpm/
 Package.resolved
 DerivedData/

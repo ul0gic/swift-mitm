@@ -28,7 +28,8 @@ let package = Package(
                 .product(name: "NIOHPACK", package: "swift-nio-http2"),
                 .product(name: "NIOTLS", package: "swift-nio"),
                 .product(name: "X509", package: "swift-certificates")
-            ]
+            ],
+            path: "Sources"
         ),
         .testTarget(
             name: "SwiftMITMTests",
@@ -45,7 +46,8 @@ let package = Package(
                 .product(name: "NIOSSL", package: "swift-nio-ssl"),
                 .product(name: "NIOTLS", package: "swift-nio"),
                 .product(name: "X509", package: "swift-certificates")
-            ]
+            ],
+            path: "Tests"
         )
     ]
 )

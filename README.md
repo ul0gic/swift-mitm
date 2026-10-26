@@ -48,13 +48,13 @@ In Xcode, use **File → Add Package Dependencies** and enter `https://github.co
 
 ## Documentation
 
-The [SwiftPM DocC catalog](Sources/SwiftMITM/SwiftMITM.docc/SwiftMITM.md) contains the complete consumer contract:
+The [SwiftPM DocC catalog](Sources/SwiftMITM.docc/SwiftMITM.md) contains the complete consumer contract:
 
-- [Getting Started](Sources/SwiftMITM/SwiftMITM.docc/GettingStarted.md)
-- [Certificate Authority and Trust](Sources/SwiftMITM/SwiftMITM.docc/CertificateAuthorityAndTrust.md)
-- [Capture Events](Sources/SwiftMITM/SwiftMITM.docc/CaptureEvents.md)
-- [Lifecycle and Concurrency](Sources/SwiftMITM/SwiftMITM.docc/LifecycleAndConcurrency.md)
-- [Security Model](Sources/SwiftMITM/SwiftMITM.docc/SecurityModel.md)
+- [Getting Started](Sources/SwiftMITM.docc/GettingStarted.md)
+- [Certificate Authority and Trust](Sources/SwiftMITM.docc/CertificateAuthorityAndTrust.md)
+- [Capture Events](Sources/SwiftMITM.docc/CaptureEvents.md)
+- [Lifecycle and Concurrency](Sources/SwiftMITM.docc/LifecycleAndConcurrency.md)
+- [Security Model](Sources/SwiftMITM.docc/SecurityModel.md)
 
 ## PROXY v2 conformance contract
 
@@ -129,7 +129,7 @@ In transparent mode, PROXY v2 supplies the original destination and original-cli
 - `opaqueError` instead of a clean close when opaque forwarding fails; no later terminal event follows
 - `connectionFailure` for transparent ingress, classification, setup, TLS, transport, timeout, and cancellation failures before a structured or opaque flow owns the connection
 
-Opaque `bytes` contains only retained bytes, while `byteCount` is the complete observed chunk size. `opaqueCaptureByteLimit` defaults to `0`, so the default emits metadata and exact counts while retaining no opaque payload bytes. The limit applies independently to client-to-server and server-to-client data; `opaqueDirectionEnd` reports each full direction count and whether retention was truncated. See the [Capture Events guide](Sources/SwiftMITM/SwiftMITM.docc/CaptureEvents.md) for the complete ordering contract.
+Opaque `bytes` contains only retained bytes, while `byteCount` is the complete observed chunk size. `opaqueCaptureByteLimit` defaults to `0`, so the default emits metadata and exact counts while retaining no opaque payload bytes. The limit applies independently to client-to-server and server-to-client data; `opaqueDirectionEnd` reports each full direction count and whether retention was truncated. See the [Capture Events guide](Sources/SwiftMITM.docc/CaptureEvents.md) for the complete ordering contract.
 
 ## Security responsibilities
 

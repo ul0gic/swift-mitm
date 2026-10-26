@@ -71,7 +71,6 @@ struct Phase5ProxyV2ConformanceDocument: Codable, Sendable {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .deletingLastPathComponent()
             .appendingPathComponent("Conformance/ProxyV2/v1.json")
         let document = try JSONDecoder().decode(Self.self, from: Data(contentsOf: file))
         try document.validate()
