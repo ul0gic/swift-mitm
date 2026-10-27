@@ -13,6 +13,8 @@ from client_tls import create_identity
 
 
 PAYLOAD_BYTES = 256 * 1024 * 1024
+BASELINE_REVISION = "dc36969d94c9bbbfb2b7f8546b10ec441a4c3a13"
+BASELINE_PATCH_SHA256 = "ba9b0596392cb69e086897d37f1c99f2b1e4fce5bc104cb8df1ded17edbb3d08"
 ORDER = (("baseline", "candidate"), ("candidate", "baseline"), ("baseline", "candidate"),
          ("candidate", "baseline"), ("baseline", "candidate"))
 
@@ -117,9 +119,22 @@ def run_cell(arguments, identity, protocol, workload, report, deadline):
     cell.update(verdict(cell["samples"], workload))
 
 
+def git_tree_identity(value):
+    if len(value) != 40 or any(character not in "0123456789abcdef" for character in value):
+        raise argparse.ArgumentTypeError("patched baseline tree must be a full lowercase Git SHA1 tree identity")
+    return value
+
+
 def main(arguments):
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
     report = {"baselineRevision": arguments.baseline_revision, "candidateRevision": arguments.candidate_revision,
+              "comparison": "candidate versus reconstructed dc36969 + status-map compilation repair",
+              "baselineReconstruction": {
+                  "patchSHA256": arguments.baseline_patch_sha256,
+                  "patchedGitTree": arguments.baseline_patched_tree,
+                  "scope": "status-name macro rows 497 and 505; measured workload requires 200",
+                  "untouchedBaselinePerformance": "unavailable: original revision does not compile"
+              },
               "benchmarkRevision": arguments.benchmark_revision, "configuration": "release",
               "optionalStage2Features": "absent", "captureBodyLimit": 0,
               "cells": [], "executionOrder": [], "status": "unverified"}
@@ -142,7 +157,7 @@ def main(arguments):
                 run_cell(arguments, identity, protocol, workload, report, deadline)
     report["status"] = "passed" if all(cell["status"] == "passed" for cell in report["cells"]) else "incomplete"
     arguments.output.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    print(json.dumps({"status": report["status"], "cells": [
+    print(json.dumps({"status": report["status"], "comparison": report["comparison"], "cells": [
         {key: cell[key] for key in ("protocol", "workload", "status")} for cell in report["cells"]]}))
     return 0 if report["status"] == "passed" else 1
 
@@ -151,7 +166,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--baseline", type=Path, required=True)
     parser.add_argument("--candidate", type=Path, required=True)
-    parser.add_argument("--baseline-revision", required=True)
+    parser.add_argument("--baseline-revision", choices=[BASELINE_REVISION], required=True)
+    parser.add_argument("--baseline-patch-sha256", choices=[BASELINE_PATCH_SHA256], required=True)
+    parser.add_argument("--baseline-patched-tree", type=git_tree_identity, required=True)
     parser.add_argument("--candidate-revision", required=True)
     parser.add_argument("--benchmark-revision", required=True)
     parser.add_argument("--output", type=Path, required=True)

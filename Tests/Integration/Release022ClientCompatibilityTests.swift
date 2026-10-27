@@ -187,7 +187,11 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         }
     }
 
-    private func trustedURLSession(port: Int, authority: CertificateAuthority, originHost: String) throws -> URLSession {
+    private func trustedURLSession(
+        port: Int,
+        authority: CertificateAuthority,
+        originHost: String
+    ) throws -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 10
         let proxyPort = try XCTUnwrap(UInt16(exactly: port))

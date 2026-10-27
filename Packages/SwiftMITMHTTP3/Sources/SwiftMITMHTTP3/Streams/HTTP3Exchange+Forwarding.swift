@@ -1,4 +1,5 @@
 import Foundation
+import Logging
 import NIOCore
 import SwiftMITM
 
@@ -94,14 +95,18 @@ extension HTTP3Exchange {
         }
         flow.writing = true
         pendingWriteCallbacks += 1
+        traceWrite("swiftmitm.http3.write.submit", flow: flow, message: held.message)
         held.message.write(to: destination).assumeIsolated().whenComplete { result in
             withExtendedLifetime(held.lease) {
                 flow.writing = false
                 flow.pendingBytes -= count
                 self.observePending()
                 switch result {
-                case let .failure(error): self.fail(error)
+                case let .failure(error):
+                    self.traceWrite("swiftmitm.http3.write.complete.failure", flow: flow, message: held.message)
+                    self.fail(error)
                 case .success:
+                    self.traceWrite("swiftmitm.http3.write.complete.success", flow: flow, message: held.message)
                     if !self.failed, held.message.endsMessage {
                         flow.outputEnded = true
                         self.captureEnd(flow, representation: .effective)
@@ -116,6 +121,26 @@ extension HTTP3Exchange {
                 }
             }
         }
+    }
+
+    func traceWrite(_ event: Logger.Message, flow: HTTP3Flow, message: HTTP3Message? = nil) {
+        guard transport.logger.logLevel <= .trace else { return }
+        let kind: String
+        switch message {
+        case .request(.head), .response(.head): kind = "head"
+        case .request(.body), .response(.body): kind = "body"
+        case .request(.end), .response(.end): kind = "end"
+        case nil: kind = "none"
+        }
+        transport.logger.trace(event, metadata: [
+            "exchange": .string(id.uuidString),
+            "direction": .string(flow.isRequest ? "request" : "response"),
+            "outputQueueCount": .stringConvertible(flow.output.count),
+            "pendingPayloadBytes": .stringConvertible(flow.pendingBytes),
+            "writing": .stringConvertible(flow.writing),
+            "writable": .stringConvertible(flow.destination?.isWritable == true),
+            "messageKind": .string(kind)
+        ])
     }
 
     func generateNext(_ flow: HTTP3Flow) throws {

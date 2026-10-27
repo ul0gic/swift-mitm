@@ -7,6 +7,9 @@ import SwiftMITMHTTP3
 
 @main
 struct HostMain {
+    private static let writeTrace = ProcessInfo.processInfo.environment["SWIFTMITM_HTTP3_WRITE_TRACE"] == "1"
+        ? HostWriteTrace() : nil
+
     static func main() async {
         do {
             try await run()
@@ -32,6 +35,7 @@ struct HostMain {
             try await HostSharedCeiling.run(config)
             return
         }
+        writeTrace?.bootstrap()
         let authority = try CertificateAuthority.generate()
         let sink = HostCapture()
         let embedding = try HostEmbedding(config)
@@ -95,6 +99,7 @@ struct HostMain {
         }
         try await HostResources.write(server: server, phase: "stopped", path: resourcesPath)
         try sink.write(to: config.readyPath + ".capture.json")
+        try writeTrace?.write(to: config.readyPath + ".write-trace.jsonl")
         try await embedding.write(stopReport: report)
     }
 
@@ -130,6 +135,7 @@ struct HostMain {
                     try await lifecycle.poll()
                     try await HostResources.write(server: server, phase: lifecycle.phase, path: resourcesPath)
                     try sink.write(to: config.readyPath + ".capture.json")
+                    try writeTrace?.write(to: config.readyPath + ".write-trace.jsonl")
                     try await embedding.write(stopReport: lifecycle.lastStopReport)
                 }
             } catch {

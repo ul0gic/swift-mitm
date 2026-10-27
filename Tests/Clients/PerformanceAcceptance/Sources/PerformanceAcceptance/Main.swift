@@ -62,31 +62,45 @@ struct PerformanceMain {
         let sink = MeasurementSink()
         let authority = try loadAuthority(options.identityDirectory + "/proxy")
         let originRoot = try String(
-            contentsOfFile: options.identityDirectory + "/origin/origin-ca.pem", encoding: .utf8
+            contentsOfFile: options.identityDirectory + "/origin/origin-ca.pem",
+            encoding: .utf8
         )
         let proxy = ProxyServer(
-            certificateAuthority: authority, sink: sink, group: proxyGroup,
+            certificateAuthority: authority,
+            sink: sink,
+            group: proxyGroup,
             upstreamPolicy: .init(additionalTrustRootsPEM: [originRoot]),
-            egressPolicy: .init(allowInternal: true), captureBodyLimit: 0
+            egressPolicy: .init(allowInternal: true),
+            captureBodyLimit: 0
         )
         let origin = try await startOrigin(
-            group: originGroup, directory: options.identityDirectory, protocolName: options.protocolName, state: state
+            group: originGroup,
+            directory: options.identityDirectory,
+            protocolName: options.protocolName,
+            state: state
         )
         do {
             let proxyPort = try await proxy.start(port: 0)
             guard let originPort = origin.localAddress?.port else { throw MeasurementError.arguments }
             let input = ClientInput(
-                proxyPort: proxyPort, originPort: originPort, protocolName: options.protocolName,
-                workload: options.workload, rootPEM: authority.caCertificatePEM
+                proxyPort: proxyPort,
+                originPort: originPort,
+                protocolName: options.protocolName,
+                workload: options.workload,
+                rootPEM: authority.caCertificatePEM
             )
             let exchanges = try await runClient(group: clientGroup, input: input)
             try await proxy.stop()
             try await closeOrigin(origin, state: state)
             let snapshot = state.snapshot()
             let result = BenchmarkResult(
-                protocolName: options.protocolName, workload: options.workload,
-                downstreamALPN: options.protocolName, upstreamALPN: snapshot.protocols,
-                originPaths: snapshot.paths, exchanges: exchanges, captures: try sink.snapshot()
+                protocolName: options.protocolName,
+                workload: options.workload,
+                downstreamALPN: options.protocolName,
+                upstreamALPN: snapshot.protocols,
+                originPaths: snapshot.paths,
+                exchanges: exchanges,
+                captures: try sink.snapshot()
             )
             try JSONEncoder().encode(result).write(to: URL(fileURLWithPath: options.output), options: .atomic)
         } catch {
@@ -113,7 +127,9 @@ struct PerformanceMain {
     }
 
     private static func closeOrigin(_ channel: Channel, state: OriginState) async throws {
-        if channel.isActive { try await channel.close().get() }
+        if channel.isActive {
+            try await channel.close().get()
+        }
         let children = state.children.withLockedValue { Array($0.values) }
         for child in children where child.isActive { try await child.close().get() }
     }

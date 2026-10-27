@@ -27,7 +27,7 @@ let package = Package(
         ),
         .package(
             url: "https://github.com/ul0gic/swift-nio-http3.git",
-            revision: "a4473a9490131069a720145f777a36fb0aebff67"
+            revision: "3caec7ece47c320a1ed81a0fb7a65079cde1f318"
         )
     ],
     targets: [

@@ -31,7 +31,8 @@ func release022RunnerIPv4() throws -> String {
             NI_NUMERICHOST
         )
         guard status == 0 else { throw Release022RunnerInterfaceError.numericAddress(status) }
-        guard let numeric = String(validatingCString: host) else {
+        guard let end = host.firstIndex(of: 0),
+              let numeric = String(validating: host[..<end], as: UTF8.self) else {
             throw Release022RunnerInterfaceError.numericAddress(EAI_FAIL)
         }
         let octets = numeric.split(separator: ".").compactMap { UInt8($0) }

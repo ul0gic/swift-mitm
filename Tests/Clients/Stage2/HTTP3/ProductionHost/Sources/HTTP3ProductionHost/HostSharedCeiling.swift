@@ -36,7 +36,8 @@ enum HostSharedCeiling {
             try await serve(config, nodes: nodes, shared: shared, rootPEM: authority.certificatePEM)
         } catch {
             do { try await stop(nodes) } catch {
-                try FileHandle.standardError.write(contentsOf: Data("HTTP3ProductionHost: shared-cleanup-failed\n".utf8))
+                try FileHandle.standardError
+                    .write(contentsOf: Data("HTTP3ProductionHost: shared-cleanup-failed\n".utf8))
             }
             throw error
         }
@@ -139,12 +140,16 @@ enum HostSharedCeiling {
     }
 
     private static func stop(_ nodes: [Node]) async throws {
-        var failure: (any Error)?
+        var failure: any Error?
         for node in nodes {
             do { try await node.server.stop() } catch {
-                if failure == nil { failure = error }
+                if failure == nil {
+                    failure = error
+                }
             }
         }
-        if let failure { throw failure }
+        if let failure {
+            throw failure
+        }
     }
 }

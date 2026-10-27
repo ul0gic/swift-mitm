@@ -23,7 +23,8 @@ from client_tls import create_identity
 
 
 class Origin(QuicConnectionProtocol):
-    def __init__(self, *args, stats, publish, release_file, flow_proof, capacity_tasks=None, **kwargs):
+    def __init__(self, *args, stats, publish, release_file, flow_proof, capacity_tasks=None,
+                 allocation_diagnostic=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.http = H3Connection(self._quic)
         self.stats = stats
@@ -38,6 +39,7 @@ class Origin(QuicConnectionProtocol):
         self.capacity_tasks = capacity_tasks
         self.capacity_task = None
         self.slow_stream = None
+        self.slow_response_bytes = 256 * 1024 if allocation_diagnostic else SLOW_BYTES
         if flow_proof:
             self.flow_task = asyncio.create_task(self.sample_flow())
 
@@ -165,8 +167,9 @@ class Origin(QuicConnectionProtocol):
             self.paths.pop(event.stream_id)
         elif path == b"/slow-receiver":
             self.slow_stream = event.stream_id
-            for offset in range(0, SLOW_BYTES, len(SLOW_CHUNK)):
-                self.http.send_data(event.stream_id, SLOW_CHUNK, end_stream=offset + len(SLOW_CHUNK) == SLOW_BYTES)
+            for offset in range(0, self.slow_response_bytes, len(SLOW_CHUNK)):
+                self.http.send_data(event.stream_id, SLOW_CHUNK,
+                                    end_stream=offset + len(SLOW_CHUNK) == self.slow_response_bytes)
             self.paths.pop(event.stream_id)
         elif path.startswith(b"/split-fin/"):
             self.http.send_data(event.stream_id, b"split-response", end_stream=False)
@@ -222,7 +225,7 @@ class CountingServer(QuicServer):
         super().datagram_received(data, address)
 
 
-async def serve(arguments, origin_type=Origin, capacity_peer=False):
+async def serve(arguments, origin_type=Origin, capacity_peer=False, allocation_diagnostic=False):
     directory = arguments.ready_file.parent
     directory.mkdir(parents=True, exist_ok=True)
     certificate, key = create_identity(directory)
@@ -236,6 +239,8 @@ async def serve(arguments, origin_type=Origin, capacity_peer=False):
     capacity_tasks = set() if capacity_peer else None
     if capacity_peer:
         stats["capacityKeepalive"] = {"activeTasks": 0, "peakTasks": 0, "acknowledgedPings": 0, "failures": 0}
+    if allocation_diagnostic:
+        stats["allocationDiagnosticBytes"] = 256 * 1024
     stats_file = directory / "stats.json"
     release_file = directory / "release-fin.txt"
 
@@ -253,7 +258,8 @@ async def serve(arguments, origin_type=Origin, capacity_peer=False):
         lambda: CountingServer(
             configuration=configuration, stats=stats, publish=publish,
             create_protocol=partial(origin_type, stats=stats, publish=publish, release_file=release_file,
-                                    flow_proof=arguments.flow_proof, capacity_tasks=capacity_tasks)
+                                    flow_proof=arguments.flow_proof, capacity_tasks=capacity_tasks,
+                                    allocation_diagnostic=allocation_diagnostic)
         ), local_addr=("127.0.0.1", 0)
     )
     stopped = asyncio.Event()
@@ -285,5 +291,7 @@ if __name__ == "__main__":
     parser.add_argument("--ready-file", type=Path, required=True)
     parser.add_argument("--flow-proof", action="store_true")
     parser.add_argument("--capacity-peer", action="store_true")
+    parser.add_argument("--allocation-diagnostic", action="store_true")
     arguments = parser.parse_args()
-    asyncio.run(serve(arguments, capacity_peer=arguments.capacity_peer))
+    asyncio.run(serve(arguments, capacity_peer=arguments.capacity_peer,
+                      allocation_diagnostic=arguments.allocation_diagnostic))

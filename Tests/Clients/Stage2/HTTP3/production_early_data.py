@@ -69,6 +69,8 @@ class HandshakeReplyGate(asyncio.DatagramProtocol):
         self.server_datagrams = 0
         self.forwarded_server_datagrams = 0
         self.forwarded_early_packets = 0
+        self.forwarded_padding_bytes = 0
+        self.forwarded_padded_datagrams = 0
         self.released = False
         self.error = None
 
@@ -96,13 +98,26 @@ class HandshakeReplyGate(asyncio.DatagramProtocol):
                 self.error = RuntimeError("handshake gate received a second client")
                 return
             buffer = Buffer(data=data)
-            while not buffer.eof():
-                start = buffer.tell()
-                header = pull_quic_header(buffer, host_cid_length=self.connection_id_length)
-                if header.packet_type == QuicPacketType.ZERO_RTT:
-                    self.forwarded_early_packets += 1
-                buffer.seek(start + header.packet_length)
+            early_packets, padding_bytes = 0, 0
+            try:
+                while not buffer.eof():
+                    start = buffer.tell()
+                    # aioquic 1.7.0 packet_builder.py:362–374 appends zero bytes after the final coalesced packet.
+                    if start > 0 and not any(data[start:]):
+                        padding_bytes = len(data) - start
+                        break
+                    header = pull_quic_header(buffer, host_cid_length=self.connection_id_length)
+                    if header.packet_type == QuicPacketType.ZERO_RTT:
+                        early_packets += 1
+                    buffer.seek(start + header.packet_length)
+            except ValueError as error:
+                if self.error is None:
+                    self.error = ValueError(f"independent QUIC header parse failed at byte {buffer.tell()}: {str(error)[:256]}")
+                return
             self.transport.sendto(data, self.server)
+            self.forwarded_early_packets += early_packets
+            self.forwarded_padding_bytes += padding_bytes
+            self.forwarded_padded_datagrams += int(padding_bytes > 0)
 
     def release(self):
         assert not self.released and self.client is not None
@@ -166,6 +181,8 @@ async def exercise(ready, peer, ticket, artifacts):
                             last_sample = usage["sampleEndedNanoseconds"]
                             samples.append({"resources": usage, "capture": capture, "origin": stats,
                                             "forwardedEarlyPackets": gate.forwarded_early_packets,
+                                            "forwardedPaddingBytes": gate.forwarded_padding_bytes,
+                                            "forwardedPaddedDatagrams": gate.forwarded_padded_datagrams,
                                             "withheldServerDatagrams": gate.server_datagrams})
                     await asyncio.sleep(0.05)
             assert transmitted_stream(trace, "0RTT", stream), "no actual early application STREAM packet sent"
@@ -178,6 +195,8 @@ async def exercise(ready, peer, ticket, artifacts):
             assert gate.error is None and client.connection_error is None
             return {"ticketScope": "genuine independent-server ticket, unknown to product",
                     "forwardedEarlyPackets": gate.forwarded_early_packets, "freshPreHandshakeSamples": len(samples),
+                    "forwardedPaddingBytes": gate.forwarded_padding_bytes,
+                    "forwardedPaddedDatagrams": gate.forwarded_padded_datagrams,
                     "preHandshakeOriginDatagrams": 0, "preHandshakeApplicationCapture": 0,
                     "authenticatedHandshake": client.handshake, "sameConnectionRecovery": True}
     finally:
@@ -185,6 +204,13 @@ async def exercise(ready, peer, ticket, artifacts):
         logger.write(artifacts / "client.qlog")
         (artifacts / "pre-handshake-samples.json").write_text(json.dumps(samples, indent=2), encoding="utf-8")
         (artifacts / "client-termination.json").write_text(json.dumps(diagnostics), encoding="utf-8")
+        (artifacts / "gate-diagnostics.json").write_text(json.dumps({
+            "forwardedEarlyPackets": gate.forwarded_early_packets,
+            "forwardedPaddingBytes": gate.forwarded_padding_bytes,
+            "forwardedPaddedDatagrams": gate.forwarded_padded_datagrams,
+            "withheldServerDatagrams": gate.server_datagrams - gate.forwarded_server_datagrams,
+            "error": str(gate.error)[:512] if gate.error is not None else None,
+        }), encoding="utf-8")
 
 
 async def run_case(binary, name, artifacts):

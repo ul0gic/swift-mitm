@@ -68,7 +68,7 @@
   {
     "repository": "swift-nio-http3",
     "upstreamRevision": "e2c54cdbf50dc64bf9e80861922f8d9400d2acce",
-    "forkRevision": "a4473a9490131069a720145f777a36fb0aebff67",
+    "forkRevision": "3caec7ece47c320a1ed81a0fb7a65079cde1f318",
     "patches": [
       "swift-nio-http3-bounded-input.patch",
       "swift-nio-http3-typed-decode-error.patch",
@@ -82,7 +82,8 @@
       "swift-nio-http3-directional-initialization-error.patch",
       "swift-nio-http3-qpack-byte-fidelity.patch",
       "swift-nio-http3-storage-sizing.patch",
-      "swift-nio-http3-te-token-validation.patch"
+      "swift-nio-http3-te-token-validation.patch",
+      "swift-nio-http3-closed-initialization-error.patch"
     ],
     "upstreamURL": "https://github.com/apple/swift-nio-http3",
     "forkURL": "https://github.com/ul0gic/swift-nio-http3",
@@ -95,7 +96,8 @@
       "swift-nio-http3-directional-initialization-error.patch": "8863d1e84f1d50f59230d0404a73ded8328a72f5",
       "swift-nio-http3-qpack-byte-fidelity.patch": "f98f418659af5f172908f1adb3649cf3a8d0c2b8",
       "swift-nio-http3-storage-sizing.patch": "a1c8c2b5d9b966e9f8f89ce6c50e418a6554110c",
-      "swift-nio-http3-te-token-validation.patch": "5c48470300636d37daa1c80b9aefc86ebf862015"
+      "swift-nio-http3-te-token-validation.patch": "5c48470300636d37daa1c80b9aefc86ebf862015",
+      "swift-nio-http3-closed-initialization-error.patch": "a4473a9490131069a720145f777a36fb0aebff67"
     }
   }
 ]

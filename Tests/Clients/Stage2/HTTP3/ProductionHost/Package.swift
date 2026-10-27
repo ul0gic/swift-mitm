@@ -8,7 +8,8 @@ let package = Package(
     dependencies: [
         .package(path: "../../../../.."),
         .package(path: "../../../../../Packages/SwiftMITMHTTP3"),
-        .package(url: "https://github.com/apple/swift-nio.git", from: "2.104.0")
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.104.0"),
+        .package(url: "https://github.com/apple/swift-log.git", exact: "1.16.2")
     ],
     targets: [
         .executableTarget(
@@ -17,7 +18,8 @@ let package = Package(
                 .product(name: "SwiftMITM", package: "swift-mitm"),
                 .product(name: "SwiftMITMHTTP3", package: "swiftmitmhttp3"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
-                .product(name: "NIOPosix", package: "swift-nio")
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "Logging", package: "swift-log")
             ]
         )
     ]

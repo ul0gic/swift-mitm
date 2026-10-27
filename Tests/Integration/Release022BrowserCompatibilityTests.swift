@@ -25,7 +25,11 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
             let server = try makeProxy(group: group, ready: ready, authority: authority, sink: sink)
             proxy = server
             let port = try await server.start(port: 0)
-            let (configuration, root) = try browserConfiguration(port: port, authority: authority, originHost: originHost)
+            let (configuration, root) = try browserConfiguration(
+                port: port,
+                authority: authority,
+                originHost: originHost
+            )
             let completion = Phase2FixtureCompletion<String>(eventLoop: group.next(), timeout: .seconds(20))
             let observer = Release022BrowserObserver(root: root, completion: completion)
             configuration.userContentController.add(observer, name: "result")

@@ -86,11 +86,15 @@ final class Stage2HTTPOrigin: Sendable {
             return channels
         }
         for channel in channels {
-            try await channel.eventLoop.flatSubmit {
-                channel.close().flatMapErrorThrowing { error in
-                    guard case ChannelError.alreadyClosed = error else { throw error }
-                }.flatMap { channel.closeFuture }
-            }.get()
+            try await channel.eventLoop
+                .flatSubmit {
+                    channel.close()
+                        .flatMapErrorThrowing { error in
+                            guard case ChannelError.alreadyClosed = error else { throw error }
+                        }
+                        .flatMap { channel.closeFuture }
+                }
+                .get()
         }
     }
 }
@@ -214,15 +218,7 @@ func stage2WithHTTPOrigin(
             inspected: inspected,
             inspector: inspector
         ))
-        phase = "proxy-stop"
-        try await proxy.stop()
-        phase = "origin-stop"
-        try await origin.stop()
-        phase = "inspector-shutdown"
-        let shutdown = await inspector.shutdown()
-        XCTAssertTrue(shutdown.drained)
-        phase = "group-shutdown"
-        try await group.shutdownGracefully()
+        try await stage2StopHTTPOrigin(proxy: proxy, origin: origin, inspector: inspector, group: group, phase: &phase)
     } catch {
         let failure = error
         XCTFail("HTTP fixture failed during \(phase): \(failure)")
@@ -233,6 +229,24 @@ func stage2WithHTTPOrigin(
         do { try await group.shutdownGracefully() } catch { XCTFail("Group teardown failed: \(error)") }
         throw failure
     }
+}
+
+private func stage2StopHTTPOrigin(
+    proxy: ProxyServer,
+    origin: Stage2HTTPOrigin,
+    inspector: HTTPInspector,
+    group: any EventLoopGroup,
+    phase: inout String
+) async throws {
+    phase = "proxy-stop"
+    try await proxy.stop()
+    phase = "origin-stop"
+    try await origin.stop()
+    phase = "inspector-shutdown"
+    let shutdown = await inspector.shutdown()
+    XCTAssertTrue(shutdown.drained)
+    phase = "group-shutdown"
+    try await group.shutdownGracefully()
 }
 
 func stage2Await(_ predicate: () -> Bool) async throws {

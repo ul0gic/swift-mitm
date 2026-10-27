@@ -25,6 +25,7 @@ from production_controls import CONTROL_CASES, exercise_control, final_control_o
 from production_lifecycle import CASES as LIFECYCLE_CASES, run_case as run_lifecycle_case
 from production_security import SECURITY_CASES, run_security_case
 from production_memory import CASES as MEMORY_CASES, run_case as run_memory_case
+from production_maximum_cycles import CASES as MAXIMUM_CYCLE_CASES, run_case as run_maximum_cycle_case
 from production_ownership import CASES as OWNERSHIP_CASES, run_case as run_ownership_case
 from production_migration import CASES as MIGRATION_CASES, run_case as run_migration_case
 from production_upload import CASES as UPLOAD_CASES, run_case as run_upload_case
@@ -39,7 +40,7 @@ CASES = (
     "denied-route", "separated-fin", "oversized-request-headers", "oversized-response-headers",
     "fragmented-headers", "sni-policy", "goaway-drain", "octet-fidelity", "request-stream-limit",
     "slow-receiver", "cancelled-credit-churn", "storage-refusal", "maximum-storage-refusal",
-) + CONTROL_CASES + LIFECYCLE_CASES + SECURITY_CASES + MEMORY_CASES + OWNERSHIP_CASES + MIGRATION_CASES + UPLOAD_CASES + EARLY_DATA_CASES + DEADLINE_CASES + SHARED_CEILING_CASES
+) + CONTROL_CASES + LIFECYCLE_CASES + SECURITY_CASES + MEMORY_CASES + OWNERSHIP_CASES + MIGRATION_CASES + UPLOAD_CASES + EARLY_DATA_CASES + DEADLINE_CASES + SHARED_CEILING_CASES + MAXIMUM_CYCLE_CASES
 
 
 async def exercise(name, ready, authority, certificate, peer, artifacts):
@@ -149,6 +150,7 @@ async def run_case(binary, name, artifacts):
         origin_ready = directory / "origin" / "ready.json"
         ready_path = directory / "host-ready.json"
         environment = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+        environment["SWIFTMITM_HTTP3_WRITE_TRACE"] = "1" if name == "streaming" else "0"
         with (directory / "origin.log").open("wb") as origin_log, (directory / "host.log").open("wb") as host_log:
             script = "production_origin.py" if name in CONTROL_CASES else "peer.py"
             origin_arguments = [sys.executable, str(Path(__file__).with_name(script)), "--ready-file", str(origin_ready)]
@@ -247,6 +249,8 @@ async def run_case(binary, name, artifacts):
                                                (origin_ready.parent / "stats.json", "origin-stats.json")):
                             retain_tail(source, artifacts / name / target)
                         retain_flow_trace(Path(str(ready_path) + ".capture.json"), artifacts / name / "capture.json")
+                        retain_flow_trace(Path(str(ready_path) + ".write-trace.jsonl"),
+                                          artifacts / name / "write-trace.jsonl")
                         retain_flow_trace(origin_ready.parent / "flow.qlog", artifacts / name / "origin.qlog")
                         for suffix in ("original", "effective", "bodies", "embedding", "control-events"):
                             retain_flow_trace(Path(str(ready_path) + f".{suffix}.json"), artifacts / name / f"{suffix}.json")
@@ -257,7 +261,8 @@ async def main(arguments):
     artifacts = arguments.output.parent / "production-http3-peer-logs"
     for name in arguments.case or CASES:
         try:
-            timeout = 150 if name in ("memory-cancel-cycles", "orphan-stop-restart", "shared-maximum-storage") else 90
+            timeout = 150 if name in ("memory-cancel-cycles", "orphan-stop-restart", "shared-maximum-storage",
+                                      "memory-maximum-cycles") else 90
             async with asyncio.timeout(timeout):
                 if name in LIFECYCLE_CASES:
                     observation = await run_lifecycle_case(arguments.binary, name, artifacts / name)
@@ -265,6 +270,8 @@ async def main(arguments):
                     observation = await run_security_case(arguments.binary, name, artifacts / name)
                 elif name in MEMORY_CASES:
                     observation = await run_memory_case(arguments.binary, name, artifacts / name)
+                elif name in MAXIMUM_CYCLE_CASES:
+                    observation = await run_maximum_cycle_case(arguments.binary, name, artifacts / name)
                 elif name in OWNERSHIP_CASES:
                     observation = await run_ownership_case(arguments.binary, name, artifacts / name)
                 elif name in MIGRATION_CASES:

@@ -203,6 +203,8 @@ async def connection_ceiling(ready, authority, certificate, maximum, byte_limit,
             after = read_resources(path, byte_limit=byte_limit)["sampleEndedNanoseconds"]
             async with asyncio.timeout(8):
                 while True:
+                    if keeper.done():
+                        await keeper
                     value = read_resources(path, byte_limit=byte_limit)
                     if value["sampleStartedNanoseconds"] > after:
                         after = value["sampleEndedNanoseconds"]
@@ -256,6 +258,8 @@ async def connection_ceiling(ready, authority, certificate, maximum, byte_limit,
                             await asyncio.wait_for(probe.done.wait(), timeout=15)
                         except TimeoutError:
                             new_failure = "warmupTimeout"
+                        if keeper.done():
+                            await keeper
                         if new_failure is None and probe.error:
                             new_failure = probe.error
                         if new_failure is None:
@@ -315,14 +319,33 @@ async def connection_ceiling(ready, authority, certificate, maximum, byte_limit,
                 assert all(item.connection_error is None for item in usable), "survivor progress terminated an older peer"
                 completed_handshakes = sum(item["handshakeCompletedSeconds"] is not None for item in peer_states)
             finally:
+                primary_error = sys.exception()
+                keeper_error = None
                 keeper.cancel()
                 try:
                     await keeper
                 except asyncio.CancelledError:
                     pass
+                except Exception as error:
+                    keeper_error = error
+                    try:
+                        record("keep-alive-failed", errorType=type(error).__name__, reason=str(error)[:512],
+                               primaryErrorPreserved=primary_error is not None, peerStates=peer_states)
+                    except Exception as diagnostic_error:
+                        preserved_error = primary_error if primary_error is not None else error
+                        preserved_error.add_note(f"Keeper {type(error).__name__} evidence write failed: "
+                                                 f"{str(diagnostic_error)[:512]}")
+                    if primary_error is None:
+                        raise
                 finally:
-                    record("admission-scope-ended", peerStates=peer_states,
-                           peerDiagnostics=[client.diagnostics for client in clients])
+                    try:
+                        record("admission-scope-ended", peerStates=peer_states,
+                               peerDiagnostics=[client.diagnostics for client in clients])
+                    except Exception as diagnostic_error:
+                        preserved_error = primary_error if primary_error is not None else keeper_error
+                        if preserved_error is None:
+                            raise
+                        preserved_error.add_note(f"Admission evidence write failed: {str(diagnostic_error)[:512]}")
     after_release = await zero(path, byte_limit)
     async with connect("127.0.0.1", ready["port"], configuration=configuration(certificate, "localhost"),
                        create_protocol=Client) as client:

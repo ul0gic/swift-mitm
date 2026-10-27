@@ -28,7 +28,9 @@ final class Completion<Value: Sendable>: Sendable {
             value = true
             return true
         }
-        if first { promise.completeWith(result) }
+        if first {
+            promise.completeWith(result)
+        }
     }
 
     func wait(seconds: Int64) throws -> Value {
@@ -70,7 +72,10 @@ final class MeasurementSink: CaptureEventSink {
                     return
                 }
                 state.records[head.id] = CaptureRecord(
-                    requestID: head.id, path: head.path, protocolName: head.version.rawValue, headTime: timestamp
+                    requestID: head.id,
+                    path: head.path,
+                    protocolName: head.version.rawValue,
+                    headTime: timestamp
                 )
             case let .requestEnd(id, _): state.records[id]?.requestEnds += 1
             case let .responseHead(head):

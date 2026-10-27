@@ -80,6 +80,18 @@ def capture(ready):
     return json.loads(Path(ready["capturePath"]).read_text(encoding="utf-8"))
 
 
+async def capture_ready(ready):
+    async with asyncio.timeout(5):
+        while True:
+            try:
+                snapshot = capture(ready)
+            except FileNotFoundError:
+                await asyncio.sleep(0.05)
+                continue
+            assert isinstance(snapshot, list), "capture snapshot must be an event array"
+            return
+
+
 def origin_stats(peer):
     return json.loads(Path(peer["stats"]).read_text(encoding="utf-8"))
 
@@ -229,6 +241,7 @@ async def run_case(binary, name, artifacts):
                 )
                 ready = await readiness(ready_path, host)
                 certificate = Path(ready["certificate"])
+                await capture_ready(ready)
                 report = {"configuredHandshakeDeadlineSeconds": deadline}
                 report["completion"] = await completion(ready, peer, certificate, deadline, output)
                 report["expiry"] = await expiry(ready, peer, certificate, deadline, output)

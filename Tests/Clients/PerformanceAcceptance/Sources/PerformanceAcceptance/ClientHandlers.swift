@@ -51,8 +51,11 @@ final class HandshakeObserver: ChannelInboundHandler {
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
         if case let TLSUserEvent.handshakeCompleted(selected) = event {
-            if let selected { completion.complete(.success(selected)) }
-            else { completion.complete(.failure(MeasurementError.protocolMismatch)) }
+            if let selected {
+                completion.complete(.success(selected))
+            } else {
+                completion.complete(.failure(MeasurementError.protocolMismatch))
+            }
         }
         context.fireUserInboundEventTriggered(event)
     }
@@ -95,7 +98,10 @@ final class ResponseCollector: ChannelDuplexHandler {
             return
         }
         let head = HTTPRequestHead(
-            version: .http1_1, method: .GET, uri: path, headers: HTTPHeaders([("host", authority)])
+            version: .http1_1,
+            method: .GET,
+            uri: path,
+            headers: HTTPHeaders([("host", authority)])
         )
         pending = Pending(path: path, completion: completion)
         pending?.start = DispatchTime.now().uptimeNanoseconds
@@ -127,7 +133,10 @@ final class ResponseCollector: ChannelDuplexHandler {
             }
             pending = nil
             current.completion.complete(.success(ExchangeMeasurement(
-                path: current.path, start: start, end: end, bytes: current.bytes,
+                path: current.path,
+                start: start,
+                end: end,
+                bytes: current.bytes,
                 sha256: current.hash.finalize().map { String(format: "%02x", $0) }.joined()
             )))
             return

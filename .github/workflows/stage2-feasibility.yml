@@ -372,7 +372,7 @@ jobs:
           elif [[ "$PARTITION" == capacity ]]; then
             cases=(shared-maximum-storage)
           else
-            cases=(memory-cancel-cycles memory-maximum-storage)
+            cases=(memory-cancel-cycles memory-maximum-storage memory-maximum-cycles)
           fi
           arguments=()
           for scenario in "${cases[@]}"; do arguments+=(--case "$scenario"); done

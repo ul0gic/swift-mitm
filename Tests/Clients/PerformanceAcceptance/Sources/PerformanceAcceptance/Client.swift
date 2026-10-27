@@ -29,30 +29,41 @@ func measureClient(group: EventLoopGroup, input: ClientInput) throws -> [Exchang
                             HTTP2FramePayloadToHTTP1ClientCodec(httpProtocol: .https)
                         )
                     }
-                }.wait()
-            } else { stream = channel }
+                }
+                .wait()
+            } else {
+                stream = channel
+            }
             let collector = try shared ?? addCollector(stream)
             let measurement = try request(
-                channel: stream, collector: collector,
-                path: "/\(input.workload)/\(index)", authority: "localhost:\(input.originPort)"
+                channel: stream,
+                collector: collector,
+                path: "/\(input.workload)/\(index)",
+                authority: "localhost:\(input.originPort)"
             )
             result.append(measurement)
         }
         try channel.close().wait()
         return result
     } catch {
-        if channel.isActive { try channel.close().wait() }
+        if channel.isActive {
+            try channel.close().wait()
+        }
         throw error
     }
 }
 
 private func openTunnel(group: EventLoopGroup, input: ClientInput) throws -> Channel {
     let completion = Completion<Void>(on: group.next())
-    let channel = try ClientBootstrap(group: group).connectTimeout(.seconds(5)).channelInitializer { channel in
-        channel.eventLoop.makeCompletedFuture {
-            try channel.pipeline.syncOperations.addHandler(TunnelResponse(completion), name: "connect")
+    let channel = try ClientBootstrap(group: group)
+        .connectTimeout(.seconds(5))
+        .channelInitializer { channel in
+            channel.eventLoop.makeCompletedFuture {
+                try channel.pipeline.syncOperations.addHandler(TunnelResponse(completion), name: "connect")
+            }
         }
-    }.connect(host: "127.0.0.1", port: input.proxyPort).wait()
+        .connect(host: "127.0.0.1", port: input.proxyPort)
+        .wait()
     let authority = "localhost:\(input.originPort)"
     var bytes = ByteBuffer()
     bytes.writeString("CONNECT \(authority) HTTP/1.1\r\nHost: \(authority)\r\n\r\n")
@@ -74,15 +85,20 @@ private func configureClient(
     ])
     let context = try NIOSSLContext(configuration: configuration)
     let handshake = Completion<String>(on: channel.eventLoop)
-    try channel.eventLoop.submit {
-        try channel.pipeline.syncOperations.addHandlers([
-            NIOSSLClientHandler(context: context, serverHostname: "localhost"), HandshakeObserver(handshake)
-        ])
-    }.wait()
+    try channel.eventLoop
+        .submit {
+            try channel.pipeline.syncOperations.addHandlers([
+                NIOSSLClientHandler(context: context, serverHostname: "localhost"),
+                HandshakeObserver(handshake)
+            ])
+        }
+        .wait()
     let multiplexer: NIOHTTP2Handler.StreamMultiplexer?
     if input.protocolName == "h2" {
         multiplexer = try channel.configureHTTP2Pipeline(
-            mode: .client, connectionConfiguration: .init(), streamConfiguration: .init()
+            mode: .client,
+            connectionConfiguration: .init(),
+            streamConfiguration: .init()
         ) { $0.close() }.wait()
     } else {
         try channel.pipeline.addHTTPClientHandlers().wait()
@@ -93,11 +109,13 @@ private func configureClient(
 }
 
 private func addCollector(_ channel: Channel) throws -> NIOLoopBound<ResponseCollector> {
-    try channel.eventLoop.submit {
-        let collector = ResponseCollector()
-        try channel.pipeline.syncOperations.addHandler(collector, name: "measurement")
-        return NIOLoopBound(collector, eventLoop: channel.eventLoop)
-    }.wait()
+    try channel.eventLoop
+        .submit {
+            let collector = ResponseCollector()
+            try channel.pipeline.syncOperations.addHandler(collector, name: "measurement")
+            return NIOLoopBound(collector, eventLoop: channel.eventLoop)
+        }
+        .wait()
 }
 
 private func request(
@@ -107,9 +125,11 @@ private func request(
     authority: String
 ) throws -> ExchangeMeasurement {
     let completion = Completion<ExchangeMeasurement>(on: channel.eventLoop)
-    try channel.eventLoop.submit {
-        let context = try channel.pipeline.syncOperations.context(name: "measurement")
-        collector.value.send(path: path, authority: authority, completion: completion, context: context)
-    }.wait()
+    try channel.eventLoop
+        .submit {
+            let context = try channel.pipeline.syncOperations.context(name: "measurement")
+            collector.value.send(path: path, authority: authority, completion: completion, context: context)
+        }
+        .wait()
     return try completion.wait(seconds: 120)
 }

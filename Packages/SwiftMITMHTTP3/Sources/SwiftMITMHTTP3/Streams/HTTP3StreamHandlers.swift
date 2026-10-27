@@ -21,6 +21,7 @@ final class HTTP3RequestHandler: ChannelInboundHandler {
     }
 
     func channelWritabilityChanged(context: ChannelHandlerContext) {
+        exchange.traceWrite("swiftmitm.http3.writability.changed", flow: exchange.response)
         exchange.pump(exchange.response)
         context.fireChannelWritabilityChanged()
     }
@@ -60,6 +61,7 @@ final class HTTP3ResponseHandler: ChannelInboundHandler {
     }
 
     func channelWritabilityChanged(context: ChannelHandlerContext) {
+        exchange.traceWrite("swiftmitm.http3.writability.changed", flow: exchange.request)
         exchange.pump(exchange.request)
         context.fireChannelWritabilityChanged()
     }

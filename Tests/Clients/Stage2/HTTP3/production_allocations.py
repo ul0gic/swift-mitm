@@ -11,10 +11,13 @@ import traceback
 
 from aioquic.asyncio.client import connect
 
-from flow import FlowLogger, FrozenStreamCredit, SLOW_BYTES, SLOW_CHUNK, STREAM_CREDIT, frames, stream_offset
+from flow import FlowLogger, FrozenStreamCredit, SLOW_CHUNK, STREAM_CREDIT, frames, stream_offset
 from production_memory import observe, zero
 from production_resources import quiescent, read_resources
 from verify import Client, configuration, readiness, response_complete, retain_flow_trace, retain_tail, shutdown
+
+
+DIAGNOSTIC_BYTES = 256 * 1024
 
 
 class DiagnosticUnavailable(RuntimeError):
@@ -98,7 +101,7 @@ async def frozen_phase(client, authority, peer, path):
                           "resources": read_resources(path)}
                 samples.append(sample)
                 assert len(samples) <= 96
-                if (now - stable_since >= 0.6 and 0 < offset < SLOW_BYTES
+                if (now - stable_since >= 0.6 and 0 < offset < DIAGNOSTIC_BYTES
                         and sample["clientWireReceivedOffset"] == STREAM_CREDIT
                         and sample["resources"]["local"]["streams"] == 1):
                     break
@@ -146,9 +149,9 @@ async def workload(tool, host, ready, peer, output, phases):
                     gate.release()
                 await asyncio.wait_for(slow.done.wait(), timeout=15)
                 expected = hashlib.sha256()
-                for _ in range(SLOW_BYTES // len(SLOW_CHUNK)):
+                for _ in range(DIAGNOSTIC_BYTES // len(SLOW_CHUNK)):
                     expected.update(SLOW_CHUNK)
-                assert not slow.error and slow.body_bytes == SLOW_BYTES and slow.digest.digest() == expected.digest()
+                assert not slow.error and slow.body_bytes == DIAGNOSTIC_BYTES and slow.digest.digest() == expected.digest()
                 await quiescent(path)
                 await capture_phase(tool, host, path, output, "resumed", phases)
                 cancelled, pending = client.request(authority, "/duplex", end=False)
@@ -176,7 +179,7 @@ async def workload(tool, host, ready, peer, output, phases):
         await zero(path, 67108864)
         await capture_phase(tool, host, path, output, "disconnected-quiescent", phases)
         await collect(tool, host.pid, "-allEvents", output / "allocation-free-events.txt")
-        return {"resumedBytes": SLOW_BYTES, "resumedSHA256": expected.hexdigest(),
+        return {"resumedBytes": DIAGNOSTIC_BYTES, "resumedSHA256": expected.hexdigest(),
                 "sameConnectionCancellationSurvivor": True, "zeroCurrentResourcesAfterDisconnect": True}
     finally:
         logger.write(output / "client.qlog")
@@ -197,9 +200,11 @@ async def run(arguments, report):
             try:
                 origin = await asyncio.create_subprocess_exec(
                     sys.executable, str(Path(__file__).with_name("peer.py")), "--ready-file", str(origin_ready),
-                    "--flow-proof", stdout=origin_log, stderr=asyncio.subprocess.STDOUT, env=environment
+                    "--flow-proof", "--allocation-diagnostic", stdout=origin_log,
+                    stderr=asyncio.subprocess.STDOUT, env=environment
                 )
                 peer = await readiness(origin_ready, origin)
+                assert json.loads(Path(peer["stats"]).read_text(encoding="utf-8"))["allocationDiagnosticBytes"] == DIAGNOSTIC_BYTES
                 config = {"authority": "localhost:443", "destinationAddress": "127.0.0.1",
                           "destinationPort": peer["port"], "originCAPath": peer["certificate"],
                           "readyPath": str(ready_path), "allowInternal": True,
@@ -243,6 +248,8 @@ async def main(arguments):
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
     report = {"candidate": arguments.candidate, "surface": "public SwiftMITMHTTP3.HTTP3ProxyServer",
               "environment": {"MallocStackLoggingNoCompact": "1"}, "phases": [],
+              "workload": {"responseBytes": DIAGNOSTIC_BYTES, "frozenStreamCreditBytes": STREAM_CREDIT,
+                           "scope": "256 KiB attribution sampling; not full 8 MiB acceptance or native peak proof"},
               "collection": "unverified", "nativeComponentAttribution": "unverified: raw report interpretation required",
               "unsampledRSSPeak": "unverified", "C18Regression": "not run under allocation instrumentation"}
     code = 2

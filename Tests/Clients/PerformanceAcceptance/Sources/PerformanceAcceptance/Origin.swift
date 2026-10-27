@@ -35,25 +35,28 @@ func startOrigin(
     )
     configuration.applicationProtocols = [protocolName]
     let tls = try NIOSSLContext(configuration: configuration)
-    return try await ServerBootstrap(group: group).childChannelInitializer { channel in
-        let identifier = ObjectIdentifier(channel)
-        state.children.withLockedValue { $0[identifier] = channel }
-        channel.closeFuture.whenComplete { _ in
-            state.children.withLockedValue { _ = $0.removeValue(forKey: identifier) }
-        }
-        return channel.eventLoop.makeCompletedFuture {
-            try channel.pipeline.syncOperations.addHandlers([
-                NIOSSLServerHandler(context: tls),
-                ApplicationProtocolNegotiationHandler { result, channel in
-                    guard case let .negotiated(selected) = result, selected == protocolName else {
-                        return channel.eventLoop.makeFailedFuture(MeasurementError.protocolMismatch)
+    return try await ServerBootstrap(group: group)
+        .childChannelInitializer { channel in
+            let identifier = ObjectIdentifier(channel)
+            state.children.withLockedValue { $0[identifier] = channel }
+            channel.closeFuture.whenComplete { _ in
+                state.children.withLockedValue { _ = $0.removeValue(forKey: identifier) }
+            }
+            return channel.eventLoop.makeCompletedFuture {
+                try channel.pipeline.syncOperations.addHandlers([
+                    NIOSSLServerHandler(context: tls),
+                    ApplicationProtocolNegotiationHandler { result, channel in
+                        guard case let .negotiated(selected) = result, selected == protocolName else {
+                            return channel.eventLoop.makeFailedFuture(MeasurementError.protocolMismatch)
+                        }
+                        state.negotiated(protocolName)
+                        return configureOrigin(channel, protocolName: protocolName, state: state)
                     }
-                    state.negotiated(protocolName)
-                    return configureOrigin(channel, protocolName: protocolName, state: state)
-                }
-            ])
+                ])
+            }
         }
-    }.bind(host: "127.0.0.1", port: 0).get()
+        .bind(host: "127.0.0.1", port: 0)
+        .get()
 }
 
 private func configureOrigin(
@@ -63,11 +66,14 @@ private func configureOrigin(
 ) -> EventLoopFuture<Void> {
     if protocolName == "h2" {
         return channel.configureHTTP2Pipeline(
-            mode: .server, connectionConfiguration: .init(), streamConfiguration: .init()
+            mode: .server,
+            connectionConfiguration: .init(),
+            streamConfiguration: .init()
         ) { stream in
             stream.eventLoop.makeCompletedFuture {
                 try stream.pipeline.syncOperations.addHandlers([
-                    HTTP2FramePayloadToHTTP1ServerCodec(), OriginResponder(state: state)
+                    HTTP2FramePayloadToHTTP1ServerCodec(),
+                    OriginResponder(state: state)
                 ])
             }
         }.map { _ in () }
@@ -104,7 +110,8 @@ private final class OriginResponder: ChannelDuplexHandler {
             remaining = path.hasPrefix("/throughput/") ? 268_435_456 : 0
             responding = true
             let head = HTTPResponseHead(
-                version: .http1_1, status: .ok,
+                version: .http1_1,
+                status: .ok,
                 headers: HTTPHeaders([("content-length", String(remaining))])
             )
             context.write(wrapOutboundOut(.head(head)), promise: nil)

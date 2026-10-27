@@ -148,18 +148,23 @@ async def maximum_storage(ready, authority, certificate, evidence):
             phase = "connecting-clients"
             async with AsyncExitStack() as stack:
                 clients = []
-                for index in range(8):
-                    clients.append(await stack.enter_async_context(recorded_client(index)))
-                    assert clients[-1].alpn == "h3"
-                phase = "storage-ceiling"
-                record("phase-started")
-                report = await storage_ceiling(clients, authority, path, response_complete,
-                                               evidence.parent / "capacity-samples.json", byte_limit)
-                phases["admittedCeiling"] = report["atRefusal"]
-                resumed = sample(path, byte_limit)
-                phases["resumed"] = resumed
-                phase = "closing-clients"
-                record("phase-started", resources=resumed)
+                try:
+                    for index in range(8):
+                        clients.append(await stack.enter_async_context(recorded_client(index)))
+                        assert clients[-1].alpn == "h3"
+                    phase = "storage-ceiling"
+                    record("phase-started")
+                    report = await storage_ceiling(clients, authority, path, response_complete,
+                                                   evidence.parent / "capacity-samples.json", byte_limit)
+                    phases["admittedCeiling"] = report["atRefusal"]
+                    resumed = sample(path, byte_limit)
+                    phases["resumed"] = resumed
+                    phase = "closing-clients"
+                    record("phase-started", resources=resumed)
+                finally:
+                    for client in clients:
+                        client.close()
+                    record("all-client-closes-initiated", clientCount=len(clients))
             phase = "awaiting-zero-after-client-close"
             record("phase-started")
             final = await zero(path, byte_limit, resumed["sampleEndedNanoseconds"], diagnostics=record)

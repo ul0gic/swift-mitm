@@ -572,6 +572,16 @@ jobs:
           grep -Fx 'Xcode 27.1' evidence/xcode.txt
           grep -Fx 'Build version 27A9275' evidence/xcode.txt
           grep -Eq 'Swift version 6\.4([ .]|$)' evidence/swift.txt
+          printf '%s  %s\n' ba9b0596392cb69e086897d37f1c99f2b1e4fce5bc104cb8df1ded17edbb3d08 \
+            .github/performance-baseline-compile.patch | shasum -a 256 -c -
+          git -C baseline-performance apply "$GITHUB_WORKSPACE/.github/performance-baseline-compile.patch"
+          git -C baseline-performance diff --no-ext-diff --no-textconv --no-color --abbrev=7 --src-prefix=a/ --dst-prefix=b/ > evidence/baseline-compile.patch
+          cmp .github/performance-baseline-compile.patch evidence/baseline-compile.patch
+          GIT_INDEX_FILE="$RUNNER_TEMP/performance-baseline.index" git -C baseline-performance read-tree HEAD
+          GIT_INDEX_FILE="$RUNNER_TEMP/performance-baseline.index" git -C baseline-performance add \
+            Vendor/CSwiftMITMLLHTTP/include/swiftmitm_llhttp.h
+          GIT_INDEX_FILE="$RUNNER_TEMP/performance-baseline.index" git -C baseline-performance write-tree \
+            > evidence/baseline-patched-tree.txt
           cp -R Tests/Clients/PerformanceAcceptance baseline-performance/Tests/Clients/PerformanceAcceptance
           find Tests/Clients/PerformanceAcceptance -type f -exec shasum -a 256 {} + > evidence/harness-sha256.txt
       - name: Set up independent peer Python
@@ -618,6 +628,8 @@ jobs:
           "$RUNNER_TEMP/performance-peers/bin/python" Tests/Clients/PerformanceAcceptance/compare.py \
             --baseline "$baseline_BINARY" --candidate "$candidate_BINARY" \
             --baseline-revision "$BASELINE_REVISION" --candidate-revision "$GITHUB_SHA" \
+            --baseline-patch-sha256 ba9b0596392cb69e086897d37f1c99f2b1e4fce5bc104cb8df1ded17edbb3d08 \
+            --baseline-patched-tree "$(cat evidence/baseline-patched-tree.txt)" \
             --benchmark-revision "$GITHUB_SHA" --output evidence/performance-results.json
       - name: Retain performance evidence
         if: always()

@@ -129,6 +129,8 @@ async def exercise(ready, peer, artifacts):
                 assert not keeper.done(), "a required live connection stopped responding to PING"
             finally:
                 keeper.cancel()
+                for _, client in clients:
+                    client.close()
                 try:
                     await keeper
                 except asyncio.CancelledError:
