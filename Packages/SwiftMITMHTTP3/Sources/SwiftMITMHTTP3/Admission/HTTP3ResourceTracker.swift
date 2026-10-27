@@ -133,7 +133,10 @@ final class HTTP3ResourceTracker: Sendable {
     func storageReleased() { state.withLock { $0.activeConnectionStorageLifetimes -= 1 } }
 
     func observeForwardingPayload(_ pendingBytes: Int) {
-        state.withLock { $0.peakForwardedPayloadBytesPerStream = max($0.peakForwardedPayloadBytesPerStream, pendingBytes) }
+        state
+            .withLock {
+                $0.peakForwardedPayloadBytesPerStream = max($0.peakForwardedPayloadBytesPerStream, pendingBytes)
+            }
     }
 
     func observeRawCapacity(_ bytes: Int) {
@@ -141,7 +144,11 @@ final class HTTP3ResourceTracker: Sendable {
     }
 
     func observeGoaway() {
-        state.withLock { if $0.receivedGoaways < .max { $0.receivedGoaways += 1 } }
+        state.withLock {
+            if $0.receivedGoaways < .max {
+                $0.receivedGoaways += 1
+            }
+        }
     }
 
     func refuse(_ scope: HTTP3AdmissionScope, _ resource: HTTP3AdmissionResource) {
@@ -155,7 +162,9 @@ final class HTTP3ResourceTracker: Sendable {
     ) {
         let key = HTTP3AdmissionFailure(scope: scope, resource: resource)
         let count = counts[key, default: 0]
-        if count < .max { counts[key] = count + 1 }
+        if count < .max {
+            counts[key] = count + 1
+        }
     }
 
     var storageIsQuiescent: Bool {

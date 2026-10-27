@@ -24,7 +24,7 @@ extension HTTP3ResourceTracker {
                 peakTickets = max(peakTickets, tickets)
             } catch { complete = false }
         }
-        state.withLock {
+        state.withLock { [peakBytes, peakTickets, complete] in
             $0.peakSampledNativePendingBytesPerStream = max($0.peakSampledNativePendingBytesPerStream, peakBytes)
             $0.peakSampledNativeStorageTicketsPerStream = max($0.peakSampledNativeStorageTicketsPerStream, peakTickets)
             $0.sampledNativeTrackedStreams = tracked.count

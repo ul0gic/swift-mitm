@@ -13,7 +13,8 @@ extension HTTP3Transport {
             native = .forServer(
                 serverName: identity.host,
                 authenticationConfiguration: .x509Certificates(
-                    certificateChainFilePath: "/dev/null", privateKeyFilePath: "/dev/null"
+                    certificateChainFilePath: "/dev/null",
+                    privateKeyFilePath: "/dev/null"
                 ),
                 applicationProtocols: ["h3"]
             )
@@ -25,7 +26,8 @@ extension HTTP3Transport {
             }
         } else {
             native = .forClient(
-                verificationConfiguration: .x509Certificates(trustRootsFilePath: nil), applicationProtocols: ["h3"]
+                verificationConfiguration: .x509Certificates(trustRootsFilePath: nil),
+                applicationProtocols: ["h3"]
             )
         }
         native.initialMaxStreamsBidi = configuration.limits.maximumRequestStreamsPerConnection
@@ -59,16 +61,28 @@ extension HTTP3Transport {
                         inboundConnectionInitializer: { channel, _ in channel.close() },
                         inboundStreamInitializer: { receiveStream($0, state: state) },
                         noMoreConnections: {
-                            if ipv6 { state.value.clientHandlerIPv6 = nil } else { state.value.clientHandler = nil }
+                            if ipv6 {
+                                state.value.clientHandlerIPv6 = nil
+                            } else {
+                                state.value.clientHandler = nil
+                            }
                         }
                     )
-                    if ipv6 { state.value.clientHandlerIPv6 = handler } else { state.value.clientHandler = handler }
+                    if ipv6 {
+                        state.value.clientHandlerIPv6 = handler
+                    } else {
+                        state.value.clientHandler = handler
+                    }
                     try channel.pipeline.syncOperations.addHandler(handler)
                 }
             }
             .bind(host: ipv6 ? "::" : "0.0.0.0", port: 0)
             .map { channel in
-                if ipv6 { state.value.clientSocketIPv6 = channel } else { state.value.clientSocket = channel }
+                if ipv6 {
+                    state.value.clientSocketIPv6 = channel
+                } else {
+                    state.value.clientSocket = channel
+                }
                 return channel
             }
     }

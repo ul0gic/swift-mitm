@@ -13,8 +13,10 @@ enum HostResources {
             "sampleStartedNanoseconds": before,
             "sampleEndedNanoseconds": after,
             "local": [
-                "connections": usage.local.connections, "streams": usage.local.streams,
-                "retainedBytes": usage.local.retainedBytes, "replayAttempts": usage.local.replayAttempts
+                "connections": usage.local.connections,
+                "streams": usage.local.streams,
+                "retainedBytes": usage.local.retainedBytes,
+                "replayAttempts": usage.local.replayAttempts
             ],
             "pendingHandshakes": usage.pendingHandshakes,
             "nativeListenerConnections": usage.nativeListenerConnections,

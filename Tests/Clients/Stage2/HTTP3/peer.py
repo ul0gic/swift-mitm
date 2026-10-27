@@ -186,7 +186,7 @@ class CountingServer(QuicServer):
         super().datagram_received(data, address)
 
 
-async def serve(arguments):
+async def serve(arguments, origin_type=Origin):
     directory = arguments.ready_file.parent
     directory.mkdir(parents=True, exist_ok=True)
     certificate, key = create_identity(directory)
@@ -213,7 +213,7 @@ async def serve(arguments):
     transport, server = await loop.create_datagram_endpoint(
         lambda: CountingServer(
             configuration=configuration, stats=stats, publish=publish,
-            create_protocol=partial(Origin, stats=stats, publish=publish, release_file=release_file,
+            create_protocol=partial(origin_type, stats=stats, publish=publish, release_file=release_file,
                                     flow_proof=arguments.flow_proof)
         ), local_addr=("127.0.0.1", 0)
     )

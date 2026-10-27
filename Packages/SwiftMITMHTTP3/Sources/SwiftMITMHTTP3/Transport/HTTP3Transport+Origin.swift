@@ -28,7 +28,9 @@ extension HTTP3Transport {
                     try authorize(literal)
                 }
                 let ownership = try HTTP3ConnectionOwnership(
-                    resources: resources, configuration: configuration, destination: authority.authority
+                    resources: resources,
+                    configuration: configuration,
+                    destination: authority.authority
                 )
                 resolve(authority, setup: setup, ownership: ownership)
             }
@@ -52,11 +54,16 @@ extension HTTP3Transport {
         let route = configuration.route
         try authorize(route.address)
         let ownership = try HTTP3ConnectionOwnership(
-            resources: resources, configuration: configuration, destination: route.authority
+            resources: resources,
+            configuration: configuration,
+            destination: route.authority
         )
         let session = try makeSession(
-            exchange: exchange, authority: route.identity, address: route.address,
-            exclusiveRequestID: nil, ownership: ownership
+            exchange: exchange,
+            authority: route.identity,
+            address: route.address,
+            exclusiveRequestID: nil,
+            ownership: ownership
         )
         attach(setup, to: session)
         connect(session)
@@ -75,15 +82,23 @@ extension HTTP3Transport {
         }
         let target = CapturedTarget(
             destination: CapturedNetworkEndpoint(address: numericHost, port: numericPort),
-            logicalAuthority: authority.authority, tlsServerName: Self.wireServerName(authority),
-            ingressProvenance: .fixedRouteHTTP3, originalClient: exchange.downstream.target.originalClient
+            logicalAuthority: authority.authority,
+            tlsServerName: Self.wireServerName(authority),
+            ingressProvenance: .fixedRouteHTTP3,
+            originalClient: exchange.downstream.target.originalClient
         )
         let session = HTTP3OriginSession(
-            downstreamID: exchange.downstream.id, exclusiveRequestID: exclusiveRequestID,
-            target: target, route: (authority, address), ownership: ownership, eventLoop: eventLoop
+            downstreamID: exchange.downstream.id,
+            exclusiveRequestID: exclusiveRequestID,
+            target: target,
+            route: (authority, address),
+            ownership: ownership,
+            eventLoop: eventLoop
         )
         sessions[session.id] = session
-        if exclusiveRequestID == nil { fixedSessions[session.downstreamID] = session.id }
+        if exclusiveRequestID == nil {
+            fixedSessions[session.downstreamID] = session.id
+        }
         observeOriginConnection(session)
         return session
     }
@@ -138,7 +153,8 @@ extension HTTP3Transport {
         ownership.timedOut = {
             guard !owned.value.0.completed else { return }
             state.value.emitFailure(
-                id: setup.requestID, target: state.value.exchanges[setup.requestID]?.downstream.target,
+                id: setup.requestID,
+                target: state.value.exchanges[setup.requestID]?.downstream.target,
                 error: .handshakeTimedOut
             )
             owned.value.0.fail(HTTP3ProxyError.handshakeTimedOut)
@@ -172,8 +188,11 @@ extension HTTP3Transport {
             do { address = try result.get() } catch { throw HTTP3ProxyError.destinationUnavailable }
             try authorize(address)
             let session = try makeSession(
-                exchange: exchange, authority: authority, address: address,
-                exclusiveRequestID: setup.requestID, ownership: ownership
+                exchange: exchange,
+                authority: authority,
+                address: address,
+                exclusiveRequestID: setup.requestID,
+                ownership: ownership
             )
             attach(setup, to: session)
             connect(session)

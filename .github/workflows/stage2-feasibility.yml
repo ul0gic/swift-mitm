@@ -289,7 +289,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        partition: [transport, resources]
+        partition: [transport, resources, controls, lifecycle, security]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -334,8 +334,17 @@ jobs:
             cases=(streaming ip-san changed-authority upstream-hostname upstream-trust downstream-trust
               denied-route separated-fin oversized-request-headers oversized-response-headers
               fragmented-headers sni-policy goaway-drain octet-fidelity request-stream-limit)
-          else
+          elif [[ "$PARTITION" == resources ]]; then
             cases=(slow-receiver cancelled-credit-churn storage-refusal maximum-storage-refusal)
+          elif [[ "$PARTITION" == controls ]]; then
+            cases=(control-headers control-body control-synthetic control-breakpoint control-delay)
+          elif [[ "$PARTITION" == lifecycle ]]; then
+            cases=(lifecycle-restart pending-handshake-reset-churn connection-ceiling
+              maximum-connection-ceiling maximum-handshake-ceiling)
+          else
+            cases=(cross-client-pooling mapped-route-isolation mapped-route-trust
+              upstream-invalid-goaway upstream-increasing-goaway downstream-increasing-goaway
+              downstream-goaway-drain unsupported-connect unsupported-webtransport)
           fi
           arguments=()
           for scenario in "${cases[@]}"; do arguments+=(--case "$scenario"); done

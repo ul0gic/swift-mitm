@@ -103,7 +103,9 @@ final class Release022ClientCompatibilityTests: XCTestCase {
             }
             return nil
         }
-        XCTFail("URLSession path diagnostics: captureEvents=\(sink.events.count), failures=\(Array(failures.prefix(4)))")
+        XCTFail(
+            "URLSession path diagnostics: captureEvents=\(sink.events.count), failures=\(Array(failures.prefix(4)))"
+        )
     }
 
     private func assertCurlCapture(_ sink: Release022Events) throws {

@@ -21,6 +21,9 @@ from lifecycle import sni_policy
 from fidelity import OCTET_FIELDS
 from flow import FlowLogger, STREAM_CREDIT
 from production_flow import cancel_churn, credit_stall, storage_ceiling
+from production_controls import CONTROL_CASES, exercise_control, final_control_oracles, host_configuration
+from production_lifecycle import CASES as LIFECYCLE_CASES, run_case as run_lifecycle_case
+from production_security import SECURITY_CASES, run_security_case
 from production_resources import production_goaway, read_resources, stream_limit
 
 
@@ -29,10 +32,12 @@ CASES = (
     "denied-route", "separated-fin", "oversized-request-headers", "oversized-response-headers",
     "fragmented-headers", "sni-policy", "goaway-drain", "octet-fidelity", "request-stream-limit",
     "slow-receiver", "cancelled-credit-churn", "storage-refusal", "maximum-storage-refusal",
-)
+) + CONTROL_CASES + LIFECYCLE_CASES + SECURITY_CASES
 
 
 async def exercise(name, ready, authority, certificate, peer, artifacts):
+    if name in CONTROL_CASES:
+        return await exercise_control(name, ready, authority, certificate, peer)
     if name in ("slow-receiver", "cancelled-credit-churn"):
         return await exercise_flow(name, ready, authority, certificate, peer, artifacts)
     if name in ("storage-refusal", "maximum-storage-refusal"):
@@ -138,7 +143,8 @@ async def run_case(binary, name, artifacts):
         ready_path = directory / "host-ready.json"
         environment = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
         with (directory / "origin.log").open("wb") as origin_log, (directory / "host.log").open("wb") as host_log:
-            origin_arguments = [sys.executable, str(Path(__file__).with_name("peer.py")), "--ready-file", str(origin_ready)]
+            script = "production_origin.py" if name in CONTROL_CASES else "peer.py"
+            origin_arguments = [sys.executable, str(Path(__file__).with_name(script)), "--ready-file", str(origin_ready)]
             if name == "slow-receiver":
                 origin_arguments.append("--flow-proof")
             origin = await asyncio.create_subprocess_exec(
@@ -160,6 +166,8 @@ async def run_case(binary, name, artifacts):
                 if name == "maximum-storage-refusal":
                     config.update(maximumConnections=1024, maximumPendingHandshakes=256,
                                   maximumRequestStreamsPerConnection=1024, maximumRetainedBytes=268435456)
+                if name in CONTROL_CASES:
+                    config.update(host_configuration(name))
                 config_path = directory / "configuration.json"
                 config_path.write_text(json.dumps(config), encoding="utf-8")
                 host = await asyncio.create_subprocess_exec(
@@ -185,11 +193,15 @@ async def run_case(binary, name, artifacts):
                     report["finalResources"] = read_resources(ready["resourcesPath"], stopped=True,
                                                               byte_limit=config["maximumRetainedBytes"])
                     report["capture"] = capture_oracle(ready["capturePath"], authority, peer, name)
+                    if name in CONTROL_CASES:
+                        report["controlOracles"] = final_control_oracles(name, ready)
                 stats = json.loads(Path(peer["stats"]).read_text(encoding="utf-8"))
                 if name in ("changed-authority", "upstream-hostname", "upstream-trust", "downstream-trust", "denied-route"):
                     assert stats["requests"] == 0, stats
                     if name == "denied-route":
                         assert stats["datagrams"] == 0, stats
+                elif name == "control-synthetic":
+                    assert stats["requests"] == 0 and stats["datagrams"] == 0, stats
                 else:
                     assert stats["alpn"] and set(stats["alpn"]) == {"h3"}, stats
                     assert not stats["earlyDataAccepted"], stats
@@ -229,6 +241,8 @@ async def run_case(binary, name, artifacts):
                             retain_tail(source, artifacts / name / target)
                         retain_flow_trace(Path(str(ready_path) + ".capture.json"), artifacts / name / "capture.json")
                         retain_flow_trace(origin_ready.parent / "flow.qlog", artifacts / name / "origin.qlog")
+                        for suffix in ("original", "effective", "bodies", "embedding", "control-events"):
+                            retain_flow_trace(Path(str(ready_path) + f".{suffix}.json"), artifacts / name / f"{suffix}.json")
 
 
 async def main(arguments):
@@ -237,9 +251,15 @@ async def main(arguments):
     for name in arguments.case or CASES:
         try:
             async with asyncio.timeout(90):
-                observation = await run_case(arguments.binary, name, artifacts)
+                if name in LIFECYCLE_CASES:
+                    observation = await run_lifecycle_case(arguments.binary, name, artifacts / name)
+                elif name in SECURITY_CASES:
+                    observation = await run_security_case(arguments.binary, name, artifacts / name)
+                else:
+                    observation = await run_case(arguments.binary, name, artifacts)
             results["checks"][name] = {"result": "passed", "observation": observation}
-        except (AssertionError, ConnectionError, RuntimeError, TimeoutError, OSError, KeyError, json.JSONDecodeError) as error:
+        except (AssertionError, ConnectionError, RuntimeError, TimeoutError, OSError, KeyError, json.JSONDecodeError,
+                ExceptionGroup) as error:
             results["checks"][name] = {"result": "failed", "error": f"{type(error).__name__}: {error}",
                                       "traceback": traceback.format_exc(limit=8)}
         arguments.output.parent.mkdir(parents=True, exist_ok=True)

@@ -67,8 +67,11 @@ enum HTTP3Fields {
             return false
         }
         guard name == "te" else { return true }
-        let token = value.drop(while: { $0 == 32 || $0 == 9 })
-            .reversed().drop(while: { $0 == 32 || $0 == 9 }).reversed()
+        let token = value
+            .drop { $0 == 32 || $0 == 9 }
+            .reversed()
+            .drop { $0 == 32 || $0 == 9 }
+            .reversed()
         return token.count == 8 && zip(token, "trailers".utf8).allSatisfy { byte, expected in
             (byte >= 65 && byte <= 90 ? byte + 32 : byte) == expected
         }
@@ -76,7 +79,9 @@ enum HTTP3Fields {
 
     static func requestAuthority(_ request: HTTPRequest) -> HTTPAuthority? {
         guard let authority = request.authority else { return nil }
-        if let parsed = HTTPAuthority(authority: authority) { return parsed }
+        if let parsed = HTTPAuthority(authority: authority) {
+            return parsed
+        }
         let candidate = authority.hasSuffix("]") || !authority.contains(":") ? authority + ":443" : authority
         return HTTPAuthority(authority: candidate)
     }

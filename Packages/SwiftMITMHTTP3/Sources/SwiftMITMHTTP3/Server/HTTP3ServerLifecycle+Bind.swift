@@ -6,7 +6,8 @@ extension HTTP3ServerLifecycle {
     func resolveBind(host: String, port: Int) async throws -> SocketAddress {
         try await withCheckedThrowingContinuation { continuation in
             resolutionQueue.async {
-                do { continuation.resume(returning: try SocketAddress.makeAddressResolvingHost(host, port: port)) } catch {
+                do { continuation.resume(returning: try SocketAddress.makeAddressResolvingHost(host, port: port))
+                } catch {
                     continuation.resume(throwing: HTTP3ProxyError.invalidConfiguration)
                 }
             }
@@ -34,12 +35,14 @@ extension HTTP3ServerLifecycle {
             let ipv4Verifier = try makeVerifier(on: loop)
             _ = try await loop.flatSubmit {
                 HTTP3Transport.startClient(state: state, loop: loop, verifier: ipv4Verifier, ipv6: false)
-            }.get()
+            }
+            .get()
             try Task.checkCancellation()
             let ipv6Verifier = try makeVerifier(on: loop)
             _ = try await loop.flatSubmit {
                 HTTP3Transport.startClient(state: state, loop: loop, verifier: ipv6Verifier, ipv6: true)
-            }.get()
+            }
+            .get()
             try Task.checkCancellation()
             return try await loop.flatSubmit {
                 HTTP3Transport.startServer(state: state, loop: loop, authenticator: authenticator, address: address)
@@ -47,7 +50,8 @@ extension HTTP3ServerLifecycle {
                         guard let port = channel.localAddress?.port else { throw HTTP3ProxyError.invalidConfiguration }
                         return port
                     }
-            }.get()
+            }
+            .get()
         } catch is CancellationError {
             throw CancellationError()
         } catch { throw HTTP3ProxyError.invalidConfiguration }

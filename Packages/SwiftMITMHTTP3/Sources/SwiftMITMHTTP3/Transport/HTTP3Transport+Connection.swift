@@ -25,7 +25,8 @@ extension HTTP3Transport {
             session.ownership.startDeadline(on: eventLoop, duration: configuration.limits.handshakeDeadline)
         }
         handler.createOutboundConnection(
-            serverName: session.identity.host, remoteAddress: session.address,
+            serverName: session.identity.host,
+            remoteAddress: session.address,
             connectionInitializer: { channel, creator in
                 channel.eventLoop.makeCompletedFuture {
                     let session = owned.value
@@ -36,7 +37,8 @@ extension HTTP3Transport {
                 }
             },
             inboundStreamInitializer: { Self.receiveStream($0, state: state) }
-        ).whenComplete { result in
+        )
+        .whenComplete { result in
             state.value.connected(result, session: owned.value)
         }
     }
@@ -75,9 +77,16 @@ extension HTTP3Transport {
         var native = HTTP3ClientConfiguration.defaults
         native.inboundMemory = inboundMemoryConfiguration()
         let handler = HTTP3NativeHandler.client(
-            eventLoop: eventLoop, configuration: native,
-            settings: .init(qpackMaximumTableCapacity: 0, qpackBlockedStreams: 0, maximumFieldSectionSize: 32_768, h3Datagram: false),
-            streamCreator: HTTP3ObservedStreamCreator(native: creator, resources: resources), logger: logger
+            eventLoop: eventLoop,
+            configuration: native,
+            settings: .init(
+                qpackMaximumTableCapacity: 0,
+                qpackBlockedStreams: 0,
+                maximumFieldSectionSize: 32_768,
+                h3Datagram: false
+            ),
+            streamCreator: HTTP3ObservedStreamCreator(native: creator, resources: resources),
+            logger: logger
         ) { $0.channel.close() }
         let observer = HTTP3ConnectionObserver(
             ownership: session.ownership,
@@ -96,7 +105,9 @@ extension HTTP3Transport {
         session.draining = true
         removeFixedEntry(session)
         session.ownership.finishHandshake()
-        if !session.ownership.attached { session.ownership.release() }
+        if !session.ownership.attached {
+            session.ownership.release()
+        }
         if !session.connectionCompleted {
             session.connectionCompleted = true
             session.promise.fail(error)
@@ -108,6 +119,8 @@ extension HTTP3Transport {
     }
 
     func removeFixedEntry(_ session: HTTP3OriginSession) {
-        if fixedSessions[session.downstreamID] == session.id { fixedSessions.removeValue(forKey: session.downstreamID) }
+        if fixedSessions[session.downstreamID] == session.id {
+            fixedSessions.removeValue(forKey: session.downstreamID)
+        }
     }
 }

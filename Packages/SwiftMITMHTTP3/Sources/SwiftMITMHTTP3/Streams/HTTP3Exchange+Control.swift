@@ -6,9 +6,15 @@ extension HTTP3Exchange {
     func controlMessage(_ flow: HTTP3Flow, body: Data? = nil) throws -> HTTPControlMessage {
         guard let context, let snapshot = flow.snapshot else { throw HTTP3ProxyError.protocolViolation }
         var status: Int?
-        if case let .response(.head(head)) = flow.head { status = head.status.code }
+        if case let .response(.head(head)) = flow.head {
+            status = head.status.code
+        }
         return HTTPControlMessage(
-            context: context, phase: flow.phase, status: status, headers: snapshot.fields, body: body
+            context: context,
+            phase: flow.phase,
+            status: status,
+            headers: snapshot.fields,
+            body: body
         )
     }
 
@@ -29,7 +35,9 @@ extension HTTP3Exchange {
     func retainDecision(_ decision: HTTPControlDecision, flow: HTTP3Flow) throws {
         guard let runtime = transport.controlRuntime else { throw HTTPControlError.invalidConfiguration }
         let work = try HTTPControlWorkLifetime(
-            decision: decision, runtime: runtime, admission: transport.localAdmission,
+            decision: decision,
+            runtime: runtime,
+            admission: transport.localAdmission,
             transportAdmission: transport.sharedAdmission
         )
         flow.work = work
@@ -54,11 +62,17 @@ extension HTTP3Exchange {
             let result: Result<(decision: HTTPControlDecision, work: HTTPControlWorkLifetime), Error>
             do {
                 let resolved = try await HTTPControlTransport.resolve(
-                    decision, message: message, runtime: runtime, sink: sink, snapshot: snapshot
+                    decision,
+                    message: message,
+                    runtime: runtime,
+                    sink: sink,
+                    snapshot: snapshot
                 )
                 try snapshot?.validate(resolved, for: message)
                 let work = try HTTPControlWorkLifetime(
-                    decision: resolved, runtime: runtime, admission: localAdmission,
+                    decision: resolved,
+                    runtime: runtime,
+                    admission: localAdmission,
                     transportAdmission: sharedAdmission
                 )
                 result = .success((resolved, work))
@@ -125,7 +139,9 @@ extension HTTP3Exchange {
         }
         if decision.overridesNoTransform {
             transport.controlEventSink?.receive(.noTransformOverride(
-                requestID: id, phase: flow.phase, appliedRuleIDs: decision.appliedRuleIDs
+                requestID: id,
+                phase: flow.phase,
+                appliedRuleIDs: decision.appliedRuleIDs
             ))
         }
     }

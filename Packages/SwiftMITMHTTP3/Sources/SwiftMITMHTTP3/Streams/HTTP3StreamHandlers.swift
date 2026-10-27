@@ -31,7 +31,9 @@ final class HTTP3RequestHandler: ChannelInboundHandler {
     }
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
-        if event as? ChannelEvent == .inputClosed { exchange.inputClosed(exchange.request) }
+        if event as? ChannelEvent == .inputClosed {
+            exchange.inputClosed(exchange.request)
+        }
         context.fireUserInboundEventTriggered(event)
     }
 
@@ -68,7 +70,9 @@ final class HTTP3ResponseHandler: ChannelInboundHandler {
     }
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
-        if event as? ChannelEvent == .inputClosed { exchange.inputClosed(exchange.response) }
+        if event as? ChannelEvent == .inputClosed {
+            exchange.inputClosed(exchange.response)
+        }
         context.fireUserInboundEventTriggered(event)
     }
 

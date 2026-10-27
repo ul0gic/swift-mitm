@@ -37,10 +37,10 @@ enum HTTP3Message {
             var capacity = 1
             while capacity < body.readableBytes { capacity *= 2 }
             return body.readableBytes == 0 ? 0 : capacity
-        case let .request(.head(head)): payloadBytes + head.headerFields.count * MemoryLayout<HTTPField>.stride
-        case let .response(.head(head)): payloadBytes + head.headerFields.count * MemoryLayout<HTTPField>.stride
+        case let .request(.head(head)): return payloadBytes + head.headerFields.count * MemoryLayout<HTTPField>.stride
+        case let .response(.head(head)): return payloadBytes + head.headerFields.count * MemoryLayout<HTTPField>.stride
         case let .request(.end(fields)), let .response(.end(fields)):
-            payloadBytes + (fields?.count ?? 0) * MemoryLayout<HTTPField>.stride
+            return payloadBytes + (fields?.count ?? 0) * MemoryLayout<HTTPField>.stride
         }
     }
 

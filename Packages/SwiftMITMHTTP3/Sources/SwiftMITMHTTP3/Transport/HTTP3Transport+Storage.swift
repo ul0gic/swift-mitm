@@ -25,7 +25,8 @@ extension HTTP3Transport {
             do {
                 try state.value.resources.track(channel)
                 try channel.pipeline.syncOperations.addHandler(
-                    HTTP3RawReadMeter(resources: state.value.resources), position: .first
+                    HTTP3RawReadMeter(resources: state.value.resources),
+                    position: .first
                 )
                 guard let parent = channel.parent else { throw HTTP3ProxyError.protocolViolation }
                 let handler = try parent.pipeline.syncOperations.handler(type: HTTP3NativeHandler.self)
@@ -36,14 +37,18 @@ extension HTTP3Transport {
 
     func sampleResources() -> HTTP3ResourceUsage {
         guard !disposalComplete else { return resources.snapshot() }
-        if let serverHandler { resources.observeListener(serverHandler.connectionAdmissionSnapshot) }
+        if let serverHandler {
+            resources.observeListener(serverHandler.connectionAdmissionSnapshot)
+        }
         resources.sampleNativeOutput()
         return resources.snapshot()
     }
 
     func completeListener() {
         guard !listenerCompleted else { return }
-        if let serverHandler { resources.observeListener(serverHandler.connectionAdmissionSnapshot) }
+        if let serverHandler {
+            resources.observeListener(serverHandler.connectionAdmissionSnapshot)
+        }
         resources.completeListenerIncarnation()
         listenerCompleted = true
         serverHandler = nil

@@ -2,7 +2,9 @@ import NIOCore
 
 extension HTTP3Transport {
     func stop() -> EventLoopFuture<Void> {
-        if let stopPromise { return stopPromise.futureResult }
+        if let stopPromise {
+            return stopPromise.futureResult
+        }
         let promise = eventLoop.makePromise(of: Void.self)
         stopPromise = promise
         let state = NIOLoopBound(self, eventLoop: eventLoop)
@@ -27,8 +29,10 @@ extension HTTP3Transport {
         for session in sessions.values { session.draining = true }
         let handlers = [serverHandler, clientHandler, clientHandlerIPv6].compactMap(\.self)
         EventLoopFuture.andAllComplete(
-            handlers.map { $0.shutdownGracefully(deadline: deadline) }, on: eventLoop
-        ).whenComplete { _ in state.value.closeSockets() }
+            handlers.map { $0.shutdownGracefully(deadline: deadline) },
+            on: eventLoop
+        )
+        .whenComplete { _ in state.value.closeSockets() }
         return promise.futureResult
     }
 

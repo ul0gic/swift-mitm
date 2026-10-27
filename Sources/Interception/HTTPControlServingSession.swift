@@ -14,3 +14,14 @@ public final class HTTPControlServingSession: Sendable {
         await runtime.endServing(owner: owner)
     }
 }
+
+public extension HTTPControlRuntime {
+    func startServing(
+        admission: ResourceAdmissionController? = nil,
+        transportAdmission: ResourceAdmissionController? = nil
+    ) throws -> HTTPControlServingSession {
+        let owner = UUID()
+        try beginServing(owner: owner, admission: admission, transportAdmission: transportAdmission)
+        return HTTPControlServingSession(owner: owner, runtime: self)
+    }
+}

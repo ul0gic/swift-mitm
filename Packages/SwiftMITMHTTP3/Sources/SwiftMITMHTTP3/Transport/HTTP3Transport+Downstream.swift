@@ -19,7 +19,9 @@ extension HTTP3Transport {
             let ownership: HTTP3ConnectionOwnership
             do {
                 ownership = try HTTP3ConnectionOwnership(
-                    resources: transport.resources, configuration: transport.configuration, destination: nil
+                    resources: transport.resources,
+                    configuration: transport.configuration,
+                    destination: nil
                 )
             } catch {
                 try transport.trackConnection(channel, ownership: nil)
@@ -34,7 +36,12 @@ extension HTTP3Transport {
             transport.downstreams[downstream.id] = downstream
             let owned = NIOLoopBound(ownership, eventLoop: channel.eventLoop)
             ownership.timedOut = {
-                state.value.emitFailure(id: downstream.id, target: downstream.target, error: .handshakeTimedOut, downstream: true)
+                state.value.emitFailure(
+                    id: downstream.id,
+                    target: downstream.target,
+                    error: .handshakeTimedOut,
+                    downstream: true
+                )
                 channel.close(promise: nil)
             }
             ownership.startDeadline(on: channel.eventLoop, duration: transport.configuration.limits.handshakeDeadline)
@@ -53,10 +60,14 @@ extension HTTP3Transport {
             return CapturedNetworkEndpoint(address: host, port: port)
         }
         return HTTP3DownstreamConnection(
-            id: UUID(), channel: channel,
+            id: UUID(),
+            channel: channel,
             target: CapturedTarget(
-                destination: route.destination, logicalAuthority: route.authority,
-                tlsServerName: Self.wireServerName(route.identity), ingressProvenance: .fixedRouteHTTP3, originalClient: peer
+                destination: route.destination,
+                logicalAuthority: route.authority,
+                tlsServerName: Self.wireServerName(route.identity),
+                ingressProvenance: .fixedRouteHTTP3,
+                originalClient: peer
             )
         )
     }
@@ -72,9 +83,16 @@ extension HTTP3Transport {
         var native = HTTP3ServerConfiguration.defaults
         native.inboundMemory = inboundMemoryConfiguration()
         let handler = HTTP3NativeHandler.server(
-            eventLoop: eventLoop, configuration: native,
-            settings: .init(qpackMaximumTableCapacity: 0, qpackBlockedStreams: 0, maximumFieldSectionSize: 32_768, h3Datagram: false),
-            streamCreator: HTTP3ObservedStreamCreator(native: creator, resources: resources), logger: logger
+            eventLoop: eventLoop,
+            configuration: native,
+            settings: .init(
+                qpackMaximumTableCapacity: 0,
+                qpackBlockedStreams: 0,
+                maximumFieldSectionSize: 32_768,
+                h3Datagram: false
+            ),
+            streamCreator: HTTP3ObservedStreamCreator(native: creator, resources: resources),
+            logger: logger
         ) { parameters in
             let stream = parameters.channel
             return stream.setOption(ChannelOptions.autoRead, value: false).flatMap {

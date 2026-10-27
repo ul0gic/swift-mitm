@@ -19,6 +19,12 @@ struct HostConfiguration: Decodable, Sendable {
     let maximumPendingHandshakes: Int
     let maximumRequestStreamsPerConnection: Int
     let maximumRetainedBytes: Int
+    let controlPreset: String?
+    let mappedAuthority: String?
+    let sharedRetainedBytes: Int?
+    let callerOwnedGroup: Bool?
+    let handshakeDeadlineSeconds: Int?
+    let observe: Bool?
 
     func configuration() throws -> HTTP3ProxyConfiguration {
         let route = try HTTP3FixedRoute(
@@ -29,12 +35,16 @@ struct HostConfiguration: Decodable, Sendable {
             maximumConnections: maximumConnections,
             maximumPendingHandshakes: maximumPendingHandshakes,
             maximumRequestStreamsPerConnection: maximumRequestStreamsPerConnection,
-            maximumRetainedBytes: maximumRetainedBytes
+            maximumRetainedBytes: maximumRetainedBytes,
+            handshakeDeadline: .seconds(handshakeDeadlineSeconds ?? 10)
         )
         let root = try String(contentsOfFile: originCAPath, encoding: .utf8)
         return try HTTP3ProxyConfiguration(
-            route: route, limits: limits, upstreamTrust: .customPEM([root]),
-            egressPolicy: EgressPolicy(allowInternal: allowInternal), captureBodyLimit: 0
+            route: route,
+            limits: limits,
+            upstreamTrust: .customPEM([root]),
+            egressPolicy: EgressPolicy(allowInternal: allowInternal),
+            captureBodyLimit: 0
         )
     }
 }

@@ -8,7 +8,9 @@ extension HTTP3Exchange {
         guard let head = flow.head else { throw HTTP3ProxyError.protocolViolation }
         guard let decision = flow.decision else {
             try enqueue(head, flow: flow)
-            if flow.isRequest { openOrigin(.fixed) }
+            if flow.isRequest {
+                openOrigin(.fixed)
+            }
             return
         }
         let fields = decision.headers
@@ -33,7 +35,9 @@ extension HTTP3Exchange {
         default: throw HTTP3ProxyError.protocolViolation
         }
         try enqueue(output, lease: lease, flow: flow)
-        if flow.isRequest { openOrigin(selection) }
+        if flow.isRequest {
+            openOrigin(selection)
+        }
     }
 
     func effectiveEnd(_ end: HTTP3Message, flow: HTTP3Flow) throws -> HTTP3HeldMessage {
@@ -42,7 +46,8 @@ extension HTTP3Exchange {
         }
         let snapshot = try HTTP3HeaderSnapshot(original, resources: transport.resources)
         let filtering = try transport.resources.reserve(
-            snapshot.fields.count * MemoryLayout<HTTPHeaderField>.stride, kind: .capture
+            snapshot.fields.count * MemoryLayout<HTTPHeaderField>.stride,
+            kind: .capture
         )
         return try withExtendedLifetime((snapshot, filtering)) {
             let fields = decision.effectiveTrailers(snapshot.fields)
@@ -62,7 +67,9 @@ extension HTTP3Exchange {
                 try channel.pipeline.syncOperations.addHandler(HTTP3ResponseHandler(exchange: self))
                 return channel.eventLoop.makeSucceededVoidFuture()
             } catch { return channel.eventLoop.makeFailedFuture(error) }
-        }.assumeIsolated().whenComplete { result in
+        }
+        .assumeIsolated()
+        .whenComplete { result in
             self.openingOrigin = false
             switch result {
             case let .success(origin):
@@ -102,7 +109,9 @@ extension HTTP3Exchange {
         withExtendedLifetime(snapshot) {
             captureHead(message, fields: snapshot.fields, representation: .effective)
             transport.controlEventSink?.receive(.effectiveHead(
-                requestID: id, phase: flow.phase, headers: snapshot.fields,
+                requestID: id,
+                phase: flow.phase,
+                headers: snapshot.fields,
                 appliedRuleIDs: flow.decision?.appliedRuleIDs ?? []
             ))
         }

@@ -60,7 +60,7 @@ The executable does not bundle or start protocol peers. A peer's successful resp
 
 The console uses these `InspectionConfiguration` defaults: 64 MiB shared retained-storage budget; 4 MiB and 1,024 items queued; 256 active bodies; 64 KiB SSE lines; 1 MiB SSE events; and 4 MiB gRPC/WebSocket messages. The configuration permits larger values up to 256 MiB budget, 256 MiB queue, 65,536 queued items, 1,024 active bodies, 256 KiB lines, 4 MiB events and 16 MiB messages. These are library limits, not measured process-RSS bounds; native decoder workspace is outside the application-owned budget.
 
-The library targets macOS 26 and Swift 6.4. HTTP/3's researched Apple dependency graph requires macOS 27 and Crypto 5, while core currently uses Crypto 4. That graph and two-leg transport remain unverified. A separate companion package isolates resolution from core-only users but does not reconcile the Crypto major-version conflict for a consumer that resolves both graphs. See [HTTP/3 status](HTTP3.md).
+The core library targets macOS 26 and Swift 6.4 with Crypto 5. The separate `SwiftMITMHTTP3` companion requires macOS 27 and connects HTTP/3 messages to the same observation interfaces. Core-only consumers do not resolve the companion’s QUIC/HTTP3 dependencies. See [HTTP/3](HTTP3.md) for integration and protocol boundaries.
 
 The 0.2.2 candidate and these commands remain unverified until the candidate's GitHub Actions consumer and protocol checks pass.
 

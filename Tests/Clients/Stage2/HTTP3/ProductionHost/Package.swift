@@ -16,7 +16,8 @@ let package = Package(
             dependencies: [
                 .product(name: "SwiftMITM", package: "swift-mitm"),
                 .product(name: "SwiftMITMHTTP3", package: "swiftmitmhttp3"),
-                .product(name: "NIOConcurrencyHelpers", package: "swift-nio")
+                .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio")
             ]
         )
     ]

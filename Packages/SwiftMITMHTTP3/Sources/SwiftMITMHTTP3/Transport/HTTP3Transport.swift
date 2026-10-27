@@ -13,9 +13,9 @@ final class HTTP3Transport {
     let eventLoop: any EventLoop
     let configuration: HTTP3ProxyConfiguration
     let sink: any CaptureEventSink
-    let observationSink: (any HTTPObservationSink)?
+    let observationSink: any HTTPObservationSink?
     let controlRuntime: HTTPControlRuntime?
-    let controlEventSink: (any HTTPControlEventSink)?
+    let controlEventSink: any HTTPControlEventSink?
     let localAdmission: ResourceAdmissionController
     let sharedAdmission: ResourceAdmissionController?
     let resources: HTTP3ResourceTracker
@@ -24,9 +24,9 @@ final class HTTP3Transport {
     var serverHandler: HTTP3DatagramHandler?
     var clientHandler: HTTP3DatagramHandler?
     var clientHandlerIPv6: HTTP3DatagramHandler?
-    var serverSocket: (any Channel)?
-    var clientSocket: (any Channel)?
-    var clientSocketIPv6: (any Channel)?
+    var serverSocket: any Channel?
+    var clientSocket: any Channel?
+    var clientSocketIPv6: any Channel?
     var downstreams: [UUID: HTTP3DownstreamConnection] = [:]
     var sessions: [UUID: HTTP3OriginSession] = [:]
     var fixedSessions: [UUID: UUID] = [:]
@@ -44,9 +44,9 @@ final class HTTP3Transport {
         eventLoop: any EventLoop,
         configuration: HTTP3ProxyConfiguration,
         sink: any CaptureEventSink,
-        observationSink: (any HTTPObservationSink)?,
+        observationSink: any HTTPObservationSink?,
         controlRuntime: HTTPControlRuntime?,
-        controlEventSink: (any HTTPControlEventSink)?,
+        controlEventSink: any HTTPControlEventSink?,
         resources: HTTP3ResourceTracker
     ) {
         self.eventLoop = eventLoop
@@ -94,7 +94,9 @@ final class HTTP3Transport {
         guard let exchange = exchanges[requestID] else { return }
         switch direction {
         case .request:
-            if let id = exchange.sessionID { sessions[id]?.channel?.close(promise: nil) }
+            if let id = exchange.sessionID {
+                sessions[id]?.channel?.close(promise: nil)
+            }
         case .response:
             exchange.downstream.channel.close(promise: nil)
         }
@@ -171,7 +173,7 @@ final class HTTP3OriginSession {
     let ownership: HTTP3ConnectionOwnership
     var waiters: [UUID: HTTP3OriginSetup] = [:]
     var connectionResult: Result<any Channel, any Error>?
-    var channel: (any Channel)?
+    var channel: any Channel?
     var draining = false
     var connectionCompleted = false
     var closedIntentionally = false

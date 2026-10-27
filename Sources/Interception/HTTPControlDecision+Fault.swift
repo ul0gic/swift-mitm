@@ -1,5 +1,5 @@
-extension HTTPControlDecision {
-    public func selectedFault(direction: HTTPFaultDirection) throws -> HTTPFault? {
+public extension HTTPControlDecision {
+    func selectedFault(direction: HTTPFaultDirection) throws -> HTTPFault? {
         let matching = faults.filter { $0.direction == direction }
         guard let first = matching.first else { return nil }
         var delay = first.delayMilliseconds

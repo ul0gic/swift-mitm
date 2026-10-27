@@ -13,7 +13,10 @@ extension HTTP3Exchange {
             if let original = request.head {
                 captureHead(original, fields: decision.headers, representation: .effective)
                 transport.controlEventSink?.receive(.effectiveHead(
-                    requestID: id, phase: .request, headers: decision.headers, appliedRuleIDs: decision.appliedRuleIDs
+                    requestID: id,
+                    phase: .request,
+                    headers: decision.headers,
+                    appliedRuleIDs: decision.appliedRuleIDs
                 ))
             }
             stopInput(request)

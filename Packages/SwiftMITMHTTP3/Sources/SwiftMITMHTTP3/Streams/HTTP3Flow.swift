@@ -10,8 +10,8 @@ struct HTTP3HeldMessage {
 /// State belongs to the transport event loop, including asynchronous control completions.
 final class HTTP3Flow {
     let direction: HTTPFaultDirection
-    var source: (any Channel)?
-    var destination: (any Channel)?
+    var source: any Channel?
+    var destination: any Channel?
     var head: HTTP3Message?
     var headLease: HTTP3StorageLease?
     var snapshot: HTTP3HeaderSnapshot?
@@ -42,7 +42,7 @@ final class HTTP3Flow {
     var generatedOffset = 0
     var generatedEnd: HTTP3HeldMessage?
 
-    init(direction: HTTPFaultDirection, source: (any Channel)? = nil, destination: (any Channel)? = nil) {
+    init(direction: HTTPFaultDirection, source: any Channel? = nil, destination: any Channel? = nil) {
         self.direction = direction
         self.source = source
         self.destination = destination

@@ -19,7 +19,8 @@ func release022TrustDiagnostic(trust: SecTrust, expectedRoot: SecCertificate, fa
 
 func release022NavigationErrorDiagnostic(_ error: Error) -> String {
     let failure = error as NSError
-    var facts = "domain=\(failure.domain), code=\(failure.code), description=\(failure.localizedDescription.prefix(512))"
+    var facts = "domain=\(failure.domain), code=\(failure.code), "
+        + "description=\(failure.localizedDescription.prefix(512))"
     if let underlying = failure.userInfo[NSUnderlyingErrorKey] as? NSError {
         facts += "; underlyingDomain=\(underlying.domain), underlyingCode=\(underlying.code), "
             + "underlyingDescription=\(underlying.localizedDescription.prefix(512))"

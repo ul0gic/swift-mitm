@@ -55,7 +55,8 @@ final class Release022BrowserObserver: NSObject, WKNavigationDelegate, WKScriptM
         let anchor = SecTrustSetAnchorCertificates(trust, [root] as CFArray)
         let exclusive = SecTrustSetAnchorCertificatesOnly(trust, true)
         guard anchor == errSecSuccess, exclusive == errSecSuccess else {
-            FileHandle.standardError.write(Data("WKWebView anchor setup: anchor=\(anchor), exclusive=\(exclusive)\n".utf8))
+            FileHandle.standardError
+                .write(Data("WKWebView anchor setup: anchor=\(anchor), exclusive=\(exclusive)\n".utf8))
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }

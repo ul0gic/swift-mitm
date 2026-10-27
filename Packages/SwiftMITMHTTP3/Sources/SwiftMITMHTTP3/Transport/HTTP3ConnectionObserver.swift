@@ -36,7 +36,9 @@ final class HTTP3ConnectionObserver: ChannelInboundHandler {
     }
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
-        if event is ReceivedGoawayEvent { receivedGoaway() }
+        if event is ReceivedGoawayEvent {
+            receivedGoaway()
+        }
         context.fireUserInboundEventTriggered(event)
     }
 }

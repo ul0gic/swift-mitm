@@ -14,7 +14,7 @@ actor HTTP3ServerLifecycle {
     let resolutionQueue = DispatchQueue(label: "SwiftMITM.HTTP3.bind-resolution")
     var phase = Phase.ready
     var transport: NIOLoopBound<HTTP3Transport>?
-    var loop: (any EventLoop)?
+    var loop: any EventLoop?
     var controlSession: HTTPControlServingSession?
 
     init(inputs: HTTP3ServerInputs, group: any EventLoopGroup, ownsGroup: Bool, resources: HTTP3ResourceTracker) {
@@ -41,26 +41,41 @@ actor HTTP3ServerLifecycle {
                 throw HTTP3ProxyError.egressDenied
             }
             controlSession = try await inputs.controlRuntime?.startServing(
-                admission: resources.shared, transportAdmission: resources.local
+                admission: resources.shared,
+                transportAdmission: resources.local
             )
             let selectedLoop = group.next()
             loop = selectedLoop
-            let identity = try inputs.certificateAuthority.mintCertificateIdentity(forHost: inputs.configuration.route.identity.host)
+            let identity = try inputs.certificateAuthority
+                .mintCertificateIdentity(forHost: inputs.configuration.route.identity.host)
             let authenticator: Authenticator
-            do { authenticator = try Authenticator(certificates: identity.certificateChain, privateKey: identity.privateKey) } catch {
+            do { authenticator = try Authenticator(
+                certificates: identity.certificateChain,
+                privateKey: identity.privateKey
+            ) } catch {
                 throw HTTP3ProxyError.invalidConfiguration
             }
             let inputs = inputs
             let resources = resources
             let state = try await selectedLoop.submit {
                 NIOLoopBound(HTTP3Transport(
-                    eventLoop: selectedLoop, configuration: inputs.configuration, sink: inputs.sink,
-                    observationSink: inputs.observationSink, controlRuntime: inputs.controlRuntime,
-                    controlEventSink: inputs.controlEventSink, resources: resources
+                    eventLoop: selectedLoop,
+                    configuration: inputs.configuration,
+                    sink: inputs.sink,
+                    observationSink: inputs.observationSink,
+                    controlRuntime: inputs.controlRuntime,
+                    controlEventSink: inputs.controlEventSink,
+                    resources: resources
                 ), eventLoop: selectedLoop)
-            }.get()
+            }
+            .get()
             transport = state
-            let boundPort = try await bind(state: state, loop: selectedLoop, authenticator: authenticator, address: address)
+            let boundPort = try await bind(
+                state: state,
+                loop: selectedLoop,
+                authenticator: authenticator,
+                address: address
+            )
             try Task.checkCancellation()
             phase = .running
             return boundPort
@@ -77,7 +92,9 @@ actor HTTP3ServerLifecycle {
         case .ready, .running, .draining: phase = .stopping
         }
         do {
-            if let transport, let loop { try await loop.flatSubmit { transport.value.stop() }.get() }
+            if let transport, let loop {
+                try await loop.flatSubmit { transport.value.stop() }.get()
+            }
         } catch {
             phase = .draining
             throw HTTP3ProxyError.shutdownTimedOut
@@ -89,7 +106,9 @@ actor HTTP3ServerLifecycle {
         if ownsGroup {
             phase = .shutdown
             do { try await group.shutdownGracefully() } catch { throw HTTP3ProxyError.shutdownTimedOut }
-        } else { phase = .ready }
+        } else {
+            phase = .ready
+        }
         return report
     }
 
@@ -118,7 +137,11 @@ actor HTTP3ServerLifecycle {
     func makeVerifier(on loop: any EventLoop) throws -> AsyncVerifier {
         if let certificates = inputs.configuration.certificates {
             do {
-                return try AsyncVerifier(trustRoots: certificates, certificateVerification: .fullVerification, eventLoop: loop)
+                return try AsyncVerifier(
+                    trustRoots: certificates,
+                    certificateVerification: .fullVerification,
+                    eventLoop: loop
+                )
             } catch { throw HTTP3ProxyError.invalidConfiguration }
         }
         return AsyncVerifier(certificateVerification: .fullVerification, eventLoop: loop)

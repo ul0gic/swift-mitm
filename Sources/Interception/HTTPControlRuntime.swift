@@ -104,15 +104,6 @@ public actor HTTPControlRuntime {
         budget = HTTPControlBudget(configuration: configuration)
     }
 
-    public func startServing(
-        admission: ResourceAdmissionController? = nil,
-        transportAdmission: ResourceAdmissionController? = nil
-    ) throws -> HTTPControlServingSession {
-        let owner = UUID()
-        try beginServing(owner: owner, admission: admission, transportAdmission: transportAdmission)
-        return HTTPControlServingSession(owner: owner, runtime: self)
-    }
-
     func beginServing(
         owner: UUID,
         admission: ResourceAdmissionController?,

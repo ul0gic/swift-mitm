@@ -6,7 +6,9 @@ import SwiftMITM
 extension HTTP3Exchange {
     func emit(_ event: CaptureEvent, representation: HTTPRepresentationKind) {
         guard representation != .original || !originalFailed else { return }
-        if representation == .original { transport.sink.receive(event) }
+        if representation == .original {
+            transport.sink.receive(event)
+        }
         transport.observationSink?.receive(event, representation: representation)
     }
 
@@ -26,14 +28,23 @@ extension HTTP3Exchange {
         switch message {
         case let .request(.head(head)):
             emit(.requestHead(CapturedRequestHead(
-                id: id, timestamp: Date(), scheme: head.scheme ?? "https",
+                id: id,
+                timestamp: Date(),
+                scheme: head.scheme ?? "https",
                 authority: head.authority ?? transport.configuration.route.authority,
-                method: head.method.rawValue, path: head.path ?? "/", version: .http3, headers: fields,
+                method: head.method.rawValue,
+                path: head.path ?? "/",
+                version: .http3,
+                headers: fields,
                 target: representation == .original ? downstream.target : (origin?.target ?? downstream.target)
             )), representation: representation)
         case let .response(.head(head)):
             emit(.responseHead(CapturedResponseHead(
-                requestID: id, timestamp: Date(), status: head.status.code, version: .http3, headers: fields
+                requestID: id,
+                timestamp: Date(),
+                status: head.status.code,
+                version: .http3,
+                headers: fields
             )), representation: representation)
         default: break
         }
@@ -41,7 +52,11 @@ extension HTTP3Exchange {
 
     func captureBody(_ body: ByteBuffer, flow: HTTP3Flow, representation: HTTPRepresentationKind) throws {
         guard representation != .original || !originalFailed else { return }
-        let observation = HTTPBodyObservation(requestID: id, direction: flow.observation, representation: representation)
+        let observation = HTTPBodyObservation(
+            requestID: id,
+            direction: flow.observation,
+            representation: representation
+        )
         body.withUnsafeReadableBytes { transport.observationSink?.receiveBody(observation, bytes: $0) }
         let used = representation == .original ? flow.capturedBytes : flow.effectiveBytes
         let count = min(body.readableBytes, max(0, transport.configuration.captureBodyLimit - used))

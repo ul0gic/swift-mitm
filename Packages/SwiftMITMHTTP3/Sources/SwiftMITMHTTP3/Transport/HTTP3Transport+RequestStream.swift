@@ -16,7 +16,8 @@ extension HTTP3Transport {
                 return channel.setOption(ChannelOptions.autoRead, value: false).flatMap {
                     state.value.initializeOriginStream(channel, setup: owned.value.0)
                 }
-            }.whenComplete { result in
+            }
+            .whenComplete { result in
                 let (setup, session) = owned.value
                 switch result {
                 case let .success(channel):
@@ -28,7 +29,9 @@ extension HTTP3Transport {
                     }
                     setup.succeed(HTTP3OriginStream(sessionID: session.id, channel: channel, target: session.target))
                 case let .failure(error):
-                    if error is CancellationError { setup.fail(error) } else {
+                    if error is CancellationError {
+                        setup.fail(error)
+                    } else {
                         setup.fail(error as? HTTP3ProxyError ?? .upstreamConnectionFailed)
                     }
                 }

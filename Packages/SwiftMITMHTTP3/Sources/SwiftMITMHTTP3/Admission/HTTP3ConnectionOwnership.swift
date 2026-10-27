@@ -40,7 +40,10 @@ final class HTTP3ConnectionOwnership {
     }
 
     func fail(_ error: any Error) {
-        if failure == nil { failure = error as? HTTP3ProxyError ?? (pending ? .tlsHandshakeFailed : .protocolViolation) }
+        if failure ==
+            nil {
+            failure = error as? HTTP3ProxyError ?? (pending ? .tlsHandshakeFailed : .protocolViolation)
+        }
         finishHandshake()
     }
 

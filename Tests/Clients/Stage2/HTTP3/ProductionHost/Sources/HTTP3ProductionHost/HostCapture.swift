@@ -41,7 +41,8 @@ final class HostCapture: CaptureEventSink {
 
     func receive(_ event: CaptureEvent) {
         let projected = project(event)
-        let retained = projected.headers?.reduce(0) { $0 + $1.name.utf8.count + $1.value.utf8.count + ($1.rawValueBytes?.count ?? 0) } ?? 0
+        let retained = projected.headers?
+            .reduce(0) { $0 + $1.name.utf8.count + $1.value.utf8.count + ($1.rawValueBytes?.count ?? 0) } ?? 0
         state.withLockedValue {
             guard $0.events.count < 20_000, $0.bytes + retained <= 8 * 1024 * 1024 else {
                 $0.overflow = true
@@ -80,19 +81,38 @@ final class HostCapture: CaptureEventSink {
             return result
         case let .requestTrailers(id, headers), let .responseTrailers(id, headers):
             let kind: String
-            if case .requestTrailers = event { kind = "requestTrailers" } else { kind = "responseTrailers" }
+            if case .requestTrailers = event {
+                kind = "requestTrailers"
+            } else {
+                kind = "responseTrailers"
+            }
             var result = HostEvent(kind: kind, requestID: id)
             result.headers = headers.map(HostField.init)
             return result
+        default:
+            return projectStream(event)
+        }
+    }
+
+    private func projectStream(_ event: CaptureEvent) -> HostEvent {
+        switch event {
         case let .requestEnd(id, truncated), let .responseEnd(id, truncated):
             let kind: String
-            if case .requestEnd = event { kind = "requestEnd" } else { kind = "responseEnd" }
+            if case .requestEnd = event {
+                kind = "requestEnd"
+            } else {
+                kind = "responseEnd"
+            }
             var result = HostEvent(kind: kind, requestID: id)
             result.truncated = truncated
             return result
         case let .requestBodyChunk(id, _, count), let .responseBodyChunk(id, _, count):
             let kind: String
-            if case .requestBodyChunk = event { kind = "requestBodyChunk" } else { kind = "responseBodyChunk" }
+            if case .requestBodyChunk = event {
+                kind = "requestBodyChunk"
+            } else {
+                kind = "responseBodyChunk"
+            }
             var result = HostEvent(kind: kind, requestID: id)
             result.byteCount = count
             return result

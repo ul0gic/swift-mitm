@@ -70,11 +70,11 @@ public struct HTTP3ProxyConfiguration: Sendable {
             maximumPendingWriteBytes: 65_536
         )
         // Preflight only queries the native size model; allocation is forbidden until server admission exists.
-        let parserBytes = HTTP3InboundMemoryConfiguration(
+        let parserMemory = HTTP3InboundMemoryConfiguration(
             maximumEncodedFieldSectionBytes: 32_768,
-            maximumBytesPerRead: 16_384,
-            makeStorageReservation: { _ in throw HTTP3ProxyError.invalidConfiguration }
-        ).requiredStorageBytes(maximumDecodedFieldSectionBytes: 32_768)
+            maximumBytesPerRead: 16_384
+        ) { _ in throw HTTP3ProxyError.invalidConfiguration }
+        let parserBytes = parserMemory.requiredStorageBytes(maximumDecodedFieldSectionBytes: 32_768)
         guard limits.maximumRetainedBytes >= max(nativeBytes, parserBytes) else {
             throw HTTP3ProxyError.invalidConfiguration
         }

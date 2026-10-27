@@ -9,16 +9,20 @@ public final class HTTP3ProxyServer: Sendable {
         configuration: HTTP3ProxyConfiguration,
         certificateAuthority: CertificateAuthority,
         sink: any CaptureEventSink,
-        group: (any EventLoopGroup)? = nil,
-        observationSink: (any HTTPObservationSink)? = nil,
+        group: any EventLoopGroup? = nil,
+        observationSink: any HTTPObservationSink? = nil,
         controlRuntime: HTTPControlRuntime? = nil,
-        controlEventSink: (any HTTPControlEventSink)? = nil,
+        controlEventSink: any HTTPControlEventSink? = nil,
         admission: ResourceAdmissionController? = nil
     ) {
         let local = ResourceAdmissionController(configuration: configuration.admissionConfiguration)
         let inputs = HTTP3ServerInputs(
-            configuration: configuration, certificateAuthority: certificateAuthority, sink: sink,
-            observationSink: observationSink, controlRuntime: controlRuntime, controlEventSink: controlEventSink
+            configuration: configuration,
+            certificateAuthority: certificateAuthority,
+            sink: sink,
+            observationSink: observationSink,
+            controlRuntime: controlRuntime,
+            controlEventSink: controlEventSink
         )
         lifecycle = HTTP3ServerLifecycle(
             inputs: inputs,
@@ -47,7 +51,7 @@ struct HTTP3ServerInputs: Sendable {
     let configuration: HTTP3ProxyConfiguration
     let certificateAuthority: CertificateAuthority
     let sink: any CaptureEventSink
-    let observationSink: (any HTTPObservationSink)?
+    let observationSink: any HTTPObservationSink?
     let controlRuntime: HTTPControlRuntime?
-    let controlEventSink: (any HTTPControlEventSink)?
+    let controlEventSink: any HTTPControlEventSink?
 }

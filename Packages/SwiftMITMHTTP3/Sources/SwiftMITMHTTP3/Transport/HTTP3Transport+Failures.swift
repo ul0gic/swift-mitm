@@ -16,7 +16,11 @@ extension HTTP3Transport {
         case .upstreamConnectionFailed:
             (reason, stage, code) = (.upstreamConnectionFailed, .connect, .upstreamConnectFailed)
         case .tlsHandshakeFailed:
-            (reason, stage, code) = (.tlsHandshakeFailed, downstream ? .downstreamTLS : .upstreamTLS, .tlsHandshakeFailed)
+            (reason, stage, code) = (
+                .tlsHandshakeFailed,
+                downstream ? .downstreamTLS : .upstreamTLS,
+                .tlsHandshakeFailed
+            )
         case .handshakeTimedOut:
             (reason, stage, code) = (.timedOut, downstream ? .downstreamTLS : .upstreamTLS, .setupTimedOut)
         case .unsupportedProtocol:
@@ -25,7 +29,12 @@ extension HTTP3Transport {
             (reason, stage, code) = (.transportFailure, .negotiation, .transportFailure)
         }
         sink.receive(.connectionFailure(.init(
-            id: id, timestamp: Date(), reason: reason, target: target, stage: stage, code: code
+            id: id,
+            timestamp: Date(),
+            reason: reason,
+            target: target,
+            stage: stage,
+            code: code
         )))
     }
 }

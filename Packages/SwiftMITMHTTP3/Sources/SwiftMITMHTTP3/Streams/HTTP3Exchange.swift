@@ -48,7 +48,11 @@ final class HTTP3Exchange {
             exchange.readIfReady(exchange.request)
             return channel.eventLoop.makeSucceededVoidFuture()
         } catch {
-            if registered { exchange.fail(error) } else { abort(channel) }
+            if registered {
+                exchange.fail(error)
+            } else {
+                abort(channel)
+            }
             return channel.eventLoop.makeFailedFuture(error)
         }
     }
@@ -74,7 +78,7 @@ final class HTTP3Exchange {
         finishIfReady()
     }
 
-    func closeChild(_ channel: (any Channel)?) {
+    func closeChild(_ channel: any Channel?) {
         guard let channel else { return }
         closingChannels += 1
         Self.abort(channel)
@@ -136,8 +140,12 @@ final class HTTP3Exchange {
     }
 
     func failureDescription(_ error: Error) -> String {
-        if error is HTTPControlError { return "HTTP/3 control rejected or cancelled the exchange" }
-        if error is HTTP3ProxyError { return "HTTP/3 transport could not complete the exchange" }
+        if error is HTTPControlError {
+            return "HTTP/3 control rejected or cancelled the exchange"
+        }
+        if error is HTTP3ProxyError {
+            return "HTTP/3 transport could not complete the exchange"
+        }
         return "HTTP/3 stream failed"
     }
 }

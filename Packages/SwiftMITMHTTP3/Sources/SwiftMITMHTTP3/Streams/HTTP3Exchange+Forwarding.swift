@@ -15,10 +15,13 @@ extension HTTP3Exchange {
     func enqueue(_ message: HTTP3Message, lease: HTTP3StorageLease? = nil, flow: HTTP3Flow) throws {
         try requireQueueCapacity(message, flow: flow)
         let retained: HTTP3StorageLease?
-        if let lease { retained = lease }
-        else if message.retainedBytes > 0 {
+        if let lease {
+            retained = lease
+        } else if message.retainedBytes > 0 {
             retained = try transport.resources.reserve(message.retainedBytes, kind: .forwarding)
-        } else { retained = nil }
+        } else {
+            retained = nil
+        }
         flow.output.append(HTTP3HeldMessage(message: message.compacted(), lease: retained))
         let count = message.body?.readableBytes ?? 0
         flow.pendingBytes += count
@@ -41,27 +44,43 @@ extension HTTP3Exchange {
         guard !failed, !finished, !flow.writing, flow.timer == nil,
               let destination = flow.destination else { return }
         guard destination.isActive else {
-            if !flow.outputEnded { fail(HTTP3ProxyError.protocolViolation) }
+            if !flow.outputEnded {
+                fail(HTTP3ProxyError.protocolViolation)
+            }
             return
         }
         guard destination.isWritable else { return }
         do {
-            if flow.output.isEmpty { try generateNext(flow) }
+            if flow.output.isEmpty {
+                try generateNext(flow)
+            }
             guard !flow.output.isEmpty else { readIfReady(flow); return }
             let allowance = flow.fault?.next(nowNanoseconds: NIODeadline.now().uptimeNanoseconds)
-            if let reset = allowance?.reset { resetFault(reset, flow: flow); return }
-            if let delay = allowance?.waitNanoseconds, delay > 0 { schedule(flow, after: delay); return }
-            var held = flow.output.removeFirst()
-            if let body = held.message.body, let allowance, body.readableBytes > allowance.bytes {
-                var remainder = body
-                guard let slice = remainder.readSlice(length: allowance.bytes), allowance.bytes > 0 else {
-                    throw HTTPControlError.invalidConfiguration
-                }
-                flow.output.insert(HTTP3HeldMessage(message: held.message.replacingBody(remainder), lease: held.lease), at: 0)
-                held.message = held.message.replacingBody(slice)
+            if let reset = allowance?.reset {
+                resetFault(reset, flow: flow); return
             }
+            if let delay = allowance?.waitNanoseconds, delay > 0 {
+                schedule(flow, after: delay); return
+            }
+            let held = try nextOutput(flow, allowance: allowance)
             try write(held, flow: flow, destination: destination)
         } catch { fail(error) }
+    }
+
+    private func nextOutput(_ flow: HTTP3Flow, allowance: HTTPFaultAllowance?) throws -> HTTP3HeldMessage {
+        var held = flow.output.removeFirst()
+        if let body = held.message.body, let allowance, body.readableBytes > allowance.bytes {
+            var remainder = body
+            guard let slice = remainder.readSlice(length: allowance.bytes), allowance.bytes > 0 else {
+                throw HTTPControlError.invalidConfiguration
+            }
+            flow.output.insert(
+                HTTP3HeldMessage(message: held.message.replacingBody(remainder), lease: held.lease),
+                at: 0
+            )
+            held.message = held.message.replacingBody(slice)
+        }
+        return held
     }
 
     func write(_ held: HTTP3HeldMessage, flow: HTTP3Flow, destination: any Channel) throws {
@@ -134,7 +153,9 @@ extension HTTP3Exchange {
     }
 
     func resetFault(_ scope: HTTPFaultResetScope, flow: HTTP3Flow) {
-        if scope == .transport { transport.resetTransport(requestID: id, direction: flow.direction) }
+        if scope == .transport {
+            transport.resetTransport(requestID: id, direction: flow.direction)
+        }
         fail(HTTPControlError.cancelled)
     }
 }
