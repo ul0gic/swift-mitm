@@ -10,6 +10,7 @@ import SwiftMITM
 
 enum Release022ProxyRouting: String {
     case native
+    case nativeAlternateLoader
     case sessionDictionary
 }
 
@@ -23,7 +24,11 @@ func release022TrustedURLSession(
 ) throws -> URLSession {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.timeoutIntervalForRequest = 10
-    if routing == .native {
+    let preparedDefault = configuration.usesClassicLoadingMode
+    if routing == .nativeAlternateLoader {
+        configuration.usesClassicLoadingMode = !preparedDefault
+    }
+    if routing != .sessionDictionary {
         let proxyPort = try XCTUnwrap(UInt16(exactly: port))
         let endpointPort = try XCTUnwrap(NWEndpoint.Port(rawValue: proxyPort))
         let proxyConfiguration = ProxyConfiguration(httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: endpointPort))
@@ -45,8 +50,9 @@ func release022TrustedURLSession(
     let root = try XCTUnwrap(SecCertificateCreateWithData(nil, Data(der) as CFData))
     let delegate = Release022URLSessionTrust(root: root, protocolName: protocolName, routing: routing.rawValue)
     let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+    release022AssertURLSessionLoader(configuration, session: session, preparedDefault: preparedDefault, routing: routing)
     let copied = session.configuration.proxyConfigurations
-    if routing == .native {
+    if routing != .sessionDictionary {
         XCTAssertEqual(copied.count, 1)
         for proxy in copied.prefix(4) {
             release022AssertNativeProxyConfiguration(proxy, originHost: originHost, phase: "copied")
@@ -57,6 +63,21 @@ func release022TrustedURLSession(
     }
     release022ReportURLSessionConfiguration(session, proxyPort: port, originHost: originHost, originPort: originPort)
     return session
+}
+
+private func release022AssertURLSessionLoader(
+    _ configuration: URLSessionConfiguration,
+    session: URLSession,
+    preparedDefault: Bool,
+    routing: Release022ProxyRouting
+) {
+    let selected = configuration.usesClassicLoadingMode
+    let copied = session.configuration.usesClassicLoadingMode
+    XCTAssertEqual(selected, routing == .nativeAlternateLoader ? !preparedDefault : preparedDefault)
+    XCTAssertEqual(copied, selected)
+    let facts = "routing=\(routing.rawValue), preparedDefault=\(preparedDefault), "
+        + "selected=\(selected), copied=\(copied)"
+    FileHandle.standardError.write(Data("URLSession loader configuration: \(facts)\n".utf8))
 }
 
 private func release022ReportURLSessionConfiguration(

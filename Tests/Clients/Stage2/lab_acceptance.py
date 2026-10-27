@@ -122,7 +122,7 @@ def run(binary):
             assert serve.wait(timeout=15) == 0
             observed = serve_log.read_text()
             phase = "serve-markers"
-            for marker in ("sse dataBytes=", "grpc event", "webSocketMessage bytes=", "paused GET /debug",
+            for marker in ("sse dataBytes=", "grpc event", "webSocketMessage decodedBytes=", "paused GET /debug",
                            "inspectionComplete=true", '"type":"stopped"'):
                 present = marker in observed
                 missing_marker = None if present else marker

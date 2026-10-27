@@ -11,9 +11,11 @@ struct BenchmarkOptions: Sendable {
     let identityDirectory: String
     let output: String
     let diagnosticCPU: Bool
+    let diagnosticCallbacks: Bool
 
     init(_ arguments: [String]) throws {
-        guard arguments.count == 5 || (arguments.count == 6 && arguments[5] == "--diagnostic-cpu"),
+        let flags = ["--diagnostic-cpu", "--diagnostic-http1-callbacks"]
+        guard arguments.count == 5 || (arguments.count == 6 && flags.contains(arguments[5])),
               ["h2", "http/1.1"].contains(arguments[1]),
               ["latency", "throughput"].contains(arguments[2]) else { throw MeasurementError.arguments }
         protocolName = arguments[1]
@@ -21,6 +23,10 @@ struct BenchmarkOptions: Sendable {
         identityDirectory = arguments[3]
         output = arguments[4]
         diagnosticCPU = arguments.count == 6
+        diagnosticCallbacks = arguments.count == 6 && arguments[5] == "--diagnostic-http1-callbacks"
+        guard !diagnosticCallbacks || (protocolName == "http/1.1" && workload == "throughput") else {
+            throw MeasurementError.arguments
+        }
     }
 }
 
@@ -61,7 +67,7 @@ struct PerformanceMain {
         clientGroup: EventLoopGroup
     ) async throws {
         let state = OriginState()
-        let sink = MeasurementSink()
+        let sink = MeasurementSink(diagnosticCallbacks: options.diagnosticCallbacks)
         let authority = try loadAuthority(options.identityDirectory + "/proxy")
         let originRoot = try String(
             contentsOfFile: options.identityDirectory + "/origin/origin-ca.pem",
@@ -90,7 +96,8 @@ struct PerformanceMain {
                 protocolName: options.protocolName,
                 workload: options.workload,
                 rootPEM: authority.caCertificatePEM,
-                diagnosticCPU: options.diagnosticCPU
+                diagnosticCPU: options.diagnosticCPU,
+                diagnosticCallbacks: options.diagnosticCallbacks
             )
             let exchanges = try await runClient(group: clientGroup, input: input)
             try await proxy.stop()

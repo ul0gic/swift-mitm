@@ -52,6 +52,7 @@ struct CaptureRecord: Codable, Sendable {
     var responseEnds = 0
     var responseBytes = 0
     var status: Int?
+    var responseBodyEvents: Int?
 }
 
 final class MeasurementSink: CaptureEventSink {
@@ -61,6 +62,11 @@ final class MeasurementSink: CaptureEventSink {
     }
 
     private let state = NIOLockedValueBox(State())
+    private let diagnosticCallbacks: Bool
+
+    init(diagnosticCallbacks: Bool = false) {
+        self.diagnosticCallbacks = diagnosticCallbacks
+    }
 
     func receive(_ event: CaptureEvent) {
         let timestamp = DispatchTime.now().uptimeNanoseconds
@@ -75,13 +81,18 @@ final class MeasurementSink: CaptureEventSink {
                     requestID: head.id,
                     path: head.path,
                     protocolName: head.version.rawValue,
-                    headTime: timestamp
+                    headTime: timestamp,
+                    responseBodyEvents: diagnosticCallbacks ? 0 : nil
                 )
             case let .requestEnd(id, _): state.records[id]?.requestEnds += 1
             case let .responseHead(head):
                 state.records[head.requestID]?.responseHeads += 1
                 state.records[head.requestID]?.status = head.status
-            case let .responseBodyChunk(id, _, count): state.records[id]?.responseBytes += count
+            case let .responseBodyChunk(id, _, count):
+                state.records[id]?.responseBytes += count
+                if let events = state.records[id]?.responseBodyEvents {
+                    state.records[id]?.responseBodyEvents = events + 1
+                }
             case let .responseEnd(id, _): state.records[id]?.responseEnds += 1
             case .streamError, .connectionFailure: state.failures += 1
             default: break
@@ -103,6 +114,24 @@ struct ExchangeMeasurement: Codable, Sendable {
     let end: UInt64
     let bytes: Int
     let sha256: String
+    let bodyCallbacks: BodyCallbackObservation?
+}
+
+struct BodyCallbackObservation: Codable, Sendable {
+    var count = 0
+    var zeroByteCount = 0
+    var minimumNonemptyBytes: Int?
+    var maximumNonemptyBytes: Int?
+
+    mutating func record(bytes: Int) {
+        count += 1
+        if bytes == 0 {
+            zeroByteCount += 1
+        } else {
+            minimumNonemptyBytes = min(minimumNonemptyBytes ?? bytes, bytes)
+            maximumNonemptyBytes = max(maximumNonemptyBytes ?? bytes, bytes)
+        }
+    }
 }
 
 struct BenchmarkResult: Codable, Sendable {

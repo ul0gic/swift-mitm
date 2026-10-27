@@ -1,0 +1,85 @@
+diff --git a/Sources/NIOQUIC/SwiftNetwork/QUICChannelStreamHandler.swift b/Sources/NIOQUIC/SwiftNetwork/QUICChannelStreamHandler.swift
+index 080da24..de6ee13 100644
+--- a/Sources/NIOQUIC/SwiftNetwork/QUICChannelStreamHandler.swift
++++ b/Sources/NIOQUIC/SwiftNetwork/QUICChannelStreamHandler.swift
+@@ -560,38 +560,38 @@ final class QUICChannelStreamHandler: ProtocolInstanceContainer, InboundStreamHa
+ 
+     // Send a STOP_SENDING frame to close the read (Note, this stream will receive a RESET_STREAM in return)
+     internal func abortInbound(error: NetworkError?) {
+-        let reference = self.reference
+-        reference.fromExternal {
+-            do throws(NetworkError) {
+-                self.log("abortInbound")
+-                switch self.swiftNetworkStreamHandle.invokeAbortInbound() {
+-                case .proceed(let linkage):
++        switch self.swiftNetworkStreamHandle.invokeAbortInbound() {
++        case .proceed(let linkage):
++            let reference = self.reference
++            reference.fromExternal {
++                do throws(NetworkError) {
++                    self.log("abortInbound")
+                     try linkage.invokeAbortInbound(reference, error: error)
+-                case .ignore:
+-                    break
++                } catch {
++                    self.log("Failed to abort inbound: \(error)")
++                    self.closeStream(mode: .disconnectOnly, error: error, promise: nil)
+                 }
+-            } catch {
+-                self.log("Failed to abort inbound: \(error)")
+-                self.closeStream(mode: .disconnectOnly, error: error, promise: nil)
+             }
++        case .ignore:
++            break
+         }
+     }
+ 
+     // Send a RESET_STREAM frame to close the write
+     internal func abortOutbound(error: NetworkError?) {
+-        let reference = self.reference
+-        reference.fromExternal {
+-            do throws(NetworkError) {
+-                switch self.swiftNetworkStreamHandle.invokeAbortOutbound() {
+-                case .proceed(let linkage):
++        switch self.swiftNetworkStreamHandle.invokeAbortOutbound() {
++        case .proceed(let linkage):
++            let reference = self.reference
++            reference.fromExternal {
++                do throws(NetworkError) {
+                     try linkage.invokeAbortOutbound(reference, error: error)
+-                case .ignore:
+-                    break
++                } catch {
++                    self.log("Failed to abort outbound: \(error)")
++                    self.closeStream(mode: .disconnectOnly, error: error, promise: nil)
+                 }
+-            } catch {
+-                self.log("Failed to abort outbound: \(error)")
+-                self.closeStream(mode: .disconnectOnly, error: error, promise: nil)
+             }
++        case .ignore:
++            break
+         }
+     }
+ 
+@@ -1203,14 +1203,14 @@ final class QUICChannelStreamHandler: ProtocolInstanceContainer, InboundStreamHa
+ 
+     // Get metadata about the stream from the internal QUIC stack
+     private final func getMetadata<P: NetworkProtocol>() -> ProtocolMetadata<P>? {
+-        let reference = self.reference
+-        return reference.fromExternal {
+-            switch self.swiftNetworkStreamHandle.invokeGetMetadata() {
+-            case .proceed(let linkage):
++        switch self.swiftNetworkStreamHandle.invokeGetMetadata() {
++        case .proceed(let linkage):
++            let reference = self.reference
++            return reference.fromExternal {
+                 return linkage.invokeGetMetadata(reference) as ProtocolMetadata<P>?
+-            case .ignore:
+-                return nil
+             }
++        case .ignore:
++            return nil
+         }
+     }
+ 

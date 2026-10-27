@@ -56,8 +56,12 @@ struct ProcessObservations: Codable, Sendable {
     }
 
     mutating func record(index: Int, path: String, before: ProcessSnapshot?, after: ProcessSnapshot?) {
-        if index == 1 { phaseBefore = before }
-        if index == count { phaseAfter = after }
+        if index == 1 {
+            phaseBefore = before
+        }
+        if index == count {
+            phaseAfter = after
+        }
         if let before, let after {
             responses.append(ResponseCPUObservation(path: path, before: before, after: after))
         }

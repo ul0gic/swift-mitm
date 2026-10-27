@@ -12,6 +12,7 @@ struct ClientInput: Sendable {
     let workload: String
     let rootPEM: String
     let diagnosticCPU: Bool
+    let diagnosticCallbacks: Bool
 }
 
 func measureClient(group: EventLoopGroup, input: ClientInput) throws -> ClientMeasurements {
@@ -19,12 +20,17 @@ func measureClient(group: EventLoopGroup, input: ClientInput) throws -> ClientMe
     do {
         let multiplexer = try configureClient(channel, input: input)
         let count = input.workload == "latency" ? 100 : 16
-        let shared = input.protocolName == "http/1.1" ? try addCollector(channel) : nil
+        let shared: NIOLoopBound<ResponseCollector>?
+        if input.protocolName == "http/1.1" {
+            shared = try addCollector(channel, diagnosticCallbacks: input.diagnosticCallbacks)
+        } else {
+            shared = nil
+        }
         var result: [ExchangeMeasurement] = []
         var observations = input.diagnosticCPU ? ProcessObservations(workload: input.workload, count: count) : nil
         for index in 0 ... count {
             let stream = try measurementStream(channel, multiplexer: multiplexer)
-            let collector = try shared ?? addCollector(stream)
+            let collector = try shared ?? addCollector(stream, diagnosticCallbacks: input.diagnosticCallbacks)
             let before = observations?.snapshotBeforeRequest(index: index)
             let measurement = try request(
                 channel: stream,
@@ -115,10 +121,10 @@ private func configureClient(
     return multiplexer
 }
 
-private func addCollector(_ channel: Channel) throws -> NIOLoopBound<ResponseCollector> {
+private func addCollector(_ channel: Channel, diagnosticCallbacks: Bool) throws -> NIOLoopBound<ResponseCollector> {
     try channel.eventLoop
         .submit {
-            let collector = ResponseCollector()
+            let collector = ResponseCollector(diagnosticCallbacks: diagnosticCallbacks)
             try channel.pipeline.syncOperations.addHandler(collector, name: "measurement")
             return NIOLoopBound(collector, eventLoop: channel.eventLoop)
         }

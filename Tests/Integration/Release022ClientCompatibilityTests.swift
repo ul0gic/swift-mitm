@@ -59,6 +59,10 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         try await urlSession(protocolName: "h2", version: .http2, routing: .sessionDictionary)
     }
 
+    func testURLSessionHTTP2WithAlternateLoaderDiagnostic() async throws {
+        try await urlSession(protocolName: "h2", version: .http2, routing: .nativeAlternateLoader)
+    }
+
     private func urlSession(
         protocolName: String,
         version: HTTPProtocolVersion,

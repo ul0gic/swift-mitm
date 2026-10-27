@@ -109,11 +109,12 @@ def run_cell(arguments, identity, protocol, workload, report, deadline, diagnost
             try:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise MeasurementUnavailable("600-second measurement budget exhausted")
+                    raise MeasurementUnavailable(f"{report['measurementBudgetSeconds']}-second measurement budget exhausted")
                 binary = getattr(arguments, variant)
                 command = [str(binary), protocol, workload, str(identity), str(output)]
                 if diagnostic:
-                    command.append("--diagnostic-cpu")
+                    command.append("--diagnostic-http1-callbacks" if report.get("diagnostic") == "http1-callbacks"
+                                   else "--diagnostic-cpu")
                 with output.with_suffix(".log").open("wb") as log:
                     result = subprocess.run(command,
                                             stdout=log, stderr=subprocess.STDOUT, timeout=min(150, remaining), check=False)
