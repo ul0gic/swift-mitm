@@ -29,11 +29,19 @@ final class HostWriteTrace: Sendable {
     }
 
     private static let events: Set<String> = [
-        "swiftmitm.http3.write.submit", "swiftmitm.http3.write.complete.success",
-        "swiftmitm.http3.write.complete.failure", "swiftmitm.http3.writability.changed"
+        "swiftmitm.http3.write.submit",
+        "swiftmitm.http3.write.complete.success",
+        "swiftmitm.http3.write.complete.failure",
+        "swiftmitm.http3.writability.changed"
     ]
     private static let keys = [
-        "exchange", "direction", "outputQueueCount", "pendingPayloadBytes", "writing", "writable", "messageKind"
+        "exchange",
+        "direction",
+        "outputQueueCount",
+        "pendingPayloadBytes",
+        "writing",
+        "writable",
+        "messageKind"
     ]
     private let state = NIOLockedValueBox(State())
 
@@ -76,7 +84,9 @@ final class HostWriteTrace: Sendable {
         data.append(try JSONEncoder().encode(summary))
         data.append(0x0A)
         try data.write(to: URL(fileURLWithPath: path), options: .atomic)
-        if snapshot.encodingFailed { throw Failure.encoding }
+        if snapshot.encodingFailed {
+            throw Failure.encoding
+        }
     }
 }
 

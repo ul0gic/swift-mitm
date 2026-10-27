@@ -49,21 +49,23 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
                             + "trusted=true sse=true websocket=true\n").utf8
                     )
                 )
-            view.stopLoading()
-            configuration.userContentController.removeScriptMessageHandler(forName: "result")
-            view.navigationDelegate = nil
+            stopWKWebView(view, configuration: configuration)
             try await server.stop()
             try await group.shutdownGracefully()
         } catch {
-            webView?.stopLoading()
-            webView?.configuration.userContentController.removeScriptMessageHandler(forName: "result")
-            webView?.navigationDelegate = nil
+            stopWKWebView(webView, configuration: webView?.configuration)
             if let proxy {
                 try? await proxy.stop()
             }
             try? await group.shutdownGracefully()
             throw error
         }
+    }
+
+    private func stopWKWebView(_ view: WKWebView?, configuration: WKWebViewConfiguration?) {
+        view?.stopLoading()
+        configuration?.userContentController.removeScriptMessageHandler(forName: "result")
+        view?.navigationDelegate = nil
     }
 
     func testChromiumSSEAndWebSocketThroughPublicProxyWithRunnerTrust() async throws {
@@ -82,7 +84,7 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
             let authority = try CertificateAuthority.generate().authority
             let certificate = peer.directory.appendingPathComponent("proxy-ca.pem")
             try Data(authority.caCertificatePEM.utf8).write(to: certificate)
-            let runnerTrust = Release022RunnerTrust(certificate: certificate, directory: peer.directory)
+            let runnerTrust = Release022RunnerTrust(certificate: certificate)
             trust = runnerTrust
             phase = "trust-install"
             try runnerTrust.install()

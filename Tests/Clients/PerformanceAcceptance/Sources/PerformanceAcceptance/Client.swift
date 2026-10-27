@@ -95,11 +95,12 @@ private func configureClient(
         .wait()
     let multiplexer: NIOHTTP2Handler.StreamMultiplexer?
     if input.protocolName == "h2" {
-        multiplexer = try channel.configureHTTP2Pipeline(
+        let pipeline = channel.configureHTTP2Pipeline(
             mode: .client,
             connectionConfiguration: .init(),
             streamConfiguration: .init()
-        ) { $0.close() }.wait()
+        ) { $0.close() }
+        multiplexer = try pipeline.wait()
     } else {
         try channel.pipeline.addHTTPClientHandlers().wait()
         multiplexer = nil

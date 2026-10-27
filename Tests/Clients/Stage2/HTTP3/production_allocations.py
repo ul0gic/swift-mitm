@@ -24,11 +24,13 @@ class DiagnosticUnavailable(RuntimeError):
     pass
 
 
-async def collect(tool, pid, mode, output):
+async def collect(tool, pid, mode, output, *, command=None, byte_limit=32 * 1024 * 1024,
+                  tool_name="malloc_history"):
     output.parent.mkdir(parents=True, exist_ok=True)
     started = time.monotonic_ns()
     process = await asyncio.create_subprocess_exec(
-        str(tool), str(pid), mode, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+        str(tool), *(command if command is not None else (str(pid), mode)),
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
     )
     size = 0
     record = {"mode": mode, "startedMonotonicNanoseconds": started, "complete": False}
@@ -36,24 +38,31 @@ async def collect(tool, pid, mode, output):
         async with asyncio.timeout(5):
             with output.open("wb") as destination:
                 while chunk := await process.stdout.read(65536):
-                    remaining = 32 * 1024 * 1024 - size
+                    remaining = byte_limit - size
                     destination.write(chunk[:remaining])
                     size += min(len(chunk), remaining)
                     if len(chunk) > remaining:
-                        raise DiagnosticUnavailable("malloc_history output exceeded 32 MiB; retained prefix is incomplete")
+                        raise DiagnosticUnavailable(
+                            f"{tool_name} output exceeded {byte_limit // (1024 * 1024)} MiB; retained prefix is incomplete")
                 await process.wait()
         record["returnCode"] = process.returncode
         if process.returncode != 0 or size == 0:
-            raise DiagnosticUnavailable(f"malloc_history {mode}: exit={process.returncode}, outputBytes={size}")
+            raise DiagnosticUnavailable(f"{tool_name} {mode}: exit={process.returncode}, outputBytes={size}")
         record["complete"] = True
     except TimeoutError as error:
-        raise DiagnosticUnavailable(f"malloc_history {mode} exceeded its 5s collection deadline") from error
+        raise DiagnosticUnavailable(f"{tool_name} {mode} exceeded its 5s collection deadline") from error
     finally:
-        if process.returncode is None:
-            process.kill()
-            await asyncio.wait_for(process.wait(), timeout=3)
-        record.update(outputBytes=size, endedMonotonicNanoseconds=time.monotonic_ns())
-        output.with_suffix(".json").write_text(json.dumps(record, indent=2), encoding="utf-8")
+        try:
+            if process.returncode is None:
+                process.kill()
+                await asyncio.wait_for(process.wait(), timeout=3)
+        except TimeoutError as error:
+            record["complete"] = False
+            raise DiagnosticUnavailable(f"{tool_name} {mode} exceeded its 3s kill/reap deadline") from error
+        finally:
+            record.update(returnCode=process.returncode, outputBytes=size,
+                          endedMonotonicNanoseconds=time.monotonic_ns())
+            output.with_suffix(".json").write_text(json.dumps(record, indent=2), encoding="utf-8")
     return record
 
 
@@ -192,7 +201,7 @@ async def run(arguments, report):
         environment = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
         for name in ("MallocStackLogging", "MallocStackLoggingNoCompact"):
             environment.pop(name, None)
-        host_environment = dict(environment, MallocStackLoggingNoCompact="1")
+        host_environment = dict(environment, MallocStackLoggingNoCompact="1", SWIFTMITM_HTTP3_WRITE_TRACE="1")
         host, origin = None, None
         artifacts = arguments.output.parent / "native-allocation-reports"
         artifacts.mkdir(parents=True, exist_ok=True)
@@ -241,13 +250,20 @@ async def run(arguments, report):
                                            (Path(str(ready_path) + ".resources.json"), "resources.json"),
                                            (origin_ready.parent / "stats.json", "origin-stats.json")):
                         retain_tail(source, artifacts / target)
+                    retain_flow_trace(Path(str(ready_path) + ".capture.json"), artifacts / "capture.json")
+                    retain_flow_trace(Path(str(ready_path) + ".write-trace.jsonl"), artifacts / "write-trace.jsonl")
                     retain_flow_trace(origin_ready.parent / "flow.qlog", artifacts / "origin.qlog")
 
 
 async def main(arguments):
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
     report = {"candidate": arguments.candidate, "surface": "public SwiftMITMHTTP3.HTTP3ProxyServer",
-              "environment": {"MallocStackLoggingNoCompact": "1"}, "phases": [],
+              "environment": {"MallocStackLoggingNoCompact": "1", "SWIFTMITM_HTTP3_WRITE_TRACE": "1"}, "phases": [],
+              "writeTrace": {"artifact": "native-allocation-reports/write-trace.jsonl",
+                             "absenceInterpretationRequires": ["schema SwiftMITMHTTP3.writeTrace.v1",
+                                                               "truncated=false", "encodingFailed=false",
+                                                               "summary records equals retained event count"],
+                             "scope": "Observer and profiler costs included; not native-only allocation attribution"},
               "workload": {"responseBytes": DIAGNOSTIC_BYTES, "frozenStreamCreditBytes": STREAM_CREDIT,
                            "scope": "256 KiB attribution sampling; not full 8 MiB acceptance or native peak proof"},
               "collection": "unverified", "nativeComponentAttribution": "unverified: raw report interpretation required",
@@ -262,10 +278,15 @@ async def main(arguments):
             await run(arguments, report)
         report["collection"] = "captured"
         code = 0
+    except TimeoutError as error:
+        report["collection"] = "failed"
+        report["reason"] = f"{type(error).__name__}: {error}"
+        report["traceback"] = traceback.format_exc(limit=8)
+        code = 1
     except (DiagnosticUnavailable, OSError) as error:
         report["reason"] = f"{type(error).__name__}: {error}"
         report["traceback"] = traceback.format_exc(limit=8)
-    except (AssertionError, RuntimeError, TimeoutError, KeyError, json.JSONDecodeError) as error:
+    except (AssertionError, RuntimeError, KeyError, json.JSONDecodeError) as error:
         report["collection"] = "failed"
         report["reason"] = f"{type(error).__name__}: {error}"
         report["traceback"] = traceback.format_exc(limit=8)

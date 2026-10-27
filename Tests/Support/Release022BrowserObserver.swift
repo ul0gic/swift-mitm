@@ -79,14 +79,13 @@ final class Release022BrowserObserver: NSObject, WKNavigationDelegate, WKScriptM
 
 final class Release022RunnerTrust {
     private let certificate: URL
-    private let keychain: URL
-    private var previousKeychains: [String] = []
-    private var created = false
+    private let keychain = "/Library/Keychains/System.keychain"
+    private var rootIdentity: (certificate: SecCertificate, fingerprint: String)?
+    private var certificateAttempted = false
     private var trustAttempted = false
 
-    init(certificate: URL, directory: URL) {
+    init(certificate: URL) {
         self.certificate = certificate
-        keychain = directory.appendingPathComponent("browser.keychain-db")
     }
 
     func install() throws {
@@ -95,15 +94,8 @@ final class Release022RunnerTrust {
             throw Release022ClientError
                 .missingEnvironment("ephemeral GitHub-hosted runner required for browser CA trust")
         }
-        let list = try security(["list-keychains", "-d", "user"])
-        previousKeychains = list.split(separator: "\n").map {
-            $0.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
-        }
-        let password = UUID().uuidString
-        _ = try security(["create-keychain", "-p", password, keychain.path])
-        created = true
-        _ = try security(["unlock-keychain", "-p", password, keychain.path])
-        _ = try security(["list-keychains", "-d", "user", "-s", keychain.path] + previousKeychains)
+        rootIdentity = try release022RunnerRoot(certificate: certificate)
+        certificateAttempted = true
         trustAttempted = true
         _ = try adminSecurity([
             "add-trusted-cert",
@@ -113,39 +105,48 @@ final class Release022RunnerTrust {
             "-p",
             "ssl",
             "-k",
-            keychain.path,
+            keychain,
             certificate.path
         ])
         try release022ReportRunnerTrust(certificate: certificate)
     }
 
     func restore() throws {
-        var failure: any Error?
+        guard let rootIdentity else { return }
+        var failures: [any Error] = []
         if trustAttempted {
             do {
                 _ = try adminSecurity(["remove-trusted-cert", "-d", certificate.path])
+                try release022RequireRunnerTrustAbsent(rootIdentity.certificate)
                 trustAttempted = false
-            } catch { failure = error }
+            } catch { failures.append(error) }
         }
-        if created {
+        if certificateAttempted {
             do {
-                _ = try security(["list-keychains", "-d", "user", "-s"] + previousKeychains)
-            } catch {
-                if failure == nil {
-                    failure = error
-                }
-            }
-            do {
-                _ = try security(["delete-keychain", keychain.path])
-                created = false
-            } catch {
-                if failure == nil {
-                    failure = error
-                }
-            }
+                _ = try adminSecurity(["delete-certificate", "-Z", rootIdentity.fingerprint, keychain])
+                try requireCertificateAbsent(fingerprint: rootIdentity.fingerprint)
+                certificateAttempted = false
+            } catch { failures.append(error) }
         }
-        if let failure {
+        if !trustAttempted, !certificateAttempted {
+            self.rootIdentity = nil
+        }
+        if let failure = failures.first {
+            for secondary in failures.dropFirst() {
+                FileHandle.standardError.write(Data("Chromium secondary trust cleanup failure: \(secondary)\n".utf8))
+            }
             throw failure
+        }
+    }
+
+    private func requireCertificateAbsent(fingerprint: String) throws {
+        let output = try security(["find-certificate", "-a", "-Z", keychain])
+        let present = output.split(separator: "\n").contains {
+            $0 == "SHA-256 hash: " + fingerprint.uppercased()
+        }
+        FileHandle.standardError.write(Data("Chromium certificate cleanup: present=\(present)\n".utf8))
+        guard !present else {
+            throw Release022ClientError.commandFailed("generated root remains in System.keychain")
         }
     }
 

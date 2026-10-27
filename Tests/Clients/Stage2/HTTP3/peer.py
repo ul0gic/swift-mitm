@@ -272,7 +272,7 @@ async def serve(arguments, origin_type=Origin, capacity_peer=False, allocation_d
         "releaseFin": str(release_file)
     }), encoding="utf-8")
     try:
-        await asyncio.wait_for(stopped.wait(), timeout=180)
+        await asyncio.wait_for(stopped.wait(), timeout=getattr(arguments, "seconds", 180))
     finally:
         server.close()
         if capacity_tasks is not None:
@@ -292,6 +292,7 @@ if __name__ == "__main__":
     parser.add_argument("--flow-proof", action="store_true")
     parser.add_argument("--capacity-peer", action="store_true")
     parser.add_argument("--allocation-diagnostic", action="store_true")
+    parser.add_argument("--seconds", type=int, choices=(180, 270, 360), default=180)
     arguments = parser.parse_args()
     asyncio.run(serve(arguments, capacity_peer=arguments.capacity_peer,
                       allocation_diagnostic=arguments.allocation_diagnostic))

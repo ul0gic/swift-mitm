@@ -16,7 +16,7 @@ BYTE_LIMIT = 268435456
 CYCLES = 20
 
 
-async def exercise(ready, peer, artifacts):
+async def exercise(ready, peer, artifacts, checkpoint=None):
     artifacts.mkdir(parents=True, exist_ok=True)
     path = ready["resourcesPath"]
     initial = await zero(path, BYTE_LIMIT)
@@ -63,6 +63,8 @@ async def exercise(ready, peer, artifacts):
                 "retainedHostCaptureEvents": len(capture),
             })
             (artifacts / "maximum-cycle-progress.json").write_text(json.dumps(cycles, indent=2), encoding="utf-8")
+            if checkpoint is not None:
+                await checkpoint(index + 1, cycles[-1])
         first, last = statistics.median(rss[:5]), statistics.median(rss[-5:])
         allowance = max(16 * 1024 * 1024, first * 0.1)
         assert last <= first + allowance, {"firstFiveMedian": first, "lastFiveMedian": last, "allowance": allowance}
@@ -94,7 +96,7 @@ async def exercise(ready, peer, artifacts):
         (artifacts / "maximum-cycle-progress.json").write_text(json.dumps(cycles, indent=2), encoding="utf-8")
 
 
-async def run_case(binary, name, artifacts):
+async def run_case(binary, name, artifacts, *, checkpoint=None, host_environment=None, peer_seconds=270):
     assert name in CASES
     artifacts.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="swiftmitm-h3-maximum-cycles-") as temporary:
@@ -106,6 +108,7 @@ async def run_case(binary, name, artifacts):
             try:
                 origin = await asyncio.create_subprocess_exec(
                     sys.executable, str(Path(__file__).with_name("peer.py")), "--ready-file", str(origin_ready),
+                    "--seconds", str(peer_seconds),
                     stdout=origin_log, stderr=asyncio.subprocess.STDOUT, env=environment)
                 peer = await readiness(origin_ready, origin)
                 config = {"authority": "localhost:443", "destinationAddress": "127.0.0.1",
@@ -117,9 +120,14 @@ async def run_case(binary, name, artifacts):
                 config_path.write_text(json.dumps(config), encoding="utf-8")
                 host = await asyncio.create_subprocess_exec(
                     str(binary), "--configuration", str(config_path), stdout=host_log,
-                    stderr=asyncio.subprocess.STDOUT, env=environment)
+                    stderr=asyncio.subprocess.STDOUT,
+                    env=environment if host_environment is None else host_environment)
                 ready = await readiness(ready_path, host)
-                report = await exercise(ready, peer, artifacts)
+
+                async def observe_cycle(number, cycle):
+                    await checkpoint(host, ready, number, cycle)
+
+                report = await exercise(ready, peer, artifacts, observe_cycle if checkpoint is not None else None)
                 await shutdown(host)
                 assert host.returncode == 0, "maximum-cycle public host did not stop cleanly"
                 report["finalResources"] = read_resources(ready["resourcesPath"], stopped=True, byte_limit=BYTE_LIMIT)

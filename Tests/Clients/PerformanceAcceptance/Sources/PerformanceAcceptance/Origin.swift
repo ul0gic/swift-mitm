@@ -65,7 +65,7 @@ private func configureOrigin(
     state: OriginState
 ) -> EventLoopFuture<Void> {
     if protocolName == "h2" {
-        return channel.configureHTTP2Pipeline(
+        let pipeline = channel.configureHTTP2Pipeline(
             mode: .server,
             connectionConfiguration: .init(),
             streamConfiguration: .init()
@@ -76,7 +76,8 @@ private func configureOrigin(
                     OriginResponder(state: state)
                 ])
             }
-        }.map { _ in () }
+        }
+        return pipeline.map { _ in () }
     }
     return channel.pipeline.configureHTTPServerPipeline().flatMap {
         channel.eventLoop.makeCompletedFuture {

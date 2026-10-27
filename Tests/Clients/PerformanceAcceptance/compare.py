@@ -15,6 +15,7 @@ from client_tls import create_identity
 PAYLOAD_BYTES = 256 * 1024 * 1024
 BASELINE_REVISION = "dc36969d94c9bbbfb2b7f8546b10ec441a4c3a13"
 BASELINE_PATCH_SHA256 = "ba9b0596392cb69e086897d37f1c99f2b1e4fce5bc104cb8df1ded17edbb3d08"
+BASELINE_TYPED_WRITES_PATCH_SHA256 = "67098af5a8696f332c46a1cfaec05746728511698c743984b6bd520659b5b56c"
 ORDER = (("baseline", "candidate"), ("candidate", "baseline"), ("baseline", "candidate"),
          ("candidate", "baseline"), ("baseline", "candidate"))
 
@@ -128,11 +129,13 @@ def git_tree_identity(value):
 def main(arguments):
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
     report = {"baselineRevision": arguments.baseline_revision, "candidateRevision": arguments.candidate_revision,
-              "comparison": "candidate versus reconstructed dc36969 + status-map compilation repair",
+              "comparison": "candidate versus reconstructed dc36969 + status-map and typed-write compilation repairs",
               "baselineReconstruction": {
                   "patchSHA256": arguments.baseline_patch_sha256,
+                  "typedWritesPatchSHA256": arguments.baseline_typed_writes_patch_sha256,
                   "patchedGitTree": arguments.baseline_patched_tree,
-                  "scope": "status-name macro rows 497 and 505; measured workload requires 200",
+                  "scope": "status-name macro rows 497 and 505; three NIOAny wrapper removals in "
+                           "ExplicitHTTPProxyHandler; measured workload requires 200 and uses explicitConnect",
                   "untouchedBaselinePerformance": "unavailable: original revision does not compile"
               },
               "benchmarkRevision": arguments.benchmark_revision, "configuration": "release",
@@ -168,6 +171,8 @@ if __name__ == "__main__":
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--baseline-revision", choices=[BASELINE_REVISION], required=True)
     parser.add_argument("--baseline-patch-sha256", choices=[BASELINE_PATCH_SHA256], required=True)
+    parser.add_argument("--baseline-typed-writes-patch-sha256",
+                        choices=[BASELINE_TYPED_WRITES_PATCH_SHA256], required=True)
     parser.add_argument("--baseline-patched-tree", type=git_tree_identity, required=True)
     parser.add_argument("--candidate-revision", required=True)
     parser.add_argument("--benchmark-revision", required=True)

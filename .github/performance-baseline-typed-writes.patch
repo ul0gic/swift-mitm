@@ -1,0 +1,33 @@
+diff --git a/Sources/HTTP1/ExplicitHTTPProxyHandler.swift b/Sources/HTTP1/ExplicitHTTPProxyHandler.swift
+index 9deaa89..d1bf394 100644
+--- a/Sources/HTTP1/ExplicitHTTPProxyHandler.swift
++++ b/Sources/HTTP1/ExplicitHTTPProxyHandler.swift
+@@ -253,7 +253,7 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
+             head.headers = Self.hopHeaders(head.headers, upgrading: Self.isWebSocket(head.headers))
+             head.headers.replaceOrAdd(name: "host", value: target.authority)
+             Self.frameRequest(&head, original: exchange.head.headers)
+-            channel.write(NIOAny(HTTPClientRequestPart.head(head)), promise: nil)
++            channel.write(HTTPClientRequestPart.head(head), promise: nil)
+             let pending = exchange.pending
+             exchange.pending.removeAll()
+             for part in pending {
+@@ -281,16 +281,16 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
+         case .head:
+             break
+         case .body(let buffer):
+-            channel.writeAndFlush(NIOAny(HTTPClientRequestPart.body(.byteBuffer(buffer))), promise: nil)
++            channel.writeAndFlush(HTTPClientRequestPart.body(.byteBuffer(buffer)), promise: nil)
+         case .end(let trailers):
+-            channel.writeAndFlush(NIOAny(HTTPClientRequestPart.end(trailers.map {
++            channel.writeAndFlush(HTTPClientRequestPart.end(trailers.map {
+                 Self.hopHeaders(
+                     $0,
+                     upgrading: false,
+                     appendVia: false,
+                     excluding: HTTP1MessageParser.tokens(Self.fields(exchange.head.headers), named: "connection")
+                 )
+-            })), promise: nil)
++            }), promise: nil)
+         }
+     }
+ }

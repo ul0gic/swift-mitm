@@ -104,7 +104,12 @@ def run(binary):
             grpc = subprocess.run([
                 sys.executable, str(scripts.parent / "grpc_peer.py"), "client",
                 "--target", f"localhost:{ready['grpc']['port']}", "--root", str(certificate)
-            ], env=grpc_environment, capture_output=True, text=True, timeout=60, check=True)
+            ], env=grpc_environment, capture_output=True, text=True, timeout=60, check=False)
+            (directory / "grpc-client.log").write_text(
+                f"returncode={grpc.returncode}\nstdout:\n{grpc.stdout[-960:]}\nstderr:\n{grpc.stderr[-960:]}\n",
+                encoding="utf-8"
+            )
+            grpc.check_returncode()
             assert json.loads(grpc.stdout)["trusted"] is True
             serve.send_signal(signal.SIGINT)
             assert serve.wait(timeout=15) == 0

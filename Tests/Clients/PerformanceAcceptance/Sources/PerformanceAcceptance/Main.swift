@@ -120,8 +120,11 @@ struct PerformanceMain {
     private static func runClient(group: EventLoopGroup, input: ClientInput) async throws -> [ExchangeMeasurement] {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                do { continuation.resume(returning: try measureClient(group: group, input: input)) }
-                catch { continuation.resume(throwing: error) }
+                do {
+                    continuation.resume(returning: try measureClient(group: group, input: input))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
             }
         }
     }

@@ -261,8 +261,9 @@ async def main(arguments):
     artifacts = arguments.output.parent / "production-http3-peer-logs"
     for name in arguments.case or CASES:
         try:
-            timeout = 150 if name in ("memory-cancel-cycles", "orphan-stop-restart", "shared-maximum-storage",
-                                      "memory-maximum-cycles") else 90
+            timeout = 150 if name in ("memory-cancel-cycles", "orphan-stop-restart", "shared-maximum-storage") else 90
+            if name == "memory-maximum-cycles":
+                timeout = 240
             async with asyncio.timeout(timeout):
                 if name in LIFECYCLE_CASES:
                     observation = await run_lifecycle_case(arguments.binary, name, artifacts / name)

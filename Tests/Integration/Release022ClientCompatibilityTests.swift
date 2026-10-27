@@ -84,6 +84,12 @@ final class Release022ClientCompatibilityTests: XCTestCase {
             let client = try trustedURLSession(port: port, authority: authority, originHost: originHost)
             session = client
             let url = try XCTUnwrap(URL(string: "https://\(originHost):\(origin.localPort)/"))
+            reportURLSessionConfiguration(
+                client,
+                proxyPort: port,
+                originHost: originHost,
+                originPort: origin.localPort
+            )
             let (data, response) = try await client.data(from: url)
             XCTAssertEqual(data, Data(repeating: 0x41, count: 32))
             XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
@@ -112,6 +118,26 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         XCTFail(
             "URLSession path diagnostics: captureEvents=\(sink.events.count), failures=\(Array(failures.prefix(4)))"
         )
+    }
+
+    private func reportURLSessionConfiguration(
+        _ session: URLSession,
+        proxyPort: Int,
+        originHost: String,
+        originPort: Int
+    ) {
+        let proxies = session.configuration.proxyConfigurations
+        let endpoints = "expectedProxy=127.0.0.1:\(proxyPort), expectedOrigin=\(originHost):\(originPort)"
+        let configuration = "URLSession copied configuration: \(endpoints), proxies=\(proxies.count)\n"
+        FileHandle.standardError.write(Data(configuration.utf8))
+        for (index, proxy) in proxies.prefix(4).enumerated() {
+            let matches = proxy.matchDomains.prefix(4).map { String($0.prefix(128)) }
+            let exclusions = proxy.excludedDomains.prefix(4).map { String($0.prefix(128)) }
+            let facts = "proxy=\(index), failover=\(proxy.allowFailover), "
+                + "matchCount=\(proxy.matchDomains.count), matches=\(matches), "
+                + "excludedCount=\(proxy.excludedDomains.count), exclusions=\(exclusions)"
+            FileHandle.standardError.write(Data("URLSession copied proxy: \(facts)\n".utf8))
+        }
     }
 
     private func assertCurlCapture(_ sink: Release022Events) throws {
@@ -237,7 +263,12 @@ private final class Release022URLSessionTrust: NSObject, URLSessionTaskDelegate,
     func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
         for (index, transaction) in metrics.transactionMetrics.prefix(4).enumerated() {
             let facts = "transaction=\(index), proxy=\(transaction.isProxyConnection), "
-                + "protocol=\(String(describing: transaction.networkProtocolName))"
+                + "reused=\(transaction.isReusedConnection), "
+                + "protocol=\(String(describing: transaction.networkProtocolName?.prefix(32))), "
+                + "localAddress=\(String(describing: transaction.localAddress?.prefix(128))), "
+                + "localPort=\(String(describing: transaction.localPort)), "
+                + "remoteAddress=\(String(describing: transaction.remoteAddress?.prefix(128))), "
+                + "remotePort=\(String(describing: transaction.remotePort))"
             FileHandle.standardError.write(Data("URLSession route metrics: \(facts)\n".utf8))
         }
     }
