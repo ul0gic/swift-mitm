@@ -292,7 +292,7 @@ if __name__ == "__main__":
     parser.add_argument("--flow-proof", action="store_true")
     parser.add_argument("--capacity-peer", action="store_true")
     parser.add_argument("--allocation-diagnostic", action="store_true")
-    parser.add_argument("--seconds", type=int, choices=(180, 270, 360), default=180)
+    parser.add_argument("--seconds", type=int, choices=(180, 270, 360, 420), default=180)
     arguments = parser.parse_args()
     asyncio.run(serve(arguments, capacity_peer=arguments.capacity_peer,
                       allocation_diagnostic=arguments.allocation_diagnostic))

@@ -13,6 +13,7 @@ from client_tls import create_identity
 
 
 PAYLOAD_BYTES = 256 * 1024 * 1024
+THROUGHPUT_MEASURED_RESPONSES = 16
 BASELINE_REVISION = "dc36969d94c9bbbfb2b7f8546b10ec441a4c3a13"
 BASELINE_PATCH_SHA256 = "ba9b0596392cb69e086897d37f1c99f2b1e4fce5bc104cb8df1ded17edbb3d08"
 BASELINE_TYPED_WRITES_PATCH_SHA256 = "67098af5a8696f332c46a1cfaec05746728511698c743984b6bd520659b5b56c"
@@ -38,7 +39,7 @@ def observe(path, protocol, workload):
     assert raw["protocolName"] == raw["downstreamALPN"] == protocol, raw
     assert raw["workload"] == workload and raw["upstreamALPN"], raw
     assert set(raw["upstreamALPN"]) == {protocol}, raw["upstreamALPN"]
-    count = 100 if workload == "latency" else 1
+    count = 100 if workload == "latency" else THROUGHPUT_MEASURED_RESPONSES
     paths = [f"/{workload}/{index}" for index in range(count + 1)]
     assert raw["originPaths"] == paths, raw["originPaths"]
     assert [item["path"] for item in raw["exchanges"]] == paths
@@ -49,6 +50,7 @@ def observe(path, protocol, workload):
     digest = expected_digest(expected_bytes)
     protocol_version = "HTTP/2" if protocol == "h2" else "HTTP/1.1"
     intervals = []
+    response_intervals = []
     for index, exchange in enumerate(raw["exchanges"]):
         capture = captures[exchange["path"]]
         assert capture["protocolName"] == protocol_version and capture["status"] == 200, capture
@@ -60,13 +62,15 @@ def observe(path, protocol, workload):
         assert capture["headTime"] <= exchange["end"], "capture follows response completion"
         if index:
             intervals.append(capture["headTime"] - exchange["start"])
+            response_intervals.append(exchange["end"] - exchange["start"])
     if workload == "latency":
         value = statistics.median(intervals)
     else:
-        measured = raw["exchanges"][1]
-        value = PAYLOAD_BYTES / 1048576 / ((measured["end"] - measured["start"]) / 1e9)
+        value = count * PAYLOAD_BYTES / 1048576 / (sum(response_intervals) / 1e9)
     return {"value": value, "unit": "nanoseconds" if workload == "latency" else "MiB/s",
             "warmupVerified": True, "firstEventIntervalsNanoseconds": intervals,
+            "measuredResponseCount": count, "measuredResponseBytes": count * expected_bytes,
+            "responseIntervalsNanoseconds": response_intervals,
             "correctness": "passed", "rawReport": str(path)}
 
 
@@ -139,6 +143,10 @@ def main(arguments):
                   "untouchedBaselinePerformance": "unavailable: original revision does not compile"
               },
               "benchmarkRevision": arguments.benchmark_revision, "configuration": "release",
+              "samplingMethod": "C18.fixed-throughput-batch.v2",
+              "throughputSampling": {"measuredResponses": THROUGHPUT_MEASURED_RESPONSES,
+                                     "warmupResponses": 1, "responseBytes": PAYLOAD_BYTES,
+                                     "aggregation": "totalBytes/sumResponseDurations"},
               "optionalStage2Features": "absent", "captureBodyLimit": 0,
               "cells": [], "executionOrder": [], "status": "unverified"}
     for variant in ("baseline", "candidate"):

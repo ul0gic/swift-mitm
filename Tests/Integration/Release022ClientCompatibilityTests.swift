@@ -222,13 +222,40 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         configuration.timeoutIntervalForRequest = 10
         let proxyPort = try XCTUnwrap(UInt16(exactly: port))
         let endpointPort = try XCTUnwrap(NWEndpoint.Port(rawValue: proxyPort))
-        var proxyConfiguration = ProxyConfiguration(httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: endpointPort))
-        proxyConfiguration.matchDomains = [originHost]
+        let proxyConfiguration = ProxyConfiguration(httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: endpointPort))
+        let native = proxyConfiguration._nw
+        nw_proxy_config_clear_match_domains(native)
+        nw_proxy_config_clear_excluded_domains(native)
+        originHost.withCString { nw_proxy_config_add_match_domain(native, $0) }
+        nw_proxy_config_set_failover_allowed(native, false)
+        assertNativeProxyConfiguration(proxyConfiguration, originHost: originHost, phase: "prepared")
         configuration.proxyConfigurations = [proxyConfiguration]
         let der = try NIOSSLCertificate(bytes: Array(authority.caCertificatePEM.utf8), format: .pem).toDERBytes()
         let root = try XCTUnwrap(SecCertificateCreateWithData(nil, Data(der) as CFData))
         let delegate = Release022URLSessionTrust(root: root)
-        return URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+        let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+        let copied = session.configuration.proxyConfigurations
+        XCTAssertEqual(copied.count, 1)
+        for proxy in copied.prefix(4) {
+            assertNativeProxyConfiguration(proxy, originHost: originHost, phase: "copied")
+        }
+        return session
+    }
+
+    private func assertNativeProxyConfiguration(_ proxy: ProxyConfiguration, originHost: String, phase: String) {
+        var matches: [String?] = []
+        var exclusions: [String?] = []
+        nw_proxy_config_enumerate_match_domains(proxy._nw) { matches.append(String(validatingCString: $0)) }
+        nw_proxy_config_enumerate_excluded_domains(proxy._nw) { exclusions.append(String(validatingCString: $0)) }
+        let failover = nw_proxy_config_get_failover_allowed(proxy._nw)
+        XCTAssertEqual(matches, [Optional(originHost)])
+        XCTAssertEqual(exclusions, [])
+        XCTAssertFalse(failover)
+        let shownMatches = matches.prefix(4).map { $0?.prefix(128) }
+        let shownExclusions = exclusions.prefix(4).map { $0?.prefix(128) }
+        let facts = "phase=\(phase), failover=\(failover), matchCount=\(matches.count), matches=\(shownMatches), "
+            + "excludedCount=\(exclusions.count), exclusions=\(shownExclusions)"
+        FileHandle.standardError.write(Data("URLSession native proxy: \(facts)\n".utf8))
     }
 
     private struct CurlResult {

@@ -24,8 +24,12 @@ class DiagnosticUnavailable(RuntimeError):
     pass
 
 
+class CollectorProcessUnreaped(DiagnosticUnavailable):
+    pass
+
+
 async def collect(tool, pid, mode, output, *, command=None, byte_limit=32 * 1024 * 1024,
-                  tool_name="malloc_history"):
+                  tool_name="malloc_history", timeout_seconds=5):
     output.parent.mkdir(parents=True, exist_ok=True)
     started = time.monotonic_ns()
     process = await asyncio.create_subprocess_exec(
@@ -33,9 +37,10 @@ async def collect(tool, pid, mode, output, *, command=None, byte_limit=32 * 1024
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
     )
     size = 0
-    record = {"mode": mode, "startedMonotonicNanoseconds": started, "complete": False}
+    record = {"mode": mode, "startedMonotonicNanoseconds": started, "complete": False,
+              "timeoutSeconds": timeout_seconds, "processReaped": False}
     try:
-        async with asyncio.timeout(5):
+        async with asyncio.timeout(timeout_seconds):
             with output.open("wb") as destination:
                 while chunk := await process.stdout.read(65536):
                     remaining = byte_limit - size
@@ -45,20 +50,24 @@ async def collect(tool, pid, mode, output, *, command=None, byte_limit=32 * 1024
                         raise DiagnosticUnavailable(
                             f"{tool_name} output exceeded {byte_limit // (1024 * 1024)} MiB; retained prefix is incomplete")
                 await process.wait()
+                record["processReaped"] = True
         record["returnCode"] = process.returncode
         if process.returncode != 0 or size == 0:
             raise DiagnosticUnavailable(f"{tool_name} {mode}: exit={process.returncode}, outputBytes={size}")
         record["complete"] = True
     except TimeoutError as error:
-        raise DiagnosticUnavailable(f"{tool_name} {mode} exceeded its 5s collection deadline") from error
+        raise DiagnosticUnavailable(
+            f"{tool_name} {mode} exceeded its {timeout_seconds}s collection deadline") from error
     finally:
         try:
             if process.returncode is None:
                 process.kill()
+            if not record["processReaped"]:
                 await asyncio.wait_for(process.wait(), timeout=3)
+                record["processReaped"] = True
         except TimeoutError as error:
             record["complete"] = False
-            raise DiagnosticUnavailable(f"{tool_name} {mode} exceeded its 3s kill/reap deadline") from error
+            raise CollectorProcessUnreaped(f"{tool_name} {mode} exceeded its 3s kill/reap deadline") from error
         finally:
             record.update(returnCode=process.returncode, outputBytes=size,
                           endedMonotonicNanoseconds=time.monotonic_ns())

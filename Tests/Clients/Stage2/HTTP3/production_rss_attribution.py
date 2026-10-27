@@ -8,7 +8,7 @@ import sys
 import time
 import traceback
 
-from production_allocations import DiagnosticUnavailable, collect
+from production_allocations import CollectorProcessUnreaped, DiagnosticUnavailable, collect
 from production_maximum_cycles import BYTE_LIMIT, run_case
 from production_memory import zero
 from production_resources import CURRENT, read_resources
@@ -45,21 +45,31 @@ async def checkpoint(arguments, report, host, ready, number, cycle):
         record["before"] = await zero(ready["resourcesPath"], BYTE_LIMIT,
                                      cycle["phaseSamples"]["closedQuiescent"]["sampleEndedNanoseconds"])
         record["captureBefore"] = capture_metadata(ready["capturePath"])
-        for tool, mode, name, command, limit in (
-            (arguments.malloc_history, "-allBySize", "malloc_history", None, 32 * 1024 * 1024),
-            (arguments.vmmap, "-summary", "vmmap", ("-summary", str(host.pid)), 1024 * 1024),
+        for tool, mode, name, command, limit, seconds in (
+            (arguments.vmmap, "-summary", "vmmap", ("-summary", str(host.pid)), 1024 * 1024, 5),
+            (arguments.malloc_history, "-allBySize", "malloc_history", None, 32 * 1024 * 1024, 20),
         ):
             target = output / f"cycle-{number:02d}-{name}.txt"
             tool_report = {"tool": name, "artifact": target.name, "complete": False}
             record["reports"].append(tool_report)
-            tool_report.update(await collect(tool, host.pid, mode, target, command=command,
-                                             byte_limit=limit, tool_name=name))
+            try:
+                tool_report.update(await collect(tool, host.pid, mode, target, command=command,
+                                                 byte_limit=limit, tool_name=name, timeout_seconds=seconds))
+            except CollectorProcessUnreaped:
+                raise
+            except DiagnosticUnavailable as error:
+                evidence = json.loads(target.with_suffix(".json").read_text(encoding="utf-8"))
+                tool_report.update(evidence)
+                tool_report["reason"] = f"{type(error).__name__}: {error}"
+                tool_report["complete"] = False
+                if evidence["processReaped"] is not True or type(evidence["returnCode"]) is not int:
+                    raise CollectorProcessUnreaped(f"{name} has no confirmed child exit in its sidecar") from error
         record["captureAfter"] = capture_metadata(ready["capturePath"])
         observed = read_resources(ready["resourcesPath"], byte_limit=BYTE_LIMIT)
         record["after"] = await zero(ready["resourcesPath"], BYTE_LIMIT, observed["sampleEndedNanoseconds"])
         assert all(record["after"][key] == 0 for key in CURRENT)
         assert all(value == 0 for value in record["after"]["local"].values())
-        record["complete"] = True
+        record["complete"] = all(item["complete"] for item in record["reports"])
     finally:
         record.setdefault("complete", False)
         (output / "checkpoints.json").write_text(json.dumps(report["checkpoints"], indent=2), encoding="utf-8")
@@ -79,7 +89,7 @@ async def main(arguments):
         "attribution": "unverified: complete symbolicated reports require interpretation",
         "unsampledPeakAndFreedAllocationHistory": "unverified; compact logging records current live allocations",
         "observerCosts": "whole host includes unchanged recorder and allocation instrumentation; no modeled subtraction",
-        "bounds": {"runSeconds": 330, "peerProcessSeconds": 360, "toolSeconds": 5,
+        "bounds": {"runSeconds": 390, "peerProcessSeconds": 420, "allocationToolSeconds": 20, "vmToolSeconds": 5,
                    "killReapSeconds": 3, "allocationReportBytes": 32 * 1024 * 1024,
                    "vmReportBytes": 1024 * 1024},
     }
@@ -97,10 +107,10 @@ async def main(arguments):
         async def observe(host, ready, number, cycle):
             await checkpoint(arguments, report, host, ready, number, cycle)
 
-        async with asyncio.timeout(330):
+        async with asyncio.timeout(390):
             report["protocolObservation"] = await run_case(
                 arguments.binary, "memory-maximum-cycles", artifacts, checkpoint=observe,
-                host_environment=environment, peer_seconds=360)
+                host_environment=environment, peer_seconds=420)
         report["workload"] = "passed under instrumentation"
         code = 0
     except TimeoutError as error:
@@ -120,6 +130,8 @@ async def main(arguments):
         if ([item["cycle"] for item in report["checkpoints"]] == list(CHECKPOINTS)
                 and all(item["complete"] and len(item["reports"]) == 2 for item in report["checkpoints"])):
             report["collection"] = "captured"
+        elif code == 0:
+            code = 2
         arguments.output.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps({"collection": report["collection"], "workload": report["workload"],
                       "report": str(arguments.output)}))

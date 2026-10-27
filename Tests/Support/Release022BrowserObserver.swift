@@ -116,7 +116,7 @@ final class Release022RunnerTrust {
         var failures: [any Error] = []
         if trustAttempted {
             do {
-                _ = try adminSecurity(["remove-trusted-cert", "-d", certificate.path])
+                try release022RemoveRunnerTrust(certificate: certificate, fingerprint: rootIdentity.fingerprint)
                 try release022RequireRunnerTrustAbsent(rootIdentity.certificate)
                 trustAttempted = false
             } catch { failures.append(error) }

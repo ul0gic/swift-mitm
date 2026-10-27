@@ -19,6 +19,7 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
     let admission: ResourceAdmissionController?
     let fixedDestination: HTTPForwardTarget?
     let typedHTTP2: Bool
+    let terminalResponseHeaders: NIOLoopBound<HTTP2TerminalResponseHeaders>?
     let externallyCaptured: Bool
     let suppliedRequestID: UUID?
     let reusePool: HTTP1ReusePool?
@@ -42,6 +43,7 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
         connectionID: UUID,
         connect: @escaping @Sendable (HTTPForwardTarget, EventLoop) -> EventLoopFuture<HTTPForwardConnection>,
         onCONNECT: @escaping @Sendable (Channel, String) -> Void,
+        terminalResponseHeaders: NIOLoopBound<HTTP2TerminalResponseHeaders>? = nil,
         options: HTTPForwardOptions = HTTPForwardOptions()
     ) {
         self.sink = sink
@@ -49,6 +51,7 @@ final class ExplicitHTTPProxyHandler: ChannelInboundHandler, RemovableChannelHan
         self.connectionID = connectionID
         self.connect = connect
         self.onCONNECT = onCONNECT
+        self.terminalResponseHeaders = terminalResponseHeaders
         onResourceLimit = options.onResourceLimit
         controlRuntime = options.controlRuntime
         controlEventSink = options.controlEventSink

@@ -36,9 +36,15 @@ private final class Stage2RestartDiagnostics {
     let healthyWire = Release022WireObservation()
     var usage: HTTPControlResourceUsage?
     var callbackReleased = false
+    var stopCompleted: Bool?
+    private let scenario: String
     private let started = DispatchTime.now().uptimeNanoseconds
     private var phaseStarted = DispatchTime.now().uptimeNanoseconds
     private var phase = "initializing"
+
+    init(scenario: String = "Restart") {
+        self.scenario = scenario
+    }
 
     func begin(_ name: String) {
         phase = name
@@ -65,8 +71,11 @@ private final class Stage2RestartDiagnostics {
         }
         let healthy = healthyWire.bytes
         let healthyStatus200 = healthy.starts(with: Array("HTTP/1.1 200 ".utf8))
-        XCTFail("Restart acceptance phase=\(phase) elapsedNs=\(now - started) phaseElapsedNs=\(now - phaseStarted) "
+        let stopped = stopCompleted.map { $0 ? "true" : "false" } ?? "not-observed"
+        XCTFail("\(scenario) acceptance phase=\(phase) elapsedNs=\(now - started) "
+            + "phaseElapsedNs=\(now - phaseStarted) "
             + "callbackEntered=\(blocked.entered) callbackReleased=\(callbackReleased) runtimeLast={\(observed)} "
+            + "stopCompleted=\(stopped) "
             + "admissionConnections=\(current.connections) admissionStreams=\(current.streams) "
             + "admissionBytes=\(current.retainedBytes) originRequests=\(peer.origin.requests.count) "
             + "firstWireBytes=\(firstWire.bytes.count) healthyWireBytes=\(healthy.count) "
@@ -82,48 +91,98 @@ final class Stage2CancellationAcceptanceTests: XCTestCase {
         ], limits: HTTPControlLimits(maximumTasks: 2)))
         let blocked = Stage2BlockedControlSink()
         let admission = ResourceAdmissionController(configuration: try ResourceAdmissionConfiguration())
+        let diagnostics = Stage2RestartDiagnostics(scenario: "Stop")
         defer { blocked.release() }
         try await stage2WithHTTPOrigin(runtime: runtime, controlSink: blocked, admission: admission) { peer in
-            let received = Release022WireObservation()
-            let client = try release022WireClient(group: peer.group, port: peer.proxyPort, observation: received)
-            try phase4BoundedWait(client.writeAndFlush(ByteBuffer(string:
-                "GET http://127.0.0.1:\(peer.origin.port)/blocked HTTP/1.1\r\n"
-                    + "Host: localhost\r\nX-Snapshot: retained\r\n\r\n")))
-            try await stage2Await { blocked.entered }
-            try await client.close().get()
-            try await stage2AwaitAsync { await runtime.resourceUsage().orphanedCallbacks == 1 }
-            let stopping = NIOLockedValueBox(false)
-            let proxy = peer.proxy
-            let stop = Task {
-                try await proxy.stop()
-                stopping.withLockedValue { $0 = true }
-            }
             do {
-                try await stage2Await { stopping.withLockedValue { $0 } }
-                let orphan = await runtime.resourceUsage()
-                XCTAssertEqual(orphan.orphanedCallbacks, 1)
-                XCTAssertEqual(orphan.callbackTasks, 1)
-                XCTAssertGreaterThan(orphan.retainedBytes, 0)
-                XCTAssertGreaterThan(admission.usage.retainedBytes, 0)
-                XCTAssertEqual(admission.usage.connections, 0)
-                XCTAssertEqual(admission.usage.streams, 0)
-                XCTAssertTrue(peer.origin.requests.isEmpty)
-                blocked.release()
-                try await stop.value
-                try await stage2AwaitAsync {
-                    let usage = await runtime.resourceUsage()
-                    return usage.callbackTasks == 0 && usage.retainedBytes == 0 && admission.usage.retainedBytes == 0
-                }
+                try await prepareStoppedCallback(peer: peer, runtime: runtime, blocked: blocked, diagnostics: diagnostics)
             } catch {
-                let failure = error
-                blocked.release()
-                do { try await stop.value } catch { XCTFail("Stop failed after callback release: \(error)") }
-                throw failure
+                diagnostics.report(peer: peer, blocked: blocked, admission: admission)
+                throw error
             }
+            try await verifyStoppedCallback(
+                peer: peer, runtime: runtime, blocked: blocked, admission: admission, diagnostics: diagnostics
+            )
         }
         let usage = await runtime.resourceUsage()
         XCTAssertEqual(usage.orphanedCallbacks, 0)
         XCTAssertEqual(usage.retainedBytes, 0)
+    }
+
+    private func prepareStoppedCallback(
+        peer: Stage2HTTPContext,
+        runtime: HTTPControlRuntime,
+        blocked: Stage2BlockedControlSink,
+        diagnostics: Stage2RestartDiagnostics
+    ) async throws {
+        diagnostics.begin("first-connect")
+        let client = try release022WireClient(
+            group: peer.group, port: peer.proxyPort, observation: diagnostics.firstWire
+        )
+        diagnostics.begin("first-write")
+        try phase4BoundedWait(client.writeAndFlush(ByteBuffer(string:
+            "GET http://127.0.0.1:\(peer.origin.port)/blocked HTTP/1.1\r\n"
+                + "Host: localhost\r\nX-Snapshot: retained\r\n\r\n")))
+        diagnostics.begin("callback-entry")
+        try await stage2Await { blocked.entered }
+        diagnostics.begin("first-close")
+        try await client.close().get()
+        diagnostics.begin("orphan-registration")
+        try await stage2AwaitAsync {
+            let usage = await runtime.resourceUsage()
+            diagnostics.usage = usage
+            return usage.orphanedCallbacks == 1
+        }
+    }
+
+    private func verifyStoppedCallback(
+        peer: Stage2HTTPContext,
+        runtime: HTTPControlRuntime,
+        blocked: Stage2BlockedControlSink,
+        admission: ResourceAdmissionController,
+        diagnostics: Stage2RestartDiagnostics
+    ) async throws {
+        let stopping = NIOLockedValueBox(false)
+        let proxy = peer.proxy
+        let stop = Task {
+            try await proxy.stop()
+            stopping.withLockedValue { $0 = true }
+        }
+        do {
+            diagnostics.begin("stop-completion")
+            try await stage2Await {
+                let completed = stopping.withLockedValue { $0 }
+                diagnostics.stopCompleted = completed
+                return completed
+            }
+            diagnostics.begin("stopped-usage")
+            let orphan = await runtime.resourceUsage()
+            diagnostics.usage = orphan
+            XCTAssertEqual(orphan.orphanedCallbacks, 1)
+            XCTAssertEqual(orphan.callbackTasks, 1)
+            XCTAssertGreaterThan(orphan.retainedBytes, 0)
+            XCTAssertGreaterThan(admission.usage.retainedBytes, 0)
+            XCTAssertEqual(admission.usage.connections, 0)
+            XCTAssertEqual(admission.usage.streams, 0)
+            XCTAssertTrue(peer.origin.requests.isEmpty)
+            diagnostics.begin("callback-release")
+            blocked.release()
+            diagnostics.callbackReleased = true
+            diagnostics.begin("stop-join")
+            try await stop.value
+            diagnostics.begin("final-zero")
+            try await stage2AwaitAsync {
+                let usage = await runtime.resourceUsage()
+                diagnostics.usage = usage
+                return usage.callbackTasks == 0 && usage.retainedBytes == 0 && admission.usage.retainedBytes == 0
+            }
+        } catch {
+            let failure = error
+            diagnostics.report(peer: peer, blocked: blocked, admission: admission)
+            blocked.release()
+            do { try await stop.value } catch { XCTFail("Stop failed after callback release: \(error)") }
+            throw failure
+        }
     }
 
     func testRestartWithSharedEventLoopRetainsOrphanAccountingAndServesNewTraffic() async throws {
@@ -174,7 +233,11 @@ final class Stage2CancellationAcceptanceTests: XCTestCase {
         diagnostics: Stage2RestartDiagnostics
     ) async throws {
         diagnostics.begin("first-connect")
-        let first = try release022WireClient(group: peer.group, port: peer.proxyPort, observation: diagnostics.firstWire)
+        let first = try release022WireClient(
+            group: peer.group,
+            port: peer.proxyPort,
+            observation: diagnostics.firstWire
+        )
         diagnostics.begin("first-write")
         try phase4BoundedWait(first.writeAndFlush(ByteBuffer(string:
             "GET http://127.0.0.1:\(peer.origin.port)/blocked HTTP/1.1\r\nHost: localhost\r\n\r\n")))

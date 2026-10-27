@@ -186,6 +186,13 @@ async def exercise(ready, authority, certificate, peer, evidence):
 async def run_case(binary, name, artifacts):
     assert name in CASES
     artifacts.mkdir(parents=True, exist_ok=True)
+    (artifacts / "write-trace-scope.json").write_text(json.dumps({
+        "environment": {"SWIFTMITM_HTTP3_WRITE_TRACE": "1"},
+        "maximumRecords": 4096, "maximumBytes": 1048576,
+        "absenceInterpretationRequires": ["schema SwiftMITMHTTP3.writeTrace.v1", "truncated=false",
+                                          "encodingFailed=false", "summary records equals retained event count"],
+        "scope": "Diagnostic observer allocation and timing costs included; no uninstrumented performance claim"
+    }, indent=2), encoding="utf-8")
     with tempfile.TemporaryDirectory(prefix="swiftmitm-h3-upload-") as temporary:
         directory = Path(temporary)
         ready_path, origin_ready = directory / "host-ready.json", directory / "origin" / "ready.json"
@@ -207,7 +214,7 @@ async def run_case(binary, name, artifacts):
                 config_path.write_text(json.dumps(config), encoding="utf-8")
                 host = await asyncio.create_subprocess_exec(
                     str(binary), "--configuration", str(config_path), stdout=host_log,
-                    stderr=asyncio.subprocess.STDOUT, env=environment
+                    stderr=asyncio.subprocess.STDOUT, env=dict(environment, SWIFTMITM_HTTP3_WRITE_TRACE="1")
                 )
                 ready = await readiness(ready_path, host)
                 report = await exercise(ready, config["authority"], Path(ready["certificate"]), peer,
@@ -236,6 +243,7 @@ async def run_case(binary, name, artifacts):
                         retain_tail(source, artifacts / target)
                     retain_flow_trace(origin_ready.parent / "flow.qlog", artifacts / "origin.qlog")
                     retain_flow_trace(Path(str(ready_path) + ".capture.json"), artifacts / "capture.json")
+                    retain_flow_trace(Path(str(ready_path) + ".write-trace.jsonl"), artifacts / "write-trace.jsonl")
 
 
 if __name__ == "__main__":

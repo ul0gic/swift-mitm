@@ -484,7 +484,7 @@ jobs:
             -r Tests/Clients/Stage2/HTTP3/requirements.txt
           "$RUNNER_TEMP/http3-production-peers/bin/python" -m pip freeze > evidence/peer-versions.txt
       - name: Attribute maximum-cycle resident memory
-        timeout-minutes: 7
+        timeout-minutes: 8
         run: |
           "$RUNNER_TEMP/http3-production-peers/bin/python" Tests/Clients/Stage2/HTTP3/production_rss_attribution.py \
             --binary "$RUNNER_TEMP/production-host/HTTP3ProductionHost" \

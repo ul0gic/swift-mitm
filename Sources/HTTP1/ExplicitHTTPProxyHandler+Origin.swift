@@ -62,6 +62,11 @@ extension ExplicitHTTPProxyHandler {
     ) throws {
         let channel = connection.channel
         if connection.usesHTTP2Codec {
+            if let terminalResponseHeaders {
+                try channel.pipeline.syncOperations.addHandler(HTTP2TerminalResponseObserver(
+                    state: terminalResponseHeaders
+                ))
+            }
             try channel.pipeline.syncOperations.addHandlers([
                 HTTP2FramePayloadToHTTP1ClientCodec(httpProtocol: target.scheme == "https" ? .https : .http),
                 HTTPForwardResponseHandler(owner: self)

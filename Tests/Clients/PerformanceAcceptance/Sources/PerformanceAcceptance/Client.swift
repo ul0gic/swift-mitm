@@ -17,7 +17,7 @@ func measureClient(group: EventLoopGroup, input: ClientInput) throws -> [Exchang
     let channel = try openTunnel(group: group, input: input)
     do {
         let multiplexer = try configureClient(channel, input: input)
-        let count = input.workload == "latency" ? 100 : 1
+        let count = input.workload == "latency" ? 100 : 16
         let shared = input.protocolName == "http/1.1" ? try addCollector(channel) : nil
         var result: [ExchangeMeasurement] = []
         for index in 0 ... count {

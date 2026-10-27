@@ -145,6 +145,7 @@ final class HTTP2ControlStreamSelector: ChannelInboundHandler, RemovableChannelH
         let server = server
         let sink = sink
         let options = options(destination: destination, requestID: requestID)
+        let terminalHeaders = NIOLoopBound(HTTP2TerminalResponseHeaders(), eventLoop: context.eventLoop)
         try context.pipeline.syncOperations.addHandlers([
             HTTP2CaptureTapHandler(
                 direction: .request,
@@ -154,6 +155,11 @@ final class HTTP2ControlStreamSelector: ChannelInboundHandler, RemovableChannelH
                 sink: sink,
                 captureBodyLimit: captureBodyLimit,
                 errorState: errorState
+            ),
+            HTTP2TerminalResponseWriter(
+                state: terminalHeaders,
+                runtime: server.controlRuntime,
+                admission: server.admission
             ),
             HTTP2FramePayloadToHTTP1ServerCodec(),
             ExplicitHTTPProxyHandler(
@@ -170,6 +176,7 @@ final class HTTP2ControlStreamSelector: ChannelInboundHandler, RemovableChannelH
                     )
                 },
                 onCONNECT: { stream, _ in stream.close(promise: nil) },
+                terminalResponseHeaders: terminalHeaders,
                 options: options
             )
         ])
