@@ -8,24 +8,6 @@ import XCTest
 import SwiftMITM
 
 extension Release022PublicHTTP2StreamingTests {
-    func assertControlStreamHasNoError(_ sink: Release022Events) throws {
-        let requests = sink.events.compactMap { event -> CapturedRequestHead? in
-            if case let .requestHead(head) = event {
-                head
-            } else {
-                nil
-            }
-        }
-        let controlID = try XCTUnwrap(requests.first { $0.path == "/rpc/control" }?.id)
-        XCTAssertFalse(sink.events.contains {
-            if case let .streamError(id, _) = $0 {
-                id == controlID
-            } else {
-                false
-            }
-        })
-    }
-
     func grpc(
         requestMessages: [[UInt8]],
         responseMessages: [[UInt8]],

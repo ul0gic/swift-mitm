@@ -4,6 +4,7 @@
 excluded:
   - DerivedData
   - .build
+  - Examples/FirstCapture/.build
   - .project
   - .codex
   - Vendor

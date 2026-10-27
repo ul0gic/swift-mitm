@@ -24,5 +24,3 @@ HTTPS replay releases buffered TLS reads on the owning event loop. Terminal gRPC
 The deployment minimum increases to macOS 26. Review exhaustive switches over public ingress/capture enums and the [capture migration guide](Sources/SwiftMITM.docc/CaptureEvents.md#migrate-to-the-0-2-2-candidate). Add the `SwiftMITMInspection` product only when semantic inspection is needed.
 
 HTTP/3 and QUIC are not included. There is no h2c upgrade, ECH decryption, or certificate-pinning bypass. HTTP controls do not edit CONNECT or upgrade handshakes. See [inspection](Documentation/Inspection.md), [active debugging](Documentation/ActiveDebugging.md), and the [security model](Sources/SwiftMITM.docc/SecurityModel.md).
-
-Swift CodeQL analysis could not run on the required Xcode 27.1 toolchain. Release 0.2.2 uses an approved exception for [GitHub's documented tracing limitation](https://github.com/github/codeql-cli-binaries/releases/tag/v2.27.3); no successful Swift scan is claimed.

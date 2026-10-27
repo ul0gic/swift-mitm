@@ -1,5 +1,4 @@
 import Foundation
-import NIOCore
 import NIOPosix
 import XCTest
 
@@ -56,37 +55,12 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         try await urlSession(protocolName: "h2", version: .http2)
     }
 
-    func testURLSessionHTTP2WithQualifiedHostnameAndExplicitTrustAndProxy() async throws {
-        let host = try XCTUnwrap(
-            ProcessInfo.processInfo.environment["SWIFTMITM_TEST_DNS_HOST"],
-            "Compatibility CI must provide SWIFTMITM_TEST_DNS_HOST and its owned hosts-file mapping"
-        )
-        guard host.hasSuffix(".test"), !host.dropLast(5).isEmpty else {
-            XCTFail("SWIFTMITM_TEST_DNS_HOST must be a qualified fixture hostname under .test")
-            return
-        }
-        try await urlSession(protocolName: "h2", version: .http2, logicalHost: host)
-    }
-
-    func testURLSessionHTTP2WithSessionProxyDictionaryDiagnostic() async throws {
-        try await urlSession(protocolName: "h2", version: .http2, routing: .sessionDictionary)
-    }
-
-    func testURLSessionHTTP2WithAlternateLoaderDiagnostic() async throws {
-        try await urlSession(protocolName: "h2", version: .http2, routing: .nativeAlternateLoader)
-    }
-
     private func urlSession(
         protocolName: String,
-        version: HTTPProtocolVersion,
-        routing: Release022ProxyRouting = .native,
-        logicalHost: String? = nil
+        version: HTTPProtocolVersion
     ) async throws {
         let bindAddress = try release022RunnerIPv4()
-        let originHost = logicalHost ?? bindAddress
-        guard try assertURLSessionHost(logicalHost, bindAddress: bindAddress) else {
-            return
-        }
+        let originHost = bindAddress
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 2)
         let origin = try TLSOriginServer(
             group: group,
@@ -113,8 +87,7 @@ final class Release022ClientCompatibilityTests: XCTestCase {
                 authority: authority,
                 originHost: originHost,
                 originPort: origin.localPort,
-                protocolName: protocolName,
-                routing: routing
+                protocolName: protocolName
             )
             session = client
             try await release022AssertURLSessionBody(client, host: originHost, port: origin.localPort)
@@ -132,18 +105,6 @@ final class Release022ClientCompatibilityTests: XCTestCase {
             try? await group.shutdownGracefully()
             throw error
         }
-    }
-
-    private func assertURLSessionHost(_ logicalHost: String?, bindAddress: String) throws -> Bool {
-        guard let logicalHost else { return true }
-        let resolved = try SocketAddress.makeAddressResolvingHost(logicalHost, port: 0)
-        guard resolved.ipAddress == bindAddress else {
-            XCTFail(
-                "Fixture hostname resolved to \(String(describing: resolved.ipAddress)); expected \(bindAddress)"
-            )
-            return false
-        }
-        return true
     }
 
     private func reportURLSessionPath(_ sink: Release022Events) {

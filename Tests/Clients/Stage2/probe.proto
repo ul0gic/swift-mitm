@@ -1,8 +1,0 @@
-syntax = "proto3";
-package stage2;
-message Envelope {
-  int32 value = 1;
-}
-service Probe {
-  rpc Call(Envelope) returns (stream Envelope);
-}

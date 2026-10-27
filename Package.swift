@@ -78,8 +78,7 @@ let package = Package(
                 .product(name: "NIOTLS", package: "swift-nio"),
                 .product(name: "X509", package: "swift-certificates")
             ],
-            path: "Tests",
-            exclude: ["Clients"]
+            path: "Tests"
         )
     ]
 )

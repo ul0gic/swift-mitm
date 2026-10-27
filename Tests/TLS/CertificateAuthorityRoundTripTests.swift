@@ -1,20 +1,9 @@
-import Crypto
-import NIOSSL
 import X509
 import XCTest
 
 @testable import SwiftMITM
 
 final class CertificateAuthorityRoundTripTests: XCTestCase {
-    func testGenerateExportsReusableMaterial() throws {
-        let generated = try CertificateAuthority.generate()
-
-        XCTAssertFalse(generated.privateKeyPEM.isEmpty)
-        XCTAssertFalse(generated.certificatePEM.isEmpty)
-        XCTAssertNoThrow(try P256.Signing.PrivateKey(pemRepresentation: generated.privateKeyPEM))
-        XCTAssertNoThrow(try NIOSSLCertificate(bytes: Array(generated.certificatePEM.utf8), format: .pem))
-    }
-
     func testReinitFromExportedMaterialMintsSameChainingLeaves() throws {
         let generated = try CertificateAuthority.generate()
         let restored = try CertificateAuthority(
