@@ -244,7 +244,9 @@ extension ExplicitHTTPProxyHandler {
                   exchange.head.method != .HEAD,
                   exchange.head.method != .CONNECT else { throw HTTPControlError.unsupportedEdit }
             let headers = try controlledOriginalHeaders(exchange, phase: phase)
-            guard override || !HTTPControlConfiguration.hasNoTransform(headers) else { throw HTTPControlError.noTransform }
+            guard override || !HTTPControlConfiguration.hasNoTransform(headers) else {
+                throw HTTPControlError.noTransform
+            }
             let bytes = phase == .request ? exchange.controlBody.count : exchange.responseControlBody.count
             guard bytes <= maximum else { throw HTTPControlError.bodyLimitExceeded }
         case let .respond(_, _, body):

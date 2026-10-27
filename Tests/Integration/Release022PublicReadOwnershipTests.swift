@@ -49,21 +49,9 @@ final class Release022PublicReadOwnershipTests: XCTestCase {
             }
             try phase4BoundedWait(client.writeAndFlush(ByteBuffer(bytes: WebSocketWire.clientCloseFrame)))
             _ = try sink.wait { self.frames($0).count == 5 }
-            XCTAssertFalse(sink.events.contains {
-                if case .webSocketClose = $0 {
-                    true
-                } else {
-                    false
-                }
-            })
+            XCTAssertFalse(sink.events.contains(where: release022IsWebSocketClose))
             try origin.write(WebSocketWire.serverCloseFrame)
-            let events = try sink.wait { $0.contains {
-                if case .webSocketClose = $0 {
-                    true
-                } else {
-                    false
-                }
-            } }
+            let events = try sink.wait { $0.contains(where: release022IsWebSocketClose) }
             assertWebSocketDirectionsAndTerminal(events)
         }
     }

@@ -16,11 +16,11 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
         .package(
             url: "https://github.com/ul0gic/swift-nio-quic.git",
-            revision: "e29c3914b615d4c9153356079d5bbf7da08f959e"
+            revision: "b82a67556a5d9d3acd9c00348eb17f0817d4627f"
         ),
         .package(
             url: "https://github.com/ul0gic/swift-nio-http3.git",
-            revision: "63a3ba36b9c05aa9bf2851c7d9adb39c9988dde0"
+            revision: "e87575e97bf7af8097dfcc2039c42b2f3538a4f3"
         )
     ],
     targets: [

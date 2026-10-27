@@ -1,0 +1,15 @@
+--- a/Sources/NIOQUIC/SwiftNetwork/QUICChannelStreamHandler.swift
++++ b/Sources/NIOQUIC/SwiftNetwork/QUICChannelStreamHandler.swift
+@@ -967,7 +967,11 @@
+         guard boundedWritesEnabled, maximumBytesPerRead > 0, maximumBytesPerRead < Int.max else {
+             throw QUICWriteBufferError.capacityExceeded
+         }
+-        let (rawBytes, rawOverflow) = maximumBytesPerRead.multipliedReportingOverflow(by: 2)
++        let requestedRawCapacity = min(UInt64(maximumBytesPerRead), UInt64(UInt32.max))
++        var rawCapacity: UInt64 = 1
++        while rawCapacity < requestedRawCapacity { rawCapacity <<= 1 }
++        let roundedRawCapacity = Int(min(rawCapacity, UInt64(UInt32.max)))
++        let (rawBytes, rawOverflow) = roundedRawCapacity.multipliedReportingOverflow(by: 2)
+         let (outputBytes, outputOverflow) = maximumPendingWriteBytes.multipliedReportingOverflow(by: 3)
+         let (payloadBytes, sumOverflow) = rawBytes.addingReportingOverflow(outputBytes)
+         // Modeled container records only; native tickets, allocator/hash-table overhead and

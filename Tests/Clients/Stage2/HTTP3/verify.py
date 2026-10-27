@@ -17,6 +17,8 @@ from aioquic.h3.events import DataReceived, HeadersReceived
 from aioquic.quic.configuration import QuicConfiguration
 from aioquic.quic.events import ConnectionTerminated, HandshakeCompleted, StreamReset
 
+from wire import ENCODED_HEADER_LIMIT, FRAGMENT_VALUE, fragmented_headers, oversized_headers_prefix
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from client_tls import create_identity
 
@@ -38,12 +40,14 @@ class Client(QuicConnectionProtocol):
         self.http = H3Connection(self._quic)
         self.responses = {}
         self.alpn = None
+        self.connection_error = None
 
     def quic_event_received(self, event):
         if isinstance(event, HandshakeCompleted):
             self.alpn = event.alpn_protocol
             assert not event.early_data_accepted
         elif isinstance(event, ConnectionTerminated):
+            self.connection_error = event.error_code
             for response in self.responses.values():
                 if not response.done.is_set():
                     response.error = f"connection terminated: {event.error_code}"
@@ -104,6 +108,14 @@ class Client(QuicConnectionProtocol):
     def finish(self, stream):
         self._quic.send_stream_data(stream, b"", end_stream=True)
         self.transmit()
+
+    def raw_request(self):
+        if len(self.responses) >= 64:
+            raise RuntimeError("independent client request bound exceeded")
+        stream = self._quic.get_next_available_stream_id()
+        response = Response()
+        self.responses[stream] = response
+        return stream, response
 
 
 async def response_complete(response):
@@ -221,7 +233,61 @@ async def separated_fin(port, authority, certificate, peer):
             "initialStreamCredit": 128, "sameConnectionSubsequentStream": True}
 
 
-async def run_case(binary, name):
+async def hostile_headers(port, authority, certificate, peer, upstream):
+    async with connect("127.0.0.1", port, configuration=configuration(certificate, "localhost"),
+                       create_protocol=Client) as client:
+        if upstream:
+            _, response = client.request(authority, "/oversized-response-headers")
+        else:
+            stream, response = client.raw_request()
+            client._quic.send_stream_data(stream, oversized_headers_prefix(), end_stream=False)
+            client.transmit()
+        await asyncio.wait_for(response.done.wait(), timeout=10)
+        assert response.error, "oversized incomplete HEADERS did not explicitly fail"
+        assert not response.headers and not response.body, "oversized HEADERS reached HTTP delivery"
+        if not upstream:
+            assert client.connection_error == ErrorCode.H3_EXCESSIVE_LOAD, client.connection_error
+    if upstream:
+        async with asyncio.timeout(10):
+            while ErrorCode.H3_EXCESSIVE_LOAD not in json.loads(Path(peer["stats"]).read_text())["connectionErrors"]:
+                await asyncio.sleep(0.01)
+    else:
+        assert json.loads(Path(peer["stats"]).read_text())["requests"] == 0
+    async with connect("127.0.0.1", port, configuration=configuration(certificate, "localhost"),
+                       create_protocol=Client) as fresh:
+        assert await response_complete(fresh.request(authority, "/after-oversized-headers")[1]) == b"origin"
+    return {"direction": "response" if upstream else "request", "declaredEncodedBytes": ENCODED_HEADER_LIMIT + 1,
+            "payloadBytesSent": 0, "sentFIN": False, "rejectedBeforePayload": True,
+            "excessiveLoadCode": int(ErrorCode.H3_EXCESSIVE_LOAD), "freshConnectionProgress": True}
+
+
+async def fragmented_progress(port, authority, certificate):
+    async with connect("127.0.0.1", port, configuration=configuration(certificate, "localhost"),
+                       create_protocol=Client) as client:
+        stream, response = client.raw_request()
+        count = await fragmented_headers(client, stream, [
+            (b":method", b"GET"), (b":scheme", b"https"), (b":authority", authority.encode("ascii")),
+            (b":path", b"/fragmented-headers"), (b"x-fragment", FRAGMENT_VALUE)
+        ], end_stream=True)
+        assert await response_complete(response) == b"fragmented"
+        assert [value for name, value in response.headers if name == b"x-fragment"] == [FRAGMENT_VALUE]
+        assert await response_complete(client.request(authority, "/after-fragmented-headers")[1]) == b"origin"
+    return {"requestEncodedBytes": count, "decodedSyntheticValueBytes": len(FRAGMENT_VALUE),
+            "fragmentBoundaries": ["after-type", "after-length", "mid-payload"],
+            "acknowledgedBarriersEachDirection": 3, "sameConnectionSubsequentStream": True}
+
+
+def retain_tail(source, destination):
+    if not source.exists():
+        return
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with source.open("rb") as stream:
+        stream.seek(0, os.SEEK_END)
+        stream.seek(max(0, stream.tell() - 65536))
+        destination.write_bytes(stream.read(65536))
+
+
+async def run_case(binary, name, artifacts):
     with tempfile.TemporaryDirectory(prefix="swiftmitm-h3-") as temporary:
         directory = Path(temporary)
         ca_directory = directory / "ca"
@@ -257,7 +323,10 @@ async def run_case(binary, name):
                         while not proxy_ready.exists() and proxy.returncode is None:
                             await asyncio.sleep(0.02)
                     if proxy.returncode is not None:
-                        assert proxy.returncode != 0, "denied route silently exited successfully"
+                        assert proxy.returncode == 2, f"denied route exited unexpectedly: {proxy.returncode}"
+                        with (directory / "proxy.log").open("rb") as diagnostic:
+                            assert b"HTTP3TransportProbe: denied-route" in diagnostic.read(65536).splitlines(), \
+                                "startup failed without the typed route-denial diagnostic"
                     else:
                         ready = json.loads(proxy_ready.read_text())
                         await rejected(ready["port"], authority, certificate, hostname)
@@ -270,6 +339,11 @@ async def run_case(binary, name):
                                 await asyncio.sleep(0.02)
                     elif name == "separated-fin":
                         report = await separated_fin(ready["port"], authority, certificate, peer)
+                    elif name in ("oversized-request-headers", "oversized-response-headers"):
+                        report = await hostile_headers(ready["port"], authority, certificate, peer,
+                                                       upstream=name == "oversized-response-headers")
+                    elif name == "fragmented-headers":
+                        report = await fragmented_progress(ready["port"], authority, certificate)
                     elif name == "changed-authority":
                         await rejected(ready["port"], f"other.invalid:{peer['port']}", certificate, hostname)
                     elif name == "downstream-trust":
@@ -292,23 +366,41 @@ async def run_case(binary, name):
                     assert stats["alpn"] and set(stats["alpn"]) == {"h3"}
                     assert stats["requests"] == 130, stats
                     return dict(report, upstreamALPN=stats["alpn"], originRequests=stats["requests"])
+                if name in ("oversized-request-headers", "oversized-response-headers", "fragmented-headers"):
+                    expected = 1 if name == "oversized-request-headers" else 2
+                    assert stats["requests"] == expected, stats
+                    assert stats["alpn"] and set(stats["alpn"]) == {"h3"}
+                    if name == "fragmented-headers":
+                        assert stats["fragmentedRequest"]
+                        assert 16384 < stats["fragmentedResponseBytes"] <= ENCODED_HEADER_LIMIT
+                        report["responseEncodedBytes"] = stats["fragmentedResponseBytes"]
+                    return dict(report, upstreamALPN=stats["alpn"], originRequests=stats["requests"])
                 assert stats["requests"] == 0, stats
                 if name == "denied-route":
                     assert stats["datagrams"] == 0, stats
                 return {"rejected": True, "originRequests": 0, "originDatagrams": stats["datagrams"]}
             finally:
-                if proxy is not None:
-                    await shutdown(proxy)
-                await shutdown(origin)
+                try:
+                    if proxy is not None:
+                        await shutdown(proxy)
+                finally:
+                    try:
+                        await shutdown(origin)
+                    finally:
+                        retain_tail(directory / "origin.log", artifacts / name / "origin.log")
+                        retain_tail(directory / "proxy.log", artifacts / name / "proxy.log")
+                        retain_tail(origin_ready.parent / "stats.json", artifacts / name / "origin-stats.json")
 
 
 async def main(arguments):
     results = {"peer": f"aioquic/{aioquic.__version__}", "checks": {}}
+    artifacts = arguments.output.parent / "http3-peer-logs"
     for name in ("streaming", "changed-authority", "upstream-hostname", "upstream-trust",
-                 "downstream-trust", "denied-route", "separated-fin"):
+                 "downstream-trust", "denied-route", "separated-fin", "oversized-request-headers",
+                 "oversized-response-headers", "fragmented-headers"):
         try:
             async with asyncio.timeout(90):
-                observation = await run_case(arguments.binary, name)
+                observation = await run_case(arguments.binary, name, artifacts)
             results["checks"][name] = {"result": "passed", "observation": observation}
         except (AssertionError, ConnectionError, RuntimeError, TimeoutError, OSError) as error:
             results["checks"][name] = {"result": "failed", "error": f"{type(error).__name__}: {error}"}

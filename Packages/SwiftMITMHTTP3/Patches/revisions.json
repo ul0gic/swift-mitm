@@ -1,0 +1,38 @@
+[
+  {
+    "repository": "swift-network-evolution",
+    "upstreamRevision": "ea74abb2beced205f5eb0379e4fa8cd66de2e66e",
+    "forkRevision": "2868d16fd31216ef617311210bacaa4a1f24994f",
+    "patches": [
+      "swift-network-evolution-split-fin.patch",
+      "swift-network-evolution-storage-completion.patch"
+    ],
+    "upstreamURL": "https://github.com/apple/swift-network-evolution",
+    "forkURL": "https://github.com/ul0gic/swift-network-evolution"
+  },
+  {
+    "repository": "swift-nio-quic",
+    "upstreamRevision": "11b231126952b3ef408c4e1ab95d14e16af5d867",
+    "forkRevision": "b82a67556a5d9d3acd9c00348eb17f0817d4627f",
+    "patches": [
+      "swift-nio-quic-bounded-read.patch",
+      "swift-nio-quic-bounded-send.patch",
+      "swift-nio-quic-stream-admission.patch",
+      "swift-nio-quic-rounded-read-reservation.patch"
+    ],
+    "upstreamURL": "https://github.com/apple/swift-nio-quic",
+    "forkURL": "https://github.com/ul0gic/swift-nio-quic"
+  },
+  {
+    "repository": "swift-nio-http3",
+    "upstreamRevision": "e2c54cdbf50dc64bf9e80861922f8d9400d2acce",
+    "forkRevision": "e87575e97bf7af8097dfcc2039c42b2f3538a4f3",
+    "patches": [
+      "swift-nio-http3-bounded-input.patch",
+      "swift-nio-http3-typed-decode-error.patch",
+      "swift-nio-http3-rounded-read-capacity.patch"
+    ],
+    "upstreamURL": "https://github.com/apple/swift-nio-http3",
+    "forkURL": "https://github.com/ul0gic/swift-nio-http3"
+  }
+]

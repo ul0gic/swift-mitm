@@ -38,7 +38,9 @@ struct ReplayPreparedRequest: Sendable {
                       authority: authority,
                       requestTarget: target.requestTarget
                   ),
-                  let url = URL(string: mapped.scheme + "://" + mapped.authority + mapped.requestTarget) else { throw ReplayError.invalidRequest }
+                  let url = URL(string: mapped.scheme + "://" + mapped.authority + mapped.requestTarget) else {
+                throw ReplayError.invalidRequest
+            }
             destination = url
             if mapped.authority != target.authority {
                 policy = .strip
@@ -88,7 +90,9 @@ struct ReplayPreparedRequest: Sendable {
               let host = source.host else { throw ReplayError.credentialScopeMismatch }
         let unbracketed = host.hasPrefix("[") && host.hasSuffix("]") ? String(host.dropFirst().dropLast()) : host
         guard ConnectionTarget.normalizedHost(unbracketed) == target.host,
-              (source.port ?? (target.scheme == "https" ? 443 : 80)) == target.port else { throw ReplayError.credentialScopeMismatch }
+              (source.port ?? (target.scheme == "https" ? 443 : 80)) == target.port else {
+            throw ReplayError.credentialScopeMismatch
+        }
         return true
     }
 

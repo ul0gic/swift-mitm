@@ -197,7 +197,7 @@ extension Stage2ControlResourceAcceptanceTests {
                 let client = try release022WireClient(group: peer.group, port: peer.proxyPort, observation: received)
                 let upgrade = index.isMultiple(of: 2)
                     ? "Connection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\n"
-                        + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                    + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
                     : ""
                 try phase4BoundedWait(client.writeAndFlush(ByteBuffer(string:
                     "GET http://127.0.0.1:\(peer.origin.port)/cycle/\(index) HTTP/1.1\r\n"
@@ -241,24 +241,26 @@ extension Stage2ControlResourceAcceptanceTests {
                 action: .editHeaders(remove: [], append: [HTTPHeaderField(name: "X-Controlled", value: "yes")])
             )
         ], limits: HTTPControlLimits()))
-        try await stage2WithHTTPOrigin(runtime: runtime, reply: { _ in
-            Stage2OriginReply(status: .payloadTooLarge, beforeRequestEnd: true)
-        }, body: { peer in
-            let request = ReplayRequest(
-                source: ReplaySource(requestID: UUID(), representation: .original),
-                destination: try XCTUnwrap(URL(string: "http://127.0.0.1:\(peer.origin.port)/early")),
-                method: "POST",
-                headers: [],
-                body: [UInt8](repeating: 97, count: 1_048_576),
-                bodyIsComplete: true,
-                useControls: true
-            )
-            let result = try await peer.proxy.replay(request, responseSink: Stage2ReplayEvents())
-            XCTAssertEqual(result.status, 413)
-            XCTAssertEqual(peer.origin.acceptedConnections, 1)
-            XCTAssertEqual(peer.origin.requests.count, 1)
-            XCTAssertEqual(peer.origin.requests.first?.head.headers.first(name: "x-controlled"), "yes")
-        })
+        try await stage2WithHTTPOrigin(
+            runtime: runtime,
+            reply: { _ in Stage2OriginReply(status: .payloadTooLarge, beforeRequestEnd: true) },
+            body: { peer in
+                let request = ReplayRequest(
+                    source: ReplaySource(requestID: UUID(), representation: .original),
+                    destination: try XCTUnwrap(URL(string: "http://127.0.0.1:\(peer.origin.port)/early")),
+                    method: "POST",
+                    headers: [],
+                    body: [UInt8](repeating: 97, count: 1_048_576),
+                    bodyIsComplete: true,
+                    useControls: true
+                )
+                let result = try await peer.proxy.replay(request, responseSink: Stage2ReplayEvents())
+                XCTAssertEqual(result.status, 413)
+                XCTAssertEqual(peer.origin.acceptedConnections, 1)
+                XCTAssertEqual(peer.origin.requests.count, 1)
+                XCTAssertEqual(peer.origin.requests.first?.head.headers.first(name: "x-controlled"), "yes")
+            }
+        )
     }
 
     func testResponseBodyReplacementPreservesTrailersAndOriginalCapture() async throws {
@@ -284,7 +286,8 @@ extension Stage2ControlResourceAcceptanceTests {
                     + "ETag: \"old\"\r\n\r\n4\r\norig\r\n0\r\nX-End: complete\r\n\r\n"
             ).utf8))
             _ = try peer.raw.wait { release022ResponseEnds($0).count == 1 }
-            let response = try peer.received.wait { String(bytes: $0, encoding: .utf8)?.contains("X-End: complete") == true }
+            let response = try peer.received
+                .wait { String(bytes: $0, encoding: .utf8)?.contains("X-End: complete") == true }
             let text = try XCTUnwrap(String(bytes: response, encoding: .utf8))
             XCTAssertTrue(text.contains("changed"))
             XCTAssertFalse(text.contains("orig"))

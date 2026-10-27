@@ -124,23 +124,11 @@ final class Release022PublicHTTP1Tests: XCTestCase {
             }
             .count == 2
             }
-            XCTAssertFalse(sink.events.contains {
-                if case .webSocketClose = $0 {
-                    true
-                } else {
-                    false
-                }
-            })
+            XCTAssertFalse(sink.events.contains(where: release022IsWebSocketClose))
             try origin.write(WebSocketWire.serverFrames + WebSocketWire.serverBinaryFrame)
             let byteCount = response.count + WebSocketWire.serverFrames.count + WebSocketWire.serverBinaryFrame.count
             _ = try received.waitForBytes(byteCount)
-            _ = try sink.wait { $0.contains {
-                if case .webSocketClose = $0 {
-                    true
-                } else {
-                    false
-                }
-            } }
+            _ = try sink.wait { $0.contains(where: release022IsWebSocketClose) }
             try assertWebSocketTerminalOrdering(sink.events)
         }
     }

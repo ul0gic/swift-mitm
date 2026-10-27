@@ -34,11 +34,7 @@ private final class Stage2BlockedControlSink: HTTPControlEventSink {
 final class Stage2CancellationAcceptanceTests: XCTestCase {
     func testStopReportsNoncooperativeCallbackUntilItsTaskAndBytesActuallyExit() async throws {
         let runtime = HTTPControlRuntime(configuration: try HTTPControlConfiguration(rules: [
-            HTTPRule(
-                id: "orphan",
-                match: HTTPRuleMatch(phase: .request, path: "/blocked"),
-                action: .breakpoint
-            )
+            HTTPRule(id: "orphan", match: HTTPRuleMatch(phase: .request, path: "/blocked"), action: .breakpoint)
         ], limits: HTTPControlLimits(maximumTasks: 2)))
         let blocked = Stage2BlockedControlSink()
         let admission = ResourceAdmissionController(configuration: try ResourceAdmissionConfiguration())

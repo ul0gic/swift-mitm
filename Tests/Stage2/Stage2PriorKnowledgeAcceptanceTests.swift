@@ -158,7 +158,7 @@ final class Stage2PriorKnowledgeAcceptanceTests: XCTestCase {
                 ) { stream in
                     stream.close()
                 }
-            .map { muxPromise.succeed($0) }
+                .map { muxPromise.succeed($0) }
             }
             .connect(host: "127.0.0.1", port: port)
             .get()

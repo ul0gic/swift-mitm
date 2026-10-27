@@ -35,7 +35,7 @@ struct HTTPForwardTarget: Sendable {
               ["http", "https"].contains(scheme),
               uri[..<separator.lowerBound].lowercased() == scheme else { return nil }
         let remainder = uri[separator.upperBound...]
-        let authorityEnd = remainder.firstIndex(where: { $0 == "/" || $0 == "?" }) ?? remainder.endIndex
+        let authorityEnd = remainder.firstIndex { $0 == "/" || $0 == "?" } ?? remainder.endIndex
         let rawAuthority = String(remainder[..<authorityEnd])
         guard !rawAuthority.isEmpty, !rawAuthority.contains("@") else { return nil }
         let explicitPort: Bool

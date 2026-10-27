@@ -109,7 +109,12 @@ extension ProxyServer {
             channel.close(promise: nil)
         }
         failureHandler?.value.updateStage(.upstreamTLS)
-        let negotiation = negotiateUpstreamTLS(on: channel, context: context, target: target, egressPolicy: egressPolicy)
+        let negotiation = negotiateUpstreamTLS(
+            on: channel,
+            context: context,
+            target: target,
+            egressPolicy: egressPolicy
+        )
         return enforceSetupDeadline(
             negotiation,
             timeout: timeoutPolicy.tlsHandshakeDeadline.nioTimeAmount ?? .seconds(10),

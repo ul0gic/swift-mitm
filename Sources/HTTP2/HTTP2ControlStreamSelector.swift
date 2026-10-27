@@ -34,8 +34,7 @@ final class HTTP2ControlStreamSelector: ChannelInboundHandler, RemovableChannelH
         guard !stopped else { return }
         let payload = unwrapInboundIn(data)
         if configuring {
-            do { try retain(payload) }
-            catch { fail(context) }
+            do { try retain(payload) } catch { fail(context) }
             return
         }
         guard case let .headers(frame) = payload else { fail(context); return }

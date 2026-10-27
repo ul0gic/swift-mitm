@@ -136,11 +136,7 @@ final class Release022PublicHTTP1ForwardingTests: XCTestCase {
                 .hasPrefix("GET /two HTTP/1.1\r\n"))
             XCTAssertEqual(first.received.bytes, firstRequest)
             try second.write(Array("HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nB".utf8))
-            let events = try sink.wait { release022ResponseEnds($0).count == 2 }
-            XCTAssertEqual(release022Requests(events).map(\.path), ["/one", "/two"])
-            XCTAssertEqual(release022ResponseEnds(events), release022Requests(events).map(\.id))
-            let wire = try received.wait { String(bytes: $0, encoding: .utf8)?.hasSuffix("\r\n\r\nB") == true }
-            XCTAssertTrue(try XCTUnwrap(String(bytes: wire, encoding: .utf8)).contains("\r\n\r\nAHTTP/1.1 200"))
+            try assertPipelinedResponseOrder(sink: sink, received: received)
             try await channel.close().get()
             try await proxy.stop()
             first.stop()
@@ -156,6 +152,14 @@ final class Release022PublicHTTP1ForwardingTests: XCTestCase {
             try? await group.shutdownGracefully()
             throw error
         }
+    }
+
+    private func assertPipelinedResponseOrder(sink: Release022Events, received: Release022WireObservation) throws {
+        let events = try sink.wait { release022ResponseEnds($0).count == 2 }
+        XCTAssertEqual(release022Requests(events).map(\.path), ["/one", "/two"])
+        XCTAssertEqual(release022ResponseEnds(events), release022Requests(events).map(\.id))
+        let wire = try received.wait { String(bytes: $0, encoding: .utf8)?.hasSuffix("\r\n\r\nB") == true }
+        XCTAssertTrue(try XCTUnwrap(String(bytes: wire, encoding: .utf8)).contains("\r\n\r\nAHTTP/1.1 200"))
     }
 
     func testConflictingLengthsAreRejectedBeforeOriginForwarding() async throws {

@@ -187,7 +187,9 @@ public actor HTTPControlRuntime {
     private func admit(bytes: Int, sharingHold: UUID? = nil) throws {
         guard !stopped else { throw HTTPControlError.cancelled }
         guard sharingHold != nil || taskSlots < configuration.limits.maximumTasks,
-              bytes <= configuration.limits.maximumRetainedBytes - retainedBytes else { throw HTTPControlError.capacityExceeded }
+              bytes <= configuration.limits.maximumRetainedBytes - retainedBytes else {
+            throw HTTPControlError.capacityExceeded
+        }
         try budget.charge(bytes)
     }
 
@@ -210,7 +212,9 @@ public actor HTTPControlRuntime {
     public func reserveBytes(requestID: UUID, bytes: Int) throws -> UUID {
         guard !stopped, bytes > 0,
               byteReservations.count < configuration.limits.maximumTasks,
-              bytes <= configuration.limits.maximumRetainedBytes - retainedBytes else { throw HTTPControlError.capacityExceeded }
+              bytes <= configuration.limits.maximumRetainedBytes - retainedBytes else {
+            throw HTTPControlError.capacityExceeded
+        }
         let id = UUID()
         try budget.charge(bytes)
         let global = try reserveGlobalBytes(bytes)
@@ -281,7 +285,9 @@ public actor HTTPControlRuntime {
         handler: @escaping @Sendable (HTTPControlMessage) async throws -> HTTPControlDecision
     ) async throws -> HTTPControlDecision {
         guard !Task.isCancelled else { throw HTTPControlError.cancelled }
-        guard (message.body?.count ?? 0) <= configuration.limits.maximumBodyBytes else { throw HTTPControlError.bodyLimitExceeded }
+        guard (message.body?.count ?? 0) <= configuration.limits.maximumBodyBytes else {
+            throw HTTPControlError.bodyLimitExceeded
+        }
         let bytes = message.retainedBytes + (retainedSnapshot ?? configuration).retainedBytes
             + (retainedDecision.map(\.retainedBytes) ?? 0)
         let id = UUID()

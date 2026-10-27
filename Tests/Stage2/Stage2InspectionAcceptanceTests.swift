@@ -273,7 +273,7 @@ extension Stage2InspectionAcceptanceTests {
             + "Connection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\n"
             + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
             + "Sec-WebSocket-Extensions: permessage-deflate; "
-                + "server_no_context_takeover; client_no_context_takeover\r\n\r\n"
+            + "server_no_context_takeover; client_no_context_takeover\r\n\r\n"
         try phase4BoundedWait(peer.client.writeAndFlush(ByteBuffer(string: request)))
         _ = try peer.origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
         try peer.origin.write(Array((

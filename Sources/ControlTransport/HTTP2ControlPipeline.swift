@@ -16,15 +16,14 @@ enum HTTP2ControlPipeline {
             let multiplexer = HTTP2StreamMultiplexer(
                 mode: mode,
                 channel: channel,
-                targetWindowSize: 65_535,
-                inboundStreamInitializer: { stream in
-                    stream.eventLoop
-                        .makeCompletedFuture {
-                            try stream.pipeline.syncOperations.addHandler(HTTP2StreamReadCreditHandler(gate: gate))
-                        }
-                        .flatMap { initializer(stream) }
-                }
-            )
+                targetWindowSize: 65_535
+            ) { stream in
+                stream.eventLoop
+                    .makeCompletedFuture {
+                        try stream.pipeline.syncOperations.addHandler(HTTP2StreamReadCreditHandler(gate: gate))
+                    }
+                    .flatMap { initializer(stream) }
+            }
             try channel.pipeline.syncOperations.addHandlers([
                 NIOHTTP2Handler(mode: mode, connectionConfiguration: configuration),
                 gate.value,

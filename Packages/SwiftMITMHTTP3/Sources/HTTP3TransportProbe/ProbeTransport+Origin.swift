@@ -13,63 +13,63 @@ extension ProbeTransport {
               head.method != .connect, head.extendedConnectProtocol == nil else {
             return downstream.eventLoop.makeFailedFuture(ProbeError.invalidRequest)
         }
-        do { try arguments.authorize() }
-        catch { return downstream.eventLoop.makeFailedFuture(error) }
+        do { try arguments.authorize() } catch { return downstream.eventLoop.makeFailedFuture(error) }
+        guard let downstreamConnection = downstream.parent else {
+            return downstream.eventLoop.makeFailedFuture(ProbeError.missingHandler)
+        }
+        let state = NIOLoopBound(self, eventLoop: downstream.eventLoop)
+        return originConnection(for: downstreamConnection).flatMap { connection in
+            guard downstream.isActive else {
+                return connection.eventLoop.makeFailedFuture(ChannelError.ioOnClosedChannel)
+            }
+            do {
+                let handler = try connection.pipeline.syncOperations.handler(type: ProbeHTTP3Handler.self)
+                return handler.createRequestStream { parameters in
+                    Self.configureOriginStream(
+                        parameters.channel,
+                        downstream: downstream,
+                        state: state,
+                        requestRelay: requestRelay
+                    )
+                }
+            } catch { return downstream.eventLoop.makeFailedFuture(error) }
+        }
+    }
+
+    private func originConnection(for downstream: Channel) -> EventLoopFuture<Channel> {
+        let id = ObjectIdentifier(downstream)
+        if let existing = origins[id] { return existing }
         guard origins.count < 128, let clientHandler else {
             return downstream.eventLoop.makeFailedFuture(ProbeError.capacity)
         }
-        nextConnectionID += 1
-        let id = nextConnectionID
-        origins[id] = Connection()
+        let promise = downstream.eventLoop.makePromise(of: Channel.self)
+        origins[id] = promise.futureResult
         let state = NIOLoopBound(self, eventLoop: downstream.eventLoop)
-        return clientHandler.value
-            .createOutboundConnection(
-                serverName: arguments.hostname,
-                remoteAddress: arguments.originAddress,
-                connectionInitializer: { channel, creator in
-                    Self.configureOriginConnection(
-                        channel,
-                        creator: creator,
-                        state: state,
-                        id: id,
-                        downstream: downstream
-                    )
-                },
-                inboundStreamInitializer: Self.receiveStream
-            )
-            .flatMap { connection, _ in
-                guard downstream.isActive else {
-                    return connection.close().flatMapThrowing { throw ChannelError.ioOnClosedChannel }
-                }
-                do {
-                    let handler = try connection.pipeline.syncOperations.handler(type: ProbeHTTP3Handler.self)
-                    return handler.createRequestStream { parameters in
-                        Self.configureOriginStream(
-                            parameters.channel,
-                            downstream: downstream,
-                            state: state,
-                            requestRelay: requestRelay
-                        )
-                    }
-                } catch { return downstream.eventLoop.makeFailedFuture(error) }
-            }
-            .flatMapError { error in
-                if let connection = state.value.origins.removeValue(forKey: id)?.channel {
-                    connection.close(promise: nil)
-                }
-                return downstream.eventLoop.makeFailedFuture(error)
-            }
+        clientHandler.value.createOutboundConnection(
+            serverName: arguments.hostname,
+            remoteAddress: arguments.originAddress,
+            connectionInitializer: { channel, creator in
+                Self.configureOriginConnection(channel, creator: creator, state: state, id: id, downstream: downstream)
+            },
+            inboundStreamInitializer: { Self.receiveStream($0, metrics: state.value.metrics) }
+        ).map { connection, _ in connection }.cascade(to: promise)
+        promise.futureResult.whenFailure { _ in
+            state.value.origins.removeValue(forKey: id)
+            downstream.close(promise: nil)
+        }
+        return promise.futureResult
     }
 
     private static func configureOriginConnection(
         _ channel: Channel,
         creator: NIOQUIC.QUICStreamCreator,
         state: NIOLoopBound<ProbeTransport>,
-        id: UInt64,
+        id: ObjectIdentifier,
         downstream: Channel
     ) -> EventLoopFuture<Void> {
         channel.eventLoop.makeCompletedFuture {
-            state.value.origins[id] = Connection(channel: channel)
+            var configuration = HTTP3ClientConfiguration.defaults
+            configuration.inboundMemory = state.value.inboundMemoryConfiguration()
             downstream.closeFuture.whenComplete { _ in channel.close(promise: nil) }
             channel.closeFuture.whenComplete { _ in
                 state.value.origins.removeValue(forKey: id)
@@ -77,7 +77,7 @@ extension ProbeTransport {
             }
             let handler = ProbeHTTP3Handler.client(
                 eventLoop: channel.eventLoop,
-                configuration: .defaults,
+                configuration: configuration,
                 settings: .init(
                     qpackMaximumTableCapacity: 0,
                     qpackBlockedStreams: 0,
@@ -85,9 +85,8 @@ extension ProbeTransport {
                     h3Datagram: false
                 ),
                 streamCreator: creator,
-                logger: state.value.logger,
-                inboundPushStreamInitializer: { $0.channel.close() }
-            )
+                logger: state.value.logger
+            ) { $0.channel.close() }
             try channel.pipeline.syncOperations.addHandlers([ProbeHandshakeDeadline(), handler])
         }
     }
@@ -100,7 +99,11 @@ extension ProbeTransport {
     ) -> EventLoopFuture<Channel> {
         stream.setOption(ChannelOptions.autoRead, value: false).flatMap {
             stream.eventLoop.makeCompletedFuture {
-                let response = ProbeRelay<HTTPResponsePart>(admission: state.value.admission, destination: downstream)
+                try stream.pipeline.syncOperations.addHandler(
+                    ProbeRawReadMeter(metrics: state.value.metrics),
+                    position: .first
+                )
+                let response = ProbeRelay<HTTPResponsePart>(metrics: state.value.metrics, destination: downstream)
                 let boundResponse = NIOLoopBound(response, eventLoop: stream.eventLoop)
                 response.resumePeer = { requestRelay.value.readIfReady() }
                 requestRelay.value.resumePeer = { boundResponse.value.readIfReady() }

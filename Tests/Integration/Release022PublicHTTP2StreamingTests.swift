@@ -99,13 +99,7 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
             try second.write(.headers(.init(headers: HPACKHeaders([("grpc-status", "0")]), endStream: true)))
             try control.wait { $0.contains(where: release022IsTerminalHeader) }
             XCTAssertEqual(self.dataBytes(control.frames), bytes)
-            _ = try sink.wait { events in events.contains {
-                if case .responseEnd = $0 {
-                    true
-                } else {
-                    false
-                }
-            } }
+            _ = try sink.wait { $0.contains(where: release022IsResponseEnd) }
             try self.assertControlStreamHasNoError(sink)
         }
     }

@@ -8,7 +8,25 @@ import SwiftMITM
 
 @main
 struct ProbeMain {
-    static func main() async throws {
+    static func main() async {
+        do {
+            try await run()
+        } catch {
+            let message: String
+            if let probeError = error as? ProbeError, case .deniedRoute = probeError {
+                message = "HTTP3TransportProbe: denied-route"
+            } else if let error = error as? CertificateAuthorityRestorationError {
+                message = "HTTP3TransportProbe: certificate-authority-\(error)"
+            } else {
+                message = "HTTP3TransportProbe: startup-failure \(type(of: error))"
+            }
+            do { try FileHandle.standardError.write(contentsOf: Data((message + "\n").utf8)) }
+            catch { exit(3) }
+            exit(2)
+        }
+    }
+
+    private static func run() async throws {
         let arguments = try ProbeArguments(Array(CommandLine.arguments.dropFirst()))
         try arguments.authorize()
         let certificate = try String(contentsOfFile: arguments.certificatePath, encoding: .utf8)
@@ -18,18 +36,20 @@ struct ProbeMain {
         let authenticator = try Authenticator(certificates: identity.certificateChain, privateKey: identity.privateKey)
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         let loop = group.next()
+        let metrics: ProbeMetrics
         do {
             let state = try await loop.submit {
                 NIOLoopBound(try ProbeTransport(arguments: arguments), eventLoop: loop)
             }
             .get()
             let verifier = try AsyncVerifier(trustRootsPath: arguments.originRootPath, eventLoop: loop)
-            try await serve(arguments, state: state, loop: loop, authenticator: authenticator, verifier: verifier)
+            metrics = try await serve(arguments, state: state, loop: loop, authenticator: authenticator, verifier: verifier)
         } catch {
             try await group.shutdownGracefully()
             throw error
         }
         try await group.shutdownGracefully()
+        try metrics.write(to: arguments.readyPath + ".metrics.json", stopped: true)
     }
 
     private static func serve(
@@ -38,7 +58,8 @@ struct ProbeMain {
         loop: EventLoop,
         authenticator: Authenticator,
         verifier: AsyncVerifier
-    ) async throws {
+    ) async throws -> ProbeMetrics {
+        let metrics = try await loop.submit { state.value.metrics }.get()
         let client = try await ProbeTransport.startClient(state: state, loop: loop, verifier: verifier).get()
         let server: Channel
         do {
@@ -51,15 +72,20 @@ struct ProbeMain {
             throw error
         }
         do {
-            try await announceAndWait(arguments, channel: server)
+            try await announceAndWait(arguments, channel: server, metrics: metrics)
         } catch {
             try await close(state: state, server: server, client: client, loop: loop)
             throw error
         }
         try await close(state: state, server: server, client: client, loop: loop)
+        return metrics
     }
 
-    private static func announceAndWait(_ arguments: ProbeArguments, channel: Channel) async throws {
+    private static func announceAndWait(
+        _ arguments: ProbeArguments,
+        channel: Channel,
+        metrics: ProbeMetrics
+    ) async throws {
         guard let port = channel.localAddress?.port, let originPort = arguments.originAddress.port else {
             throw ProbeError.arguments
         }
@@ -76,13 +102,29 @@ struct ProbeMain {
             sources.forEach { $0.cancel() }
             continuation.finish()
         }
+        let metricsPath = arguments.readyPath + ".metrics.json"
+        try metrics.write(to: metricsPath)
+        let writer = Task {
+            while !Task.isCancelled {
+                try await Task.sleep(for: .milliseconds(100))
+                try await metrics.sampleNativeOutput()
+                try metrics.write(to: metricsPath)
+            }
+        }
+        defer { writer.cancel() }
         let data = try JSONSerialization.data(withJSONObject: [
             "port": port,
             "hostname": arguments.hostname,
-            "originPort": originPort
+            "originPort": originPort,
+            "metricsPath": metricsPath
         ])
         try data.write(to: URL(fileURLWithPath: arguments.readyPath), options: .atomic)
         for await _ in signals { break }
+        writer.cancel()
+        do { try await writer.value }
+        catch is CancellationError {
+            // The periodic writer stops with the signal-driven probe shutdown.
+        }
     }
 
     private static func close(

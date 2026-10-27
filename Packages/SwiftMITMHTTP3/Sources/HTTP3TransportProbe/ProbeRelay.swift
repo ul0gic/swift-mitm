@@ -5,22 +5,50 @@ import SwiftMITM
 
 protocol ProbeMessagePart: Sendable {
     var retainedBytes: Int { get }
+    var forwardedPayloadBytes: Int { get }
     var endsMessage: Bool { get }
+    func compacted() -> Self
 }
 
-private func fieldBytes(_ fields: HTTPFields?) -> Int {
-    fields?.reduce(0) { $0 + $1.name.rawName.utf8.count + $1.value.utf8.count } ?? 0
+private func fieldBytes(_ fields: HTTPFields?, includeMetadata: Bool = true) -> Int {
+    fields?.reduce(0) {
+        $0 + (includeMetadata ? MemoryLayout<HTTPField>.stride : 0)
+            + $1.name.rawName.utf8.count + $1.value.utf8.count
+    } ?? 0
+}
+
+private func bodyCapacity(_ bytes: Int) -> Int {
+    guard bytes > 0 else { return 0 }
+    var capacity = 1
+    while capacity < bytes { capacity *= 2 }
+    return capacity
 }
 
 extension HTTPRequestPart: ProbeMessagePart {
+    var forwardedPayloadBytes: Int {
+        switch self {
+        case let .head(head):
+            return head.method.rawValue.utf8.count + (head.scheme?.utf8.count ?? 0)
+                + (head.authority?.utf8.count ?? 0) + (head.path?.utf8.count ?? 0)
+                + fieldBytes(head.headerFields, includeMetadata: false)
+        case let .body(body): return body.readableBytes
+        case let .end(trailers): return fieldBytes(trailers, includeMetadata: false)
+        }
+    }
+
     var retainedBytes: Int {
         switch self {
         case let .head(head):
             return head.method.rawValue.utf8.count + (head.scheme?.utf8.count ?? 0)
                 + (head.authority?.utf8.count ?? 0) + (head.path?.utf8.count ?? 0) + fieldBytes(head.headerFields)
-        case let .body(body): return body.readableBytes
+        case let .body(body): return bodyCapacity(body.readableBytes)
         case let .end(trailers): return fieldBytes(trailers)
         }
+    }
+
+    func compacted() -> HTTPRequestPart {
+        if case let .body(body) = self { return .body(ByteBuffer(bytes: body.readableBytesView)) }
+        return self
     }
 
     var endsMessage: Bool {
@@ -33,12 +61,25 @@ extension HTTPRequestPart: ProbeMessagePart {
 }
 
 extension HTTPResponsePart: ProbeMessagePart {
+    var forwardedPayloadBytes: Int {
+        switch self {
+        case let .head(head): return 3 + fieldBytes(head.headerFields, includeMetadata: false)
+        case let .body(body): return body.readableBytes
+        case let .end(trailers): return fieldBytes(trailers, includeMetadata: false)
+        }
+    }
+
     var retainedBytes: Int {
         switch self {
-        case let .head(head): return fieldBytes(head.headerFields)
-        case let .body(body): return body.readableBytes
+        case let .head(head): return 3 + fieldBytes(head.headerFields)
+        case let .body(body): return bodyCapacity(body.readableBytes)
         case let .end(trailers): return fieldBytes(trailers)
         }
+    }
+
+    func compacted() -> HTTPResponsePart {
+        if case let .body(body) = self { return .body(ByteBuffer(bytes: body.readableBytesView)) }
+        return self
     }
 
     var endsMessage: Bool {
@@ -57,9 +98,15 @@ final class ProbeRelay<Part: ProbeMessagePart>: ChannelInboundHandler {
     private var context: ChannelHandlerContext?
     private var destination: Channel?
     private var connect: Connect?
-    private let account: ResourceRetainedByteAccount
-    private var queued: [Part] = []
+    private struct Pending {
+        let part: Part
+        let lease: ProbeStorageLease
+    }
+
+    private let metrics: ProbeMetrics
+    private var queued: [Pending] = []
     private var pendingBytes = 0
+    private var pendingStorageBytes = 0
     private var pendingWrites = 0
     private var connecting = false
     private var insideReadBatch = false
@@ -69,8 +116,8 @@ final class ProbeRelay<Part: ProbeMessagePart>: ChannelInboundHandler {
     private var sourceInactive = false
     var resumePeer: (() -> Void)?
 
-    init(admission: ResourceAdmissionController, destination: Channel? = nil, connect: Connect? = nil) {
-        account = admission.makeRetainedByteAccount()
+    init(metrics: ProbeMetrics, destination: Channel? = nil, connect: Connect? = nil) {
+        self.metrics = metrics
         self.destination = destination
         self.connect = connect
     }
@@ -90,16 +137,27 @@ final class ProbeRelay<Part: ProbeMessagePart>: ChannelInboundHandler {
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         guard !closed, !inputEnded else { fail(); return }
         insideReadBatch = true
-        let part = unwrapInboundIn(data)
-        let bytes = part.retainedBytes
-        guard bytes <= 65_536 - pendingBytes, account.reserve(bytes) else { fail(); return }
+        let incoming = unwrapInboundIn(data)
+        let bytes = incoming.forwardedPayloadBytes
+        guard bytes <= 65_536 - pendingBytes else { fail(); return }
+        let lease: ProbeStorageLease
+        do { lease = try metrics.reserve(incoming.retainedBytes, kind: .queuedCopy) }
+        catch { fail(); return }
+        let part = incoming.compacted()
         pendingBytes += bytes
+        pendingStorageBytes += lease.bytes
+        metrics.observeQueuedBytes(pendingStorageBytes, payload: pendingBytes)
         inputEnded = part.endsMessage
         if let destination {
-            send(part, to: destination)
+            send(part, lease: lease, to: destination)
         } else {
-            guard queued.count < 256 else { account.release(bytes); pendingBytes -= bytes; fail(); return }
-            queued.append(part)
+            guard queued.count < 256 else {
+                pendingBytes -= bytes
+                pendingStorageBytes -= lease.bytes
+                fail()
+                return
+            }
+            queued.append(Pending(part: part, lease: lease))
             if !connecting {
                 openDestination(first: part, context: context)
             }
@@ -119,20 +177,20 @@ final class ProbeRelay<Part: ProbeMessagePart>: ChannelInboundHandler {
                 self.destination = destination
                 let pending = self.queued
                 self.queued.removeAll(keepingCapacity: false)
-                for part in pending { self.send(part, to: destination) }
+                for item in pending { self.send(item.part, lease: item.lease, to: destination) }
                 self.readIfReady()
             case .failure: self.fail()
             }
         }
     }
 
-    private func send(_ part: Part, to destination: Channel) {
-        let bytes = part.retainedBytes
+    private func send(_ part: Part, lease: ProbeStorageLease, to destination: Channel) {
+        let bytes = part.forwardedPayloadBytes
         pendingWrites += 1
-        let account = account
         destination.writeAndFlush(part).assumeIsolated().whenComplete { result in
-            account.release(bytes)
+            withExtendedLifetime(lease) {}
             self.pendingBytes -= bytes
+            self.pendingStorageBytes -= lease.bytes
             self.pendingWrites -= 1
             switch result {
             case .success:
@@ -140,7 +198,7 @@ final class ProbeRelay<Part: ProbeMessagePart>: ChannelInboundHandler {
                     self.finish()
                     destination.close(promise: nil)
                 } else {
-                    self.readIfReady()
+                    destination.eventLoop.execute { self.readIfReady() }
                 }
             case .failure: self.fail()
             }
@@ -196,10 +254,11 @@ final class ProbeRelay<Part: ProbeMessagePart>: ChannelInboundHandler {
     private func finish() {
         guard !closed else { return }
         closed = true
-        let bytes = queued.reduce(0) { $0 + $1.retainedBytes }
+        let bytes = queued.reduce(0) { $0 + $1.part.forwardedPayloadBytes }
+        let storageBytes = queued.reduce(0) { $0 + $1.lease.bytes }
         queued.removeAll(keepingCapacity: false)
         pendingBytes -= bytes
-        account.release(bytes)
+        pendingStorageBytes -= storageBytes
         connect = nil
         resumePeer = nil
     }

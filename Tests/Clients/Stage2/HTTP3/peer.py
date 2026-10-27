@@ -8,10 +8,12 @@ import sys
 
 from aioquic.asyncio.protocol import QuicConnectionProtocol
 from aioquic.asyncio.server import QuicServer
-from aioquic.h3.connection import H3Connection, Setting
+from aioquic.h3.connection import H3Connection, Setting, encode_frame
 from aioquic.h3.events import DataReceived, HeadersReceived
 from aioquic.quic.configuration import QuicConfiguration
-from aioquic.quic.events import HandshakeCompleted, StopSendingReceived, StreamReset
+from aioquic.quic.events import ConnectionTerminated, HandshakeCompleted, StopSendingReceived, StreamReset
+
+from wire import FRAGMENT_VALUE, fragmented_headers, oversized_headers_prefix
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from client_tls import create_identity
@@ -35,6 +37,8 @@ class Origin(QuicConnectionProtocol):
         elif isinstance(event, (StreamReset, StopSendingReceived)):
             self.stats["cancelSignals"] += 1
             self.paths.pop(event.stream_id, None)
+        elif isinstance(event, ConnectionTerminated):
+            self.stats["connectionErrors"].append(event.error_code)
         for received in self.http.handle_event(event):
             if isinstance(received, HeadersReceived):
                 self.headers(received)
@@ -68,6 +72,16 @@ class Origin(QuicConnectionProtocol):
         self.paths[event.stream_id] = path
         self.stats["requests"] += 1
         self.stats["paths"].append(path.decode("ascii"))
+        if path == b"/oversized-response-headers":
+            self._quic.send_stream_data(event.stream_id, oversized_headers_prefix(), end_stream=False)
+            return
+        if path == b"/fragmented-headers":
+            assert values.get(b"x-fragment") == FRAGMENT_VALUE
+            self.stats["fragmentedRequest"] = True
+            task = asyncio.create_task(self.fragmented_response(event.stream_id))
+            self.fin_tasks.add(task)
+            task.add_done_callback(self.fin_tasks.discard)
+            return
         self.http.send_headers(event.stream_id, [
             (b":status", b"200"), (b"x-duplicate", b"first"), (b"x-duplicate", b"second")
         ])
@@ -83,6 +97,16 @@ class Origin(QuicConnectionProtocol):
         else:
             self.http.send_data(event.stream_id, b"origin", end_stream=True)
             self.paths.pop(event.stream_id)
+
+    async def fragmented_response(self, stream):
+        count = await fragmented_headers(self, stream, [
+            (b":status", b"200"), (b"x-fragment", FRAGMENT_VALUE)
+        ], end_stream=False)
+        self._quic.send_stream_data(stream, encode_frame(0, b"fragmented"), end_stream=True)
+        self.transmit()
+        self.stats["fragmentedResponseBytes"] = count
+        self.paths.pop(stream, None)
+        self.publish()
 
     async def finish_split_response(self, stream, sequence):
         # The driver releases this only after the client received these trailers.
@@ -126,7 +150,8 @@ async def serve(arguments):
     stats = {"datagrams": 0, "handshakes": 0, "alpn": [], "earlyDataAccepted": False,
              "requests": 0, "paths": [], "uploadBytes": 0, "cancelSignals": 0,
              "peerQpackCapacity": None, "peerQpackBlocked": None,
-             "splitRequestTrailers": [], "splitResponseFin": []}
+             "splitRequestTrailers": [], "splitResponseFin": [], "connectionErrors": [],
+             "fragmentedRequest": False, "fragmentedResponseBytes": 0}
     stats_file = directory / "stats.json"
     release_file = directory / "release-fin.txt"
 

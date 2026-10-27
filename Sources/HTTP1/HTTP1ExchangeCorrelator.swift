@@ -46,8 +46,7 @@ final class HTTP1ExchangeCorrelator: Sendable {
             guard !state.failed, state.count < policy.maximumPendingExchanges,
                   bytes <= policy.maximumPendingMethodBytes - state.methodBytes else { return false }
             let reservation: ResourceReservation?
-            do { reservation = try admission?.acquire(.stream) }
-            catch { return false }
+            do { reservation = try admission?.acquire(.stream) } catch { return false }
             let index = (state.first + state.count) % state.queue.count
             state.queue[index] = Exchange(
                 id: id,

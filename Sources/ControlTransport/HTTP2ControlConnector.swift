@@ -19,8 +19,7 @@ extension ProxyServer {
         let connection: EventLoopFuture<ResolvedUpstreamConnection>
         if target.scheme == "https" {
             let runtime: ProxyTLSRuntime
-            do { runtime = try activeTLSRuntime() }
-            catch { token.complete(); return loop.makeFailedFuture(error) }
+            do { runtime = try activeTLSRuntime() } catch { token.complete(); return loop.makeFailedFuture(error) }
             connection = connectUpstreamTLS(
                 target: destination,
                 applicationProtocols: [.http2],
@@ -72,9 +71,8 @@ extension ProxyServer {
         return HTTP2ControlPipeline.configure(
             channel: connection.channel,
             mode: .client,
-            configuration: configuration,
-            initializer: { $0.close() }
-        )
+            configuration: configuration
+        ) { $0.close() }
         .flatMap { mux in
             connection.releaseBufferedReads().flatMap {
                 mux.value.createStreamChannel { stream in

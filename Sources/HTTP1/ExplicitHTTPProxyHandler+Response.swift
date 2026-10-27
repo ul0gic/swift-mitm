@@ -46,8 +46,7 @@ extension ExplicitHTTPProxyHandler {
             return
         }
         if let writer = exchange.responseFaultWriter {
-            do { try writer.enqueue(body) }
-            catch { controlFailed(exchange, error: error) }
+            do { try writer.enqueue(body) } catch { controlFailed(exchange, error: error) }
         } else {
             writeResponseBody(body, exchange: exchange, context: context)
         }

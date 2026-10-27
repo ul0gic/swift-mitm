@@ -37,7 +37,7 @@ final class WebSocketCaptureSession {
         if let observer = sink as? any WebSocketObservationSink, let session = active {
             for (direction, decoder) in [
                 (WebSocketDirection.clientToServer, session.clientDecoder),
-                (WebSocketDirection.serverToClient, session.serverDecoder),
+                (WebSocketDirection.serverToClient, session.serverDecoder)
             ] {
                 decoder.frameStarted = { opcode, fin, compressed, count in
                     observer.webSocketFrameStarted(
@@ -81,9 +81,11 @@ final class WebSocketCaptureSession {
     ) -> Bool where Bytes.Element == UInt8 {
         guard let session = active, session.lifecycle != .closed else { return true }
         let decoder = direction == .clientToServer ? session.clientDecoder : session.serverDecoder
-        return decoder.decode(bytes, shouldContinue: { [self] in active?.lifecycle != .closed }) { [self] frame in
-            emit(frame, direction: direction)
-        }
+        return decoder.decode(
+            bytes,
+            shouldContinue: { [self] in active?.lifecycle != .closed },
+            emit: { [self] frame in emit(frame, direction: direction) }
+        )
     }
 
     func close(code: Int? = nil, reason: String? = nil) {

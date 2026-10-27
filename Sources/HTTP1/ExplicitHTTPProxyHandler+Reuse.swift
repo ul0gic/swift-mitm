@@ -19,7 +19,11 @@ extension ExplicitHTTPProxyHandler {
         guard let key = reuseKey(exchange), let pooled = reusePool?.take(key: key) else { return false }
         let channel = pooled.channel
         guard authorizeReuse(target, channel), let remote = channel.remoteAddress,
-              let unresolved = ConnectionTarget(host: target.host, port: target.port, ingressProvenance: .explicitHTTP) else {
+              let unresolved = ConnectionTarget(
+                  host: target.host,
+                  port: target.port,
+                  ingressProvenance: .explicitHTTP
+              ) else {
             channel.close(promise: nil)
             return false
         }

@@ -1,0 +1,59 @@
+--- a/Sources/NIOHTTP3/HTTP3ConnectionHandler.swift
++++ b/Sources/NIOHTTP3/HTTP3ConnectionHandler.swift
+@@ -762,6 +762,14 @@
+         self.makeStorageReservation = makeStorageReservation
+     }
+ 
++    // NIO rounds UInt32-backed capacities to a power of two, saturating at UInt32.max.
++    var maximumReadBufferCapacity: Int {
++        let requested = min(UInt64(self.maximumBytesPerRead), UInt64(UInt32.max))
++        var capacity: UInt64 = 1
++        while capacity < requested { capacity <<= 1 }
++        return Int(min(capacity, UInt64(UInt32.max)))
++    }
++
+     /// Models array/string storage; allocator padding and object headers are outside this payload model.
+     func requiredStorageBytes(
+         maximumDecodedFieldSectionBytes: Int,
+@@ -779,7 +787,7 @@
+         }
+         let fields = maximumDecodedFieldSectionBytes / 32
+         let stride = MemoryLayout<FieldLine>.stride + 2 * MemoryLayout<HTTPField>.stride
+-        let terms = [capacity, capacity, self.maximumBytesPerRead]
++        let terms = [capacity, capacity, self.maximumReadBufferCapacity]
+         var total = 0
+         for term in terms {
+             let (next, overflow) = total.addingReportingOverflow(term)
+--- a/Sources/NIOHTTP3/HTTP3StreamHandler.swift
++++ b/Sources/NIOHTTP3/HTTP3StreamHandler.swift
+@@ -186,7 +186,7 @@
+         let bytes = self.unwrapInboundIn(data)
+         self.logger.trace("HTTP3StreamHandler.channelRead", metadata: [LoggingKeys.bytes: "\(bytes.readableBytes)"])
+         if let inboundMemory {
+-            guard bytes.capacity <= inboundMemory.maximumBytesPerRead,
++            guard bytes.capacity <= inboundMemory.maximumReadBufferCapacity,
+                 bytes.readableBytes <= inboundMemory.maximumBytesPerRead - self.bytesInReadBatch else {
+                 let error = HTTP3Error(
+                     code: .invalidFramePayload,
+--- a/Sources/NIOHTTP3/QPACKInboundEncoderStreamHandler.swift
++++ b/Sources/NIOHTTP3/QPACKInboundEncoderStreamHandler.swift
+@@ -73,7 +73,7 @@
+     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+         let byteBuffer = Self.unwrapInboundIn(data)
+         do {
+-            if let inboundMemory, byteBuffer.capacity > inboundMemory.maximumBytesPerRead {
++            if let inboundMemory, byteBuffer.capacity > inboundMemory.maximumReadBufferCapacity {
+                 throw ByteToMessageDecoderError.PayloadTooLargeError()
+             }
+             try self.decoder.process(buffer: byteBuffer) { instruction in
+--- a/Sources/NIOHTTP3/QPACKInboundDecoderStreamHandler.swift
++++ b/Sources/NIOHTTP3/QPACKInboundDecoderStreamHandler.swift
+@@ -73,7 +73,7 @@
+     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+         let byteBuffer = Self.unwrapInboundIn(data)
+         do {
+-            if let inboundMemory, byteBuffer.capacity > inboundMemory.maximumBytesPerRead {
++            if let inboundMemory, byteBuffer.capacity > inboundMemory.maximumReadBufferCapacity {
+                 throw ByteToMessageDecoderError.PayloadTooLargeError()
+             }
+             try self.decoder.process(buffer: byteBuffer) { instruction in
