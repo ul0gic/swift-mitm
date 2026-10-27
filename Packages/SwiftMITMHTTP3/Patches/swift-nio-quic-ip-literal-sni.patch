@@ -1,0 +1,12 @@
+diff --git a/Sources/NIOQUIC/SwiftNetwork/QUICStreamOptions+QUICConfiguration.swift b/Sources/NIOQUIC/SwiftNetwork/QUICStreamOptions+QUICConfiguration.swift
+--- a/Sources/NIOQUIC/SwiftNetwork/QUICStreamOptions+QUICConfiguration.swift
++++ b/Sources/NIOQUIC/SwiftNetwork/QUICStreamOptions+QUICConfiguration.swift
+@@ -99,7 +99,7 @@
+     ) throws -> Self {
+         var options = SwiftTLSProtocol.Options()
+         options.applicationProtocols = config.applicationProtocols
+-        options.serverName = serverName
++        options.serverName = serverName.isIPAddress ? nil : serverName
+         options.tlsOptions.keyExchangeGroup = config.keyExchangeGroup.swiftTLSKeyExchangeGroup
+ 
+         if let verificationConfiguration = config.verificationConfiguration {

@@ -57,15 +57,17 @@ final class Release022H2Stream: ChannelInboundHandler, @unchecked Sendable {
             throw Phase2FixtureError.closedBeforeExpectedBytes
         }
         let streamID = try phase4BoundedWait(channel.getOption(HTTP2StreamChannelOptions.streamID))
-        try phase4BoundedWait(parent.eventLoop.submit {
-            var frame = parent.allocator.buffer(capacity: 13)
-            frame.writeBytes([0, 0, 4, 8, 0])
-            frame.writeInteger(Int32(streamID))
-            frame.writeInteger(UInt32(1024))
-            // NIO refuses this send after peer END_STREAM; write the crossed frame below its HTTP/2 encoder.
-            let context = try parent.pipeline.syncOperations.context(handlerType: NIOHTTP2Handler.self)
-            return context.writeAndFlush(NIOAny(frame))
-        }.flatMap { $0 })
+        try phase4BoundedWait(parent.eventLoop
+            .submit {
+                var frame = parent.allocator.buffer(capacity: 13)
+                frame.writeBytes([0, 0, 4, 8, 0])
+                frame.writeInteger(Int32(streamID))
+                frame.writeInteger(UInt32(1024))
+                // NIO refuses this send after peer END_STREAM; write the crossed frame below its HTTP/2 encoder.
+                let context = try parent.pipeline.syncOperations.context(handlerType: NIOHTTP2Handler.self)
+                return context.writeAndFlush(NIOAny(frame))
+            }
+            .flatMap(\.self))
     }
 }
 

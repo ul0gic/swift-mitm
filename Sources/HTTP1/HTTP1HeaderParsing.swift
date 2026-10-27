@@ -2,7 +2,7 @@ import Foundation
 
 extension HTTP1MessageParser {
     static func fieldText<Bytes: Collection>(_ bytes: Bytes) -> String where Bytes.Element == UInt8 {
-        String(String.UnicodeScalarView(bytes.map { UnicodeScalar($0) }))
+        HTTPHeaderField.octetText(bytes)
     }
 
     enum ContentLengthResult {

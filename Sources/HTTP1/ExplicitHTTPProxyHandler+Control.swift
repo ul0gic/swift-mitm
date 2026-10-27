@@ -114,14 +114,15 @@ extension ExplicitHTTPProxyHandler {
         guard !stopped, let context else { return }
         do {
             try validateControlledDecision(decision, exchange: exchange, phase: .request)
-            exchange.requestFault = try selectedFault(decision, direction: .request)
+            exchange.requestFault = try decision.selectedFault(direction: .request)
         } catch {
             controlFailed(exchange, error: error)
             return
         }
         exchange.effectiveHead.headers = HTTPHeaders(decision.headers.map { ($0.name, $0.value) })
+        exchange.requestControlRuleIDs = decision.appliedRuleIDs
+        exchange.requestOverridesNoTransform = decision.overridesNoTransform
         guard applyControlledRequestAction(decision, exchange: exchange) else { return }
-        publishEffectiveRequestHead(decision, exchange: exchange)
         exchange.controlReady = true
         if !exchange.controlBody.isEmpty {
             var buffer = context.channel.allocator.buffer(capacity: exchange.controlBody.count)
@@ -157,7 +158,9 @@ extension ExplicitHTTPProxyHandler {
             }
             exchange.target = target
         case .respond:
-            publishEffectiveRequestHead(decision, exchange: exchange)
+            let headers = exchange.target.map { Self.fields(originHead(exchange, target: $0).headers) }
+                ?? decision.headers
+            publishEffectiveRequestHead(headers, exchange: exchange)
             exchange.syntheticDecision = decision
             exchange.controlReady = true
             if active == nil {
@@ -179,26 +182,20 @@ extension ExplicitHTTPProxyHandler {
         return true
     }
 
-    func publishEffectiveRequestHead(_ decision: HTTPControlDecision, exchange: Exchange) {
+    func publishEffectiveRequestHead(_ headers: [HTTPHeaderField], exchange: Exchange) {
         guard !exchange.effectiveRequestPublished else { return }
         exchange.effectiveRequestPublished = true
-        let headers: [HTTPHeaderField]
-        if let target = exchange.target {
-            headers = Self.fields(originHead(exchange, target: target).headers)
-        } else {
-            headers = decision.headers
-        }
         controlEventSink?.receive(.effectiveHead(
             requestID: exchange.id,
             phase: .request,
             headers: headers,
-            appliedRuleIDs: decision.appliedRuleIDs
+            appliedRuleIDs: exchange.requestControlRuleIDs
         ))
-        if decision.overridesNoTransform {
+        if exchange.requestOverridesNoTransform {
             controlEventSink?.receive(.noTransformOverride(
                 requestID: exchange.id,
                 phase: .request,
-                appliedRuleIDs: decision.appliedRuleIDs
+                appliedRuleIDs: exchange.requestControlRuleIDs
             ))
         }
         (sink as? ObservationCaptureSink)?.receiveEffective(.requestHead(CapturedRequestHead(
@@ -237,71 +234,30 @@ extension ExplicitHTTPProxyHandler {
     func validateControlledDecision(
         _ decision: HTTPControlDecision,
         exchange: Exchange,
-        phase: HTTPControlPhase
+        phase: HTTPControlPhase,
+        responseHead: HTTPResponseHead? = nil
     ) throws {
-        _ = try HTTPControlConfiguration.headerBytes(decision.headers, multiplexed: typedHTTP2)
-        if let synthetic = decision.syntheticResponseHeaders {
-            _ = try HTTPControlConfiguration.headerBytes(synthetic, multiplexed: typedHTTP2)
-        }
         guard let snapshot = exchange.controlSnapshot else { throw HTTPControlError.cancelled }
-        switch decision.action {
-        case let .replaceBody(body, maximum, _, override):
-            guard maximum <= snapshot.limits.maximumBodyBytes, body.count <= snapshot.limits.maximumBodyBytes,
-                  exchange.head.method != .HEAD,
-                  exchange.head.method != .CONNECT else { throw HTTPControlError.unsupportedEdit }
-            let headers = try controlledOriginalHeaders(exchange, phase: phase)
-            guard override || !HTTPControlConfiguration.hasNoTransform(headers) else {
-                throw HTTPControlError.noTransform
-            }
-            let bytes = phase == .request ? exchange.controlBody.count : exchange.responseControlBody.count
-            guard bytes <= maximum else { throw HTTPControlError.bodyLimitExceeded }
-        case let .respond(_, _, body):
-            guard body.count <= snapshot.limits.maximumBodyBytes,
-                  exchange.head.method != .HEAD || body.isEmpty else { throw HTTPControlError.unsupportedEdit }
-        default: break
-        }
-    }
-
-    private func controlledOriginalHeaders(_ exchange: Exchange, phase: HTTPControlPhase) throws -> [HTTPHeaderField] {
+        let headers: HTTPHeaders
+        let status: Int?
         if phase == .request {
-            return Self.fields(exchange.head.headers)
-        }
-        guard let head = exchange.responseControlHead else { throw HTTPControlError.unsupportedEdit }
-        return Self.fields(head.headers)
-    }
-
-    func selectedFault(_ decision: HTTPControlDecision, direction: HTTPFaultDirection) throws -> HTTPFault? {
-        let faults = decision.faults.filter { $0.direction == direction }
-        guard let first = faults.first else { return nil }
-        var delay = first.delayMilliseconds
-        var rate = first.bytesPerSecond
-        var burst = first.burstBytes
-        var reset = first.resetAfterBytes
-        var scope = first.resetScope
-        for fault in faults.dropFirst() {
-            delay += fault.delayMilliseconds
-            burst = min(burst, fault.burstBytes)
-            if let candidate = fault.bytesPerSecond {
-                rate = rate.map { min($0, candidate) } ?? candidate
+            headers = exchange.head.headers
+            status = nil
+        } else {
+            guard let head = responseHead ?? exchange.responseControlHead else {
+                throw HTTPControlError.unsupportedEdit
             }
-            if let candidate = fault.resetAfterBytes {
-                if reset == nil || candidate < (reset ?? candidate) {
-                    reset = candidate
-                    scope = fault.resetScope
-                } else if candidate == reset, fault.resetScope == .transport {
-                    scope = .transport
-                }
-            }
+            headers = head.headers
+            status = Int(head.status.code)
         }
-        guard delay <= 30_000 else { throw HTTPControlError.invalidConfiguration }
-        return try HTTPFault(
-            direction: direction,
-            delayMilliseconds: delay,
-            bytesPerSecond: rate,
-            burstBytes: burst,
-            resetAfterBytes: reset,
-            resetScope: scope
+        let message = controlMessage(
+            exchange,
+            phase: phase,
+            status: status,
+            headers: headers,
+            body: phase == .request ? exchange.controlBody : exchange.responseControlBody
         )
+        try snapshot.validate(decision, for: message)
     }
 
     func sendControlledResponse(status: Int, headers: [HTTPHeaderField], body: Data, exchange: Exchange) {

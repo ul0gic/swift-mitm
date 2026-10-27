@@ -96,8 +96,8 @@ extension ExplicitHTTPProxyHandler {
     func commitControlledResponse(_ decision: HTTPControlDecision, exchange: Exchange, head: HTTPResponseHead) {
         guard !stopped, let context else { return }
         do {
-            try validateControlledDecision(decision, exchange: exchange, phase: .response)
-            exchange.responseFault = try selectedFault(decision, direction: .response)
+            try validateControlledDecision(decision, exchange: exchange, phase: .response, responseHead: head)
+            exchange.responseFault = try decision.selectedFault(direction: .response)
         } catch {
             controlFailed(exchange, error: error)
             return
@@ -117,13 +117,7 @@ extension ExplicitHTTPProxyHandler {
         case .abort, .breakpoint, .route:
             controlFailed(exchange, error: HTTPControlError.unsupportedEdit)
             return
-        case let .replaceBody(body, _, _, _):
-            replacement = body
-            exchange.responseControlTrailers = exchange.responseControlTrailers.map {
-                HTTPHeaders(HTTPControlConfiguration.removingReplacedBodyFields(Self.fields($0)).map {
-                    ($0.name, $0.value)
-                })
-            }
+        case let .replaceBody(body, _, _, _): replacement = body
         case let .respond(status, _, body):
             effective.status = HTTPResponseStatus(statusCode: status)
             replacement = body
@@ -200,8 +194,15 @@ extension ExplicitHTTPProxyHandler {
         context: ChannelHandlerContext
     ) {
         exchange.responseControlHead = nil
-        let trailers = exchange.responseControlTrailers.map {
+        var trailers = exchange.responseControlTrailers.map {
             Self.hopHeaders($0, upgrading: false, appendVia: false, excluding: exchange.responseConnectionTokens)
+        }
+        if replacement != nil {
+            trailers = trailers.map {
+                HTTPHeaders(HTTPControlConfiguration.removingReplacedBodyFields(Self.fields($0)).map {
+                    ($0.name, $0.value)
+                })
+            }
         }
         var effective = effective
         if !typedHTTP2, let trailers, !trailers.isEmpty {
@@ -223,30 +224,34 @@ extension ExplicitHTTPProxyHandler {
         }
         exchange.responseControlBody.removeAll(keepingCapacity: false)
         if exchange.responseControlEnded {
-            let complete = {
-                if let trailers, !trailers.isEmpty {
-                    (self.sink as? ObservationCaptureSink)?.receiveEffective(.responseTrailers(
-                        requestID: exchange.id,
-                        headers: Self.fields(trailers)
-                    ))
-                }
-                (self.sink as? ObservationCaptureSink)?.receiveEffective(.responseEnd(
-                    requestID: exchange.id,
-                    truncated: false
-                ))
-                context.writeAndFlush(self.wrapOutboundOut(.end(trailers)))
-                    .assumeIsolated()
-                    .whenComplete { _ in self.finish(exchange) }
-            }
-            if let writer = exchange.responseFaultWriter {
-                writer.finish(complete)
-            } else {
-                complete()
-            }
+            finishControlledResponse(trailers, exchange: exchange, context: context)
         } else if replacement != nil {
             controlFailed(exchange, error: HTTPControlError.unsupportedEdit)
         } else {
             readOriginIfNeeded()
+        }
+    }
+
+    func finishControlledResponse(_ trailers: HTTPHeaders?, exchange: Exchange, context: ChannelHandlerContext) {
+        let complete = {
+            if let trailers, !trailers.isEmpty {
+                (self.sink as? ObservationCaptureSink)?.receiveEffective(.responseTrailers(
+                    requestID: exchange.id,
+                    headers: Self.fields(trailers)
+                ))
+            }
+            (self.sink as? ObservationCaptureSink)?.receiveEffective(.responseEnd(
+                requestID: exchange.id,
+                truncated: false
+            ))
+            context.writeAndFlush(self.wrapOutboundOut(.end(trailers)))
+                .assumeIsolated()
+                .whenComplete { _ in self.finish(exchange) }
+        }
+        if let writer = exchange.responseFaultWriter {
+            writer.finish(complete)
+        } else {
+            complete()
         }
     }
 

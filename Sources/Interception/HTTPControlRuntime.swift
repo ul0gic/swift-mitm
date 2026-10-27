@@ -66,7 +66,7 @@ public actor HTTPControlRuntime {
         let requestID: UUID
         let phase: HTTPControlPhase
         let bytes: Int
-        let globalReservation: ResourceReservation?
+        let globalReservations: [ResourceReservation]
         let timer: Task<Void, Never>
         let completion: HTTPBreakpointCompletion
     }
@@ -75,7 +75,7 @@ public actor HTTPControlRuntime {
         let requestID: UUID
         let breakpointID: UUID?
         let bytes: Int
-        let globalReservation: ResourceReservation?
+        let globalReservations: [ResourceReservation]
         let task: Task<Void, Never>
         let timer: Task<Void, Never>
         var waiter: CheckedContinuation<HTTPControlDecision, any Error>?
@@ -84,7 +84,7 @@ public actor HTTPControlRuntime {
     private struct ByteReservation {
         let requestID: UUID
         let bytes: Int
-        let global: ResourceReservation?
+        let global: [ResourceReservation]
     }
 
     private var configuration: HTTPControlConfiguration
@@ -97,15 +97,29 @@ public actor HTTPControlRuntime {
     private var activeOwner: UUID?
     private var hasAdmissionBinding = false
     private var admissionController: ResourceAdmissionController?
+    private var transportAdmissionController: ResourceAdmissionController?
 
     public init(configuration: HTTPControlConfiguration) {
         self.configuration = configuration
         budget = HTTPControlBudget(configuration: configuration)
     }
 
-    func beginServing(owner: UUID, admission: ResourceAdmissionController?) throws {
+    public func startServing(
+        admission: ResourceAdmissionController? = nil,
+        transportAdmission: ResourceAdmissionController? = nil
+    ) throws -> HTTPControlServingSession {
+        let owner = UUID()
+        try beginServing(owner: owner, admission: admission, transportAdmission: transportAdmission)
+        return HTTPControlServingSession(owner: owner, runtime: self)
+    }
+
+    func beginServing(
+        owner: UUID,
+        admission: ResourceAdmissionController?,
+        transportAdmission: ResourceAdmissionController? = nil
+    ) throws {
         guard activeOwner == nil || activeOwner == owner else { throw HTTPControlError.invalidConfiguration }
-        let sameAdmission = admissionController === admission
+        let sameAdmission = admissionController === admission && transportAdmissionController === transportAdmission
         let hasActorWork = !holds.isEmpty || !callbacks.isEmpty || !byteReservations.isEmpty
         try budget.state.withLockedValue { state in
             let hasWork = state.bytes > 0 || hasActorWork
@@ -114,6 +128,7 @@ public actor HTTPControlRuntime {
                 throw HTTPControlError.invalidConfiguration
             }
             admissionController = admission
+            transportAdmissionController = transportAdmission
             hasAdmissionBinding = true
             activeOwner = owner
             stopped = false
@@ -193,7 +208,7 @@ public actor HTTPControlRuntime {
         try budget.charge(bytes)
     }
 
-    private func reserveGlobalBytes(_ bytes: Int) throws -> ResourceReservation? {
+    private func reserveGlobalBytes(_ bytes: Int) throws -> [ResourceReservation] {
         var committed = false
         defer {
             if !committed {
@@ -201,9 +216,13 @@ public actor HTTPControlRuntime {
             }
         }
         do {
-            let reservation = try admissionController?.acquire(.retainedBytes(bytes))
+            let reservations = try HTTPControlWorkLifetime.reserveAdmission(
+                bytes,
+                admission: admissionController,
+                transportAdmission: transportAdmissionController
+            )
             committed = true
-            return reservation
+            return reservations
         } catch ResourceAdmissionError.capacityExceeded {
             throw HTTPControlError.capacityExceeded
         }
@@ -252,7 +271,7 @@ public actor HTTPControlRuntime {
             requestID: original.requestID,
             phase: original.phase,
             bytes: bytes,
-            globalReservation: global,
+            globalReservations: global,
             timer: timer,
             completion: completion
         )
@@ -315,7 +334,7 @@ public actor HTTPControlRuntime {
                     requestID: message.requestID,
                     breakpointID: owningBreakpointID,
                     bytes: bytes,
-                    globalReservation: global,
+                    globalReservations: global,
                     task: task,
                     timer: timer,
                     waiter: continuation

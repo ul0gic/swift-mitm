@@ -86,7 +86,10 @@ final class HTTP2CaptureTapHandler: ChannelInboundHandler {
             disposition = processData(frame.data, endStream: frame.endStream) ? .forward : .terminate
         case .rstStream:
             if streamContext?.value.isWebSocketCaptureClosed != true {
-                failCapture(terminateStream: streamContext?.value.requiresStreamTerminationForViolation == true)
+                failCapture(
+                    terminateStream: streamContext?.value.requiresStreamTerminationForViolation == true,
+                    diagnostic: "reset"
+                )
             }
             disposition = .forward
         default:
@@ -105,7 +108,10 @@ final class HTTP2CaptureTapHandler: ChannelInboundHandler {
     func channelInactive(context: ChannelHandlerContext) {
         if phase != .ended, phase != .failed,
            streamContext?.value.isWebSocketCaptureClosed != true {
-            failCapture(terminateStream: streamContext?.value.requiresStreamTerminationForViolation == true)
+            failCapture(
+                terminateStream: streamContext?.value.requiresStreamTerminationForViolation == true,
+                diagnostic: "inactive"
+            )
         }
         streamContext?.value.terminate(failed: false)
         context.fireChannelInactive()
@@ -116,7 +122,10 @@ final class HTTP2CaptureTapHandler: ChannelInboundHandler {
             return
         }
         if streamContext?.value.isWebSocketCaptureClosed != true {
-            failCapture(terminateStream: streamContext?.value.requiresStreamTerminationForViolation == true)
+            failCapture(
+                terminateStream: streamContext?.value.requiresStreamTerminationForViolation == true,
+                diagnostic: String(reflecting: type(of: error))
+            )
         }
         context.fireErrorCaught(error)
     }
@@ -346,13 +355,15 @@ private extension HTTP2CaptureTapHandler {
         )
     }
 
-    private func failCapture(terminateStream: Bool = false) {
+    private func failCapture(terminateStream: Bool = false, diagnostic: String? = nil) {
+        let message = diagnostic.map { "\(Self.errorMessage): \(direction)/\(phase)/\($0.prefix(96))" }
+            ?? Self.errorMessage
         phase = .failed
         if terminateStream {
             streamContext?.value.terminate(failed: true)
         }
         if errorState.claim() {
-            sink.receive(.streamError(requestID: requestID, message: Self.errorMessage))
+            sink.receive(.streamError(requestID: requestID, message: message))
         }
     }
 

@@ -5,6 +5,7 @@ let package = Package(
     name: "SwiftMITMHTTP3",
     platforms: [.macOS(.v27)],
     products: [
+        .library(name: "SwiftMITMHTTP3", targets: ["SwiftMITMHTTP3"]),
         .executable(name: "HTTP3DependencyProbe", targets: ["HTTP3DependencyProbe"]),
         .executable(name: "HTTP3TransportProbe", targets: ["HTTP3TransportProbe"])
     ],
@@ -14,20 +15,38 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.22.0"),
         .package(url: "https://github.com/apple/swift-http-types.git", from: "1.8.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
+        .package(url: "https://github.com/apple/swift-certificates.git", from: "1.5.0"),
+        .package(url: "https://github.com/apple/swift-asn1.git", from: "1.1.0"),
         .package(
             url: "https://github.com/apple/swift-nio-quic-helpers.git",
             revision: "e456909e3f6b157a0f1d410e77fe8a96da5dab69"
         ),
         .package(
             url: "https://github.com/ul0gic/swift-nio-quic.git",
-            revision: "3170f9e03b4d361f2185bafc81edbbc208827060"
+            revision: "bd4353105fdabc55ddd11faeaafe9e669effba49"
         ),
         .package(
             url: "https://github.com/ul0gic/swift-nio-http3.git",
-            revision: "4ac46f387b410b7b51b8e1085af7170044465a84"
+            revision: "1c3c5c7c627e9c116b0901c6ad7d8cbe80e158bb"
         )
     ],
     targets: [
+        .target(
+            name: "SwiftMITMHTTP3",
+            dependencies: [
+                .product(name: "SwiftMITM", package: "swift-mitm"),
+                .product(name: "X509", package: "swift-certificates"),
+                .product(name: "SwiftASN1", package: "swift-asn1"),
+                .product(name: "NIOQUICHelpers", package: "swift-nio-quic-helpers"),
+                .product(name: "NIOQUIC", package: "swift-nio-quic"),
+                .product(name: "NIOHTTP3", package: "swift-nio-http3"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOHTTPTypes", package: "swift-nio-extras"),
+                .product(name: "HTTPTypes", package: "swift-http-types"),
+                .product(name: "Logging", package: "swift-log")
+            ]
+        ),
         .executableTarget(
             name: "HTTP3DependencyProbe",
             dependencies: [

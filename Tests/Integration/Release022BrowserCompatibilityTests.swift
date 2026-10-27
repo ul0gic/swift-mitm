@@ -109,15 +109,19 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
     }
 
     private func runChromiumClient(python: String, executable: String, port: Int, originPort: Int) throws {
-        let result = try release022RunProcess(executable: python, arguments: [
-            Release022ExternalPeer.clientsDirectory.appendingPathComponent("chromium_client.py").path,
-            "--executable",
-            executable,
-            "--proxy",
-            "http://127.0.0.1:\(port)",
-            "--url",
-            "https://localhost:\(originPort)/"
-        ], phase: "chromium-client")
+        let result = try release022RunProcess(
+            executable: python,
+            arguments: [
+                Release022ExternalPeer.clientsDirectory.appendingPathComponent("chromium_client.py").path,
+                "--executable",
+                executable,
+                "--proxy",
+                "http://127.0.0.1:\(port)",
+                "--url",
+                "https://localhost:\(originPort)/"
+            ],
+            phase: "chromium-client"
+        )
         FileHandle.standardError.write(Data("CLIENT-MATRIX \(result)".utf8))
         XCTAssertTrue(result.contains("\"sse\": true"))
     }

@@ -45,7 +45,8 @@ final class Phase3StalledWebSocketExchange: @unchecked Sendable {
         try await stream.writeAndFlush(HTTP2Frame.FramePayload.data(.init(
             data: .byteBuffer(ByteBuffer()),
             endStream: true
-        ))).get()
+        )))
+        .get()
     }
 
     func shutdown() async {

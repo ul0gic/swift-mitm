@@ -9,6 +9,7 @@ on:
       - 'Packages/SwiftMITMHTTP3/**'
       - 'Sources/**'
       - 'Vendor/**'
+      - 'Tests/Clients/Stage2/HTTP3/**'
       - '.github/workflows/stage2-feasibility.yml'
 
 permissions:
@@ -53,6 +54,8 @@ jobs:
         run: |
           swift package resolve
           cp Package.resolved "$GITHUB_WORKSPACE/evidence/combined-Package.resolved"
+          swift build --target SwiftMITMHTTP3 --force-resolved-versions -Xswiftc -warnings-as-errors \
+            2>&1 | tee "$GITHUB_WORKSPACE/evidence/http3-library-build.log"
           swift build --product HTTP3DependencyProbe --force-resolved-versions -Xswiftc -warnings-as-errors
           swift run --skip-build HTTP3DependencyProbe | tee "$GITHUB_WORKSPACE/evidence/combined-probe.txt"
       - name: Build and package the two-leg transport probe
@@ -77,6 +80,36 @@ jobs:
         with:
           name: stage2-http3-probe-${{ github.sha }}
           path: transport-probe/
+          if-no-files-found: error
+      - name: Build the public HTTP3 production consumer
+        run: |
+          host_package=Tests/Clients/Stage2/HTTP3/ProductionHost
+          cp evidence/combined-Package.resolved "$host_package/Package.resolved"
+          swift package --package-path "$host_package" resolve
+          cp "$host_package/Package.resolved" evidence/production-Package.resolved
+          python3 - <<'PY_PINS'
+          import json
+          def pins(path):
+              with open(path) as source:
+                  return {pin['identity']: pin['state'] for pin in json.load(source)['pins']}
+          assert pins('evidence/combined-Package.resolved') == pins('evidence/production-Package.resolved')
+          PY_PINS
+          swift build --package-path "$host_package" --product HTTP3ProductionHost \
+            --force-resolved-versions -Xswiftc -warnings-as-errors 2>&1 | tee evidence/production-build.log
+          binary_directory="$(swift build --package-path "$host_package" --show-bin-path)"
+          files=(HTTP3ProductionHost)
+          for bundle in "$binary_directory"/*.bundle; do
+            if [[ -d "$bundle" ]]; then files+=("${bundle##*/}"); fi
+          done
+          mkdir -p production-host
+          tar -czf production-host/HTTP3ProductionHost.tar.gz -C "$binary_directory" "${files[@]}"
+          cp evidence/production-Package.resolved production-host/Package.resolved
+          cp evidence/{candidate-sha,swift,xcode}.txt production-host/
+      - name: Retain the compiled public HTTP3 consumer
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: stage2-http3-production-host-${{ github.sha }}
+          path: production-host/
           if-no-files-found: error
       - name: Prepare Crypto5 core consumer for macOS26
         run: |
@@ -245,6 +278,75 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: stage2-http3-transport-${{ github.sha }}
+          path: evidence/
+          if-no-files-found: error
+
+  http3-production:
+    name: Public HTTP3 acceptance (${{ matrix.partition }})
+    needs: [combined-graph, crypto5-minimum-runtime]
+    runs-on: xcode-27
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [transport, resources]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: stage2-http3-production-host-${{ github.sha }}
+          path: ${{ runner.temp }}/production-host
+      - name: Validate the public consumer candidate and toolchain
+        run: |
+          mkdir -p evidence
+          test "$(cat "$RUNNER_TEMP/production-host/candidate-sha.txt")" = "$GITHUB_SHA"
+          cp "$RUNNER_TEMP/production-host/"{candidate-sha,swift,xcode}.txt evidence/
+          xcodebuild -version > evidence/runtime-xcode.txt
+          swift --version > evidence/runtime-swift.txt
+          sw_vers > evidence/os.txt
+          cmp evidence/runtime-xcode.txt evidence/xcode.txt
+          cmp evidence/runtime-swift.txt evidence/swift.txt
+          cp "$RUNNER_TEMP/production-host/Package.resolved" evidence/
+          tar -xzf "$RUNNER_TEMP/production-host/HTTP3ProductionHost.tar.gz" -C "$RUNNER_TEMP/production-host"
+          test -x "$RUNNER_TEMP/production-host/HTTP3ProductionHost"
+      - name: Set up independent peer Python
+        id: peer-python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.14.9'
+          architecture: arm64
+      - name: Install isolated independent peers
+        env:
+          PEER_PYTHON: ${{ steps.peer-python.outputs.python-path }}
+        run: |
+          "$PEER_PYTHON" -m venv "$RUNNER_TEMP/http3-production-peers"
+          "$RUNNER_TEMP/http3-production-peers/bin/python" -m pip install --require-hashes --only-binary=:all: \
+            -r Tests/Clients/Stage2/HTTP3/requirements.txt
+          "$RUNNER_TEMP/http3-production-peers/bin/python" -m pip freeze > evidence/peer-versions.txt
+      - name: Exercise the public production library
+        timeout-minutes: 25
+        env:
+          PARTITION: ${{ matrix.partition }}
+        run: |
+          if [[ "$PARTITION" == transport ]]; then
+            cases=(streaming ip-san changed-authority upstream-hostname upstream-trust downstream-trust
+              denied-route separated-fin oversized-request-headers oversized-response-headers
+              fragmented-headers sni-policy goaway-drain octet-fidelity request-stream-limit)
+          else
+            cases=(slow-receiver cancelled-credit-churn storage-refusal maximum-storage-refusal)
+          fi
+          arguments=()
+          for scenario in "${cases[@]}"; do arguments+=(--case "$scenario"); done
+          "$RUNNER_TEMP/http3-production-peers/bin/python" Tests/Clients/Stage2/HTTP3/production_verify.py \
+            --binary "$RUNNER_TEMP/production-host/HTTP3ProductionHost" \
+            --output evidence/production-http3-results.json "${arguments[@]}"
+      - name: Retain public production acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: stage2-http3-production-${{ matrix.partition }}-${{ github.sha }}
           path: evidence/
           if-no-files-found: error
 

@@ -6,6 +6,7 @@ import WebKit
 final class Release022BrowserObserver: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     private let root: SecCertificate
     private let completion: Phase2FixtureCompletion<String>
+    private var stage = "created"
 
     init(root: SecCertificate, completion: Phase2FixtureCompletion<String>) {
         self.root = root
@@ -13,6 +14,7 @@ final class Release022BrowserObserver: NSObject, WKNavigationDelegate, WKScriptM
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        stage = "application-result"
         guard message.body as? String == "passed" else {
             completion.complete(.failure(Phase2FixtureError.unexpectedBytes))
             return
@@ -21,27 +23,56 @@ final class Release022BrowserObserver: NSObject, WKNavigationDelegate, WKScriptM
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation?, withError error: Error) {
+        reportNavigationFailure(error)
         completion.complete(.failure(error))
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation?, withError error: Error) {
+        reportNavigationFailure(error)
         completion.complete(.failure(error))
     }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation?) {
+        stage = "provisional-navigation"
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation?) { stage = "committed-navigation" }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) { stage = "finished-navigation" }
 
     func webView(
         _ webView: WKWebView,
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping @MainActor @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
+        stage = "server-trust"
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
-              let trust = challenge.protectionSpace.serverTrust,
-              SecTrustSetAnchorCertificates(trust, [root] as CFArray) == errSecSuccess,
-              SecTrustSetAnchorCertificatesOnly(trust, true) == errSecSuccess,
-              SecTrustEvaluateWithError(trust, nil) else {
+              let trust = challenge.protectionSpace.serverTrust else {
+            FileHandle.standardError.write(Data("WKWebView challenge omitted server trust\n".utf8))
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }
+        let anchor = SecTrustSetAnchorCertificates(trust, [root] as CFArray)
+        let exclusive = SecTrustSetAnchorCertificatesOnly(trust, true)
+        guard anchor == errSecSuccess, exclusive == errSecSuccess else {
+            FileHandle.standardError.write(Data("WKWebView anchor setup: anchor=\(anchor), exclusive=\(exclusive)\n".utf8))
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+        var failure: CFError?
+        guard SecTrustEvaluateWithError(trust, &failure) else {
+            let facts = release022TrustDiagnostic(trust: trust, expectedRoot: root, failure: failure)
+            FileHandle.standardError.write(Data("WKWebView trust denied: \(facts)\n".utf8))
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+        stage = "server-trust-accepted"
         completionHandler(.useCredential, URLCredential(trust: trust))
+    }
+
+    private func reportNavigationFailure(_ error: Error) {
+        let facts = release022NavigationErrorDiagnostic(error)
+        FileHandle.standardError.write(Data("WKWebView stage=\(stage): \(facts)\n".utf8))
     }
 }
 
@@ -50,7 +81,7 @@ final class Release022RunnerTrust {
     private let keychain: URL
     private var previousKeychains: [String] = []
     private var created = false
-    private var trusted = false
+    private var trustAttempted = false
 
     init(certificate: URL, directory: URL) {
         self.certificate = certificate
@@ -72,16 +103,26 @@ final class Release022RunnerTrust {
         created = true
         _ = try security(["unlock-keychain", "-p", password, keychain.path])
         _ = try security(["list-keychains", "-d", "user", "-s", keychain.path] + previousKeychains)
-        _ = try security(["add-trusted-cert", "-r", "trustRoot", "-k", keychain.path, certificate.path])
-        trusted = true
+        trustAttempted = true
+        _ = try adminSecurity([
+            "add-trusted-cert",
+            "-d",
+            "-r",
+            "trustRoot",
+            "-p",
+            "ssl",
+            "-k",
+            keychain.path,
+            certificate.path
+        ])
     }
 
     func restore() throws {
         var failure: any Error?
-        if trusted {
+        if trustAttempted {
             do {
-                _ = try security(["remove-trusted-cert", certificate.path])
-                trusted = false
+                _ = try adminSecurity(["remove-trusted-cert", "-d", certificate.path])
+                trustAttempted = false
             } catch { failure = error }
         }
         if created {
@@ -112,6 +153,15 @@ final class Release022RunnerTrust {
             arguments: arguments,
             timeout: 30,
             phase: "security \(arguments[0])"
+        )
+    }
+
+    private func adminSecurity(_ arguments: [String]) throws -> String {
+        try release022RunProcess(
+            executable: "/usr/bin/sudo",
+            arguments: ["-n", "/usr/bin/security"] + arguments,
+            timeout: 30,
+            phase: "security-admin \(arguments[0])"
         )
     }
 }

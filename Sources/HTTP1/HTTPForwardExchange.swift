@@ -40,6 +40,8 @@ extension ExplicitHTTPProxyHandler {
         var breakpointEditReservation: HTTPControlByteReservation?
         var breakpointEditAdmissionReservation: ResourceReservation?
         var effectiveRequestPublished = false
+        var requestControlRuleIDs: [String] = []
+        var requestOverridesNoTransform = false
         var responseControlRuleIDs: [String] = []
         var responseDecoder: BytePreservingHTTPResponseDecoder?
         var reusableFraming = false

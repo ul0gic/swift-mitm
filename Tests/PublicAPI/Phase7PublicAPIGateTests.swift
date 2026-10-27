@@ -231,6 +231,7 @@ final class Phase7PublicAPIGateTests: XCTestCase {
         case .explicitHTTP: "explicitHTTP"
         case .explicitConnect: "explicitConnect"
         case .priorKnowledgeHTTP2: "priorKnowledgeHTTP2"
+        case .fixedRouteHTTP3: "fixedRouteHTTP3"
         case .trustedProxyV2: "trustedProxyV2"
         @unknown default: "unknown"
         }

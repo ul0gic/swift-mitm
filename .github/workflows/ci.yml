@@ -557,4 +557,4 @@ jobs:
           printf 'Candidate `%s`: all configured checks passed.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
           printf 'Configured current-runtime clients: curl, URLSession HTTP/1.1 + HTTP/2, WKWebView SSE/WebSocket, pinned stable Chromium and independent gRPC.\n' >> "$GITHUB_STEP_SUMMARY"
           printf 'Runtime evidence covers macOS 27 suites and a macOS 26 public-consumer smoke. Full minimum-runtime acceptance remains incomplete; the smoke does not replace the client/resource matrix.\n' >> "$GITHUB_STEP_SUMMARY"
-          printf 'Stage 2 final acceptance remains incomplete: HTTP/3 transport is not implemented, dependency feasibility is separate, and full hard-ceiling/RSS and protocol-edge qualification is outstanding. This configured-check result is not release approval.\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'Stage 2 final acceptance remains incomplete: HTTP/3 production acceptance runs in the separate Stage 2 workflow; full hard-ceiling/RSS and protocol-edge qualification is outstanding. This configured-check result is not release approval.\n' >> "$GITHUB_STEP_SUMMARY"

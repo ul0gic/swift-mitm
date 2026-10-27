@@ -1,0 +1,12 @@
+diff --git a/Sources/NIOHTTP3/HTTP3ConnectionHandler.swift b/Sources/NIOHTTP3/HTTP3ConnectionHandler.swift
+--- a/Sources/NIOHTTP3/HTTP3ConnectionHandler.swift
++++ b/Sources/NIOHTTP3/HTTP3ConnectionHandler.swift
+@@ -775,7 +775,7 @@
+     }
+ 
+     /// Models array/string storage; allocator padding and object headers are outside this payload model.
+-    func requiredStorageBytes(
++    public func requiredStorageBytes(
+         maximumDecodedFieldSectionBytes: Int,
+         maximumBufferedPayloadBytes: Int? = nil
+     ) -> Int {

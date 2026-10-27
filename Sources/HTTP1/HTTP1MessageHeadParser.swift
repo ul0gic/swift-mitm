@@ -10,11 +10,8 @@ extension HTTP1MessageParser {
         let text = Self.fieldText(headBytes)
         var lines = text.components(separatedBy: "\r\n")
         while lines.last?.isEmpty == true { lines.removeLast() }
-        guard let startLine = lines.first, !startLine.isEmpty else {
-            fail(emit: emit)
-            return
-        }
-        guard let headerFields = Self.parseHeaderFields(Array(lines.dropFirst())) else {
+        guard let startLine = lines.first, !startLine.isEmpty,
+              let headerFields = Self.parseHeaderFields(Array(lines.dropFirst())) else {
             fail(emit: emit)
             return
         }

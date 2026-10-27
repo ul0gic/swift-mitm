@@ -1,3 +1,4 @@
+import Foundation
 import NIOCore
 import NIOHTTP1
 import NIOHTTP2
@@ -80,6 +81,14 @@ extension ExplicitHTTPProxyHandler {
         var head = exchange.effectiveHead
         head.uri = target.requestTarget
         head.headers = Self.hopHeaders(head.headers, upgrading: Self.isWebSocket(head.headers))
+        if exchange.upstreamHTTP2,
+           !HTTP1MessageParser.tokens(Self.fields(exchange.effectiveHead.headers), named: "connection").contains("te") {
+            // RFC 9113 §8.2.2 permits TE: trailers; gRPC requires that capability on its HTTP/2 hop.
+            for value in exchange.effectiveHead.headers["te"]
+                where value.lowercased().trimmingCharacters(in: .whitespaces) == "trailers" {
+                head.headers.add(name: "te", value: value)
+            }
+        }
         head.headers.replaceOrAdd(name: "host", value: target.authority)
         Self.frameRequest(&head, original: exchange.effectiveHead.headers)
         if exchange.upstreamHTTP2 || typedHTTP2 {
@@ -177,6 +186,9 @@ extension ExplicitHTTPProxyHandler {
     }
 
     func writeOriginHead(_ head: HTTPRequestHead, exchange: Exchange, channel: Channel) {
+        if exchange.controlSnapshot != nil {
+            publishEffectiveRequestHead(Self.fields(head.headers), exchange: exchange)
+        }
         channel.write(HTTPClientRequestPart.head(head), promise: nil)
         let pending = exchange.pending
         exchange.pending.removeAll()

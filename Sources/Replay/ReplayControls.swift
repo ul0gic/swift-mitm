@@ -58,7 +58,7 @@ final class ReplayControls: Sendable {
             sink: sink,
             snapshot: snapshot
         )
-        try validate(result, message: message)
+        try snapshot.validate(result, for: message)
         sink?.receive(.effectiveHead(
             requestID: requestID,
             phase: message.phase,
@@ -73,42 +73,6 @@ final class ReplayControls: Sendable {
             ))
         }
         return result
-    }
-
-    func validate(_ decision: HTTPControlDecision, message: HTTPControlMessage) throws {
-        _ = try HTTPControlConfiguration.headerBytes(decision.headers, multiplexed: false)
-        if let synthetic = decision.syntheticResponseHeaders {
-            _ = try HTTPControlConfiguration.headerBytes(synthetic, multiplexed: false)
-        }
-        for fault in decision.faults { try fault.validate() }
-        switch decision.action {
-        case let .replaceBody(body, maximum, _, override):
-            try validateReplacement(body, maximum: maximum, override: override, message: message)
-        case let .respond(status, _, body):
-            guard (200...599).contains(status), body.count <= snapshot.limits.maximumBodyBytes,
-                  ![204, 205, 304].contains(status) || body.isEmpty,
-                  message.method != "HEAD" || body.isEmpty else { throw HTTPControlError.unsupportedEdit }
-        default: break
-        }
-    }
-
-    private func validateReplacement(
-        _ body: Data,
-        maximum: Int,
-        override: Bool,
-        message: HTTPControlMessage
-    ) throws {
-        guard !HTTPControlConfiguration.unsupported(message),
-              (1...snapshot.limits.maximumBodyBytes).contains(maximum),
-              body.count <= snapshot.limits.maximumBodyBytes else { throw HTTPControlError.unsupportedEdit }
-        if let input = message.body, input.count > maximum {
-            throw HTTPControlError.bodyLimitExceeded
-        }
-        guard override || !message.headers.contains(where: {
-            $0.name.lowercased() == "cache-control" && $0.value.lowercased().split(separator: ",").contains(where: {
-                $0.trimmingCharacters(in: .whitespaces) == "no-transform"
-            })
-        }) else { throw HTTPControlError.noTransform }
     }
 
     func responseMessage(_ head: CapturedResponseHead, body: Data? = nil) -> HTTPControlMessage {
@@ -281,7 +245,7 @@ struct ReplayResponseControls: Sendable {
         let message = controls.responseMessage(originalHead, body: collected)
         let resolved: HTTPControlDecision
         if let decision {
-            try controls.validate(decision, message: message)
+            try controls.snapshot.validate(decision, for: message)
             resolved = decision
         } else {
             let value = try controls.snapshot.evaluate(message)

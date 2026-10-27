@@ -12,8 +12,8 @@ public protocol HTTPControlEventSink: Sendable {
     func receive(_ event: HTTPControlEvent)
 }
 
-enum HTTPControlTransport {
-    static func resolve(
+public enum HTTPControlTransport {
+    public static func resolve(
         _ decision: HTTPControlDecision,
         message: HTTPControlMessage,
         runtime: HTTPControlRuntime,

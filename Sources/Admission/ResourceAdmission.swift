@@ -79,6 +79,14 @@ public final class ResourceAdmissionController: Sendable {
         ResourceRetainedByteAccount(controller: self)
     }
 
+    public func acquireConnection(destination: String? = nil) throws -> ResourceReservation {
+        try acquire(.connection(destination: destination))
+    }
+
+    public func acquireStream() throws -> ResourceReservation {
+        try acquire(.stream)
+    }
+
     fileprivate func reserveRetainedBytes(_ bytes: Int) -> Bool {
         state.withLockedValue { state in
             Self.reserveRetainedBytes(
@@ -193,7 +201,7 @@ public final class ResourceRetainedByteAccount: Sendable {
     }
 }
 
-final class ResourceReservation: Sendable {
+public final class ResourceReservation: Sendable {
     private let controller: ResourceAdmissionController
     private let kind: ResourceAdmissionController.Kind
     private let released = NIOLockedValueBox(false)
@@ -203,7 +211,7 @@ final class ResourceReservation: Sendable {
         self.kind = kind
     }
 
-    func release() {
+    public func release() {
         let shouldRelease = released.withLockedValue { released in
             guard !released else { return false }
             released = true

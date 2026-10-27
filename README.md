@@ -58,7 +58,7 @@ Create a `CertificateAuthority`, supply a `CaptureEventSink`, configure `ProxySe
 
 Loopback binding, upstream certificate verification, and restricted internal destinations are defaults. Your host application controls authorization, CA-key persistence, client trust, and retained traffic. See the [security model](Sources/SwiftMITM.docc/SecurityModel.md).
 
-HTTP/3 interception is not yet available; see [HTTP/3 status](Documentation/HTTP3.md). HTTP controls do not edit CONNECT or upgrade handshakes. There is no `h2c` upgrade or ECH decryption. Certificate pinning can prevent interception; explicit pass-through preserves encrypted connectivity without decrypted capture.
+Route-bound HTTP/3 is provided by the separate macOS 27 [SwiftMITMHTTP3 package](Documentation/HTTP3.md). HTTP controls do not edit CONNECT or upgrade handshakes. There is no `h2c` upgrade or ECH decryption. Certificate pinning can prevent interception; explicit pass-through preserves encrypted connectivity without decrypted capture.
 
 ## License
 

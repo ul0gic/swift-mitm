@@ -1,6 +1,55 @@
 import Foundation
 
 extension HTTPControlConfiguration {
+    public func validate(_ decision: HTTPControlDecision, for message: HTTPControlMessage) throws {
+        try Self.validateDecisionFields(decision, message: message)
+        switch decision.action {
+        case let .replaceBody(body, maximum, encoding, override):
+            try validateBodyDecision(body, maximum: maximum, encoding: encoding, override: override, message: message)
+        case let .respond(status, _, body):
+            try Self.validateResponse(status: status, body: body, limits: limits)
+            guard message.status != 101, message.method != "HEAD" || body.isEmpty else {
+                throw HTTPControlError.unsupportedEdit
+            }
+        case .route:
+            guard message.phase == .request, !Self.unsupported(message) else {
+                throw HTTPControlError.unsupportedEdit
+            }
+            _ = try Self.actionBytes(decision.action, limits: limits)
+        case .breakpoint, .fault:
+            guard !Self.isUpgrade(message) else { throw HTTPControlError.unsupportedEdit }
+            _ = try Self.actionBytes(decision.action, limits: limits)
+        case .forward, .editHeaders, .abort:
+            _ = try Self.actionBytes(decision.action, limits: limits)
+        }
+    }
+
+    private static func validateDecisionFields(_ decision: HTTPControlDecision, message: HTTPControlMessage) throws {
+        _ = try headerBytes(decision.headers, multiplexed: message.isHTTP2OrLater)
+        if let synthetic = decision.syntheticResponseHeaders {
+            _ = try headerBytes(synthetic, multiplexed: message.isHTTP2OrLater)
+        }
+        for fault in decision.faults { try fault.validate() }
+        guard decision.faults.isEmpty || !isUpgrade(message) else { throw HTTPControlError.unsupportedEdit }
+    }
+
+    private func validateBodyDecision(
+        _ body: Data,
+        maximum: Int,
+        encoding: String?,
+        override: Bool,
+        message: HTTPControlMessage
+    ) throws {
+        guard (1...limits.maximumBodyBytes).contains(maximum), body.count <= limits.maximumBodyBytes else {
+            throw HTTPControlError.unsupportedEdit
+        }
+        try Self.requireBodyEdit(message, overrideNoTransform: override)
+        try Self.validateReplacement(body, maximum: maximum, encoding: encoding, limits: limits)
+        if let input = message.body, input.count > maximum {
+            throw HTTPControlError.bodyLimitExceeded
+        }
+    }
+
     static func ruleBytes(_ rule: HTTPRule, limits: HTTPControlLimits) throws -> Int {
         if let authority = rule.authority {
             guard let target = ConnectionTarget(

@@ -97,6 +97,7 @@ public final class CertificateAuthority: Sendable {
         commonName: String
     ) throws -> Certificate {
         let privateKey = Certificate.PrivateKey(caKey)
+        let publicKey = Certificate.PublicKey(caKey.publicKey)
         let name = try DistinguishedName {
             CommonName(commonName)
             OrganizationName("SwiftMITM")
@@ -105,7 +106,7 @@ public final class CertificateAuthority: Sendable {
         return try Certificate(
             version: .v3,
             serialNumber: Certificate.SerialNumber(),
-            publicKey: Certificate.PublicKey(caKey.publicKey),
+            publicKey: publicKey,
             notValidBefore: now.addingTimeInterval(-3600),
             notValidAfter: now.addingTimeInterval(60 * 60 * 24 * 3650),
             issuer: name,
@@ -113,6 +114,7 @@ public final class CertificateAuthority: Sendable {
             extensions: try Certificate.Extensions {
                 Critical(BasicConstraints.isCertificateAuthority(maxPathLength: 0))
                 Critical(KeyUsage(keyCertSign: true, cRLSign: true))
+                SubjectKeyIdentifier(hash: publicKey)
             },
             issuerPrivateKey: privateKey
         )
@@ -130,6 +132,7 @@ public final class CertificateAuthority: Sendable {
         do {
             basicConstraints = try certificate.extensions.basicConstraints
             keyUsage = try certificate.extensions.keyUsage
+            _ = try certificate.extensions.subjectKeyIdentifier
         } catch {
             throw CertificateAuthorityRestorationError.invalidCertificate
         }
@@ -177,11 +180,14 @@ public final class CertificateAuthority: Sendable {
     func makeLeafCertificate(forHost host: String) throws -> (Certificate, Certificate.PrivateKey) {
         let leafKey = P256.Signing.PrivateKey()
         let leafPrivate = Certificate.PrivateKey(leafKey)
+        let publicKey = Certificate.PublicKey(leafKey.publicKey)
+        let issuerIdentifier = try caCertificate.extensions.subjectKeyIdentifier
+            ?? SubjectKeyIdentifier(hash: caCertificate.publicKey)
         let now = Date()
         let leaf = try Certificate(
             version: .v3,
             serialNumber: Certificate.SerialNumber(),
-            publicKey: Certificate.PublicKey(leafKey.publicKey),
+            publicKey: publicKey,
             notValidBefore: now.addingTimeInterval(-3600),
             notValidAfter: now.addingTimeInterval(60 * 60 * 24 * 397),
             issuer: caCertificate.subject,
@@ -191,6 +197,8 @@ public final class CertificateAuthority: Sendable {
                 KeyUsage(digitalSignature: true, keyEncipherment: true)
                 try ExtendedKeyUsage([.serverAuth])
                 SubjectAlternativeNames([Self.subjectAlternativeName(forHost: host)])
+                SubjectKeyIdentifier(hash: publicKey)
+                AuthorityKeyIdentifier(keyIdentifier: issuerIdentifier.keyIdentifier)
             },
             issuerPrivateKey: caPrivateKey
         )

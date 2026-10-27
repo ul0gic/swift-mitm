@@ -157,10 +157,7 @@ private func release022AwaitCommand(
     if completion.wait(timeout: .now() + 3) == .timedOut {
         guard process.isRunning else { throw Release022ClientError.commandCleanupFailed(phase: phase) }
         let target = ownsGroup && getpgid(identifier) == identifier ? -identifier : identifier
-        guard kill(target, SIGKILL) == 0 || errno == ESRCH else {
-            throw Release022ClientError.commandCleanupFailed(phase: phase)
-        }
-        guard completion.wait(timeout: .now() + 3) == .success else {
+        guard kill(target, SIGKILL) == 0 || errno == ESRCH, completion.wait(timeout: .now() + 3) == .success else {
             throw Release022ClientError.commandCleanupFailed(phase: phase)
         }
     }

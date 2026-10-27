@@ -87,12 +87,23 @@ final class Release022ClientCompatibilityTests: XCTestCase {
             origin.stop()
             try await group.shutdownGracefully()
         } catch {
+            reportURLSessionPath(sink)
             session?.invalidateAndCancel()
             try? await proxy.stop()
             origin.stop()
             try? await group.shutdownGracefully()
             throw error
         }
+    }
+
+    private func reportURLSessionPath(_ sink: Release022Events) {
+        let failures = sink.events.compactMap { event -> String? in
+            if case let .connectionFailure(failure) = event {
+                return "\(failure.reason):\(String(describing: failure.code))"
+            }
+            return nil
+        }
+        XCTFail("URLSession path diagnostics: captureEvents=\(sink.events.count), failures=\(Array(failures.prefix(4)))")
     }
 
     private func assertCurlCapture(_ sink: Release022Events) throws {
@@ -206,10 +217,18 @@ final class Release022ClientCompatibilityTests: XCTestCase {
     }
 }
 
-private final class Release022URLSessionTrust: NSObject, URLSessionDelegate, @unchecked Sendable {
+private final class Release022URLSessionTrust: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     let root: SecCertificate
 
     init(root: SecCertificate) { self.root = root }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        for (index, transaction) in metrics.transactionMetrics.prefix(4).enumerated() {
+            let facts = "transaction=\(index), proxy=\(transaction.isProxyConnection), "
+                + "protocol=\(String(describing: transaction.networkProtocolName))"
+            FileHandle.standardError.write(Data("URLSession route metrics: \(facts)\n".utf8))
+        }
+    }
 
     func urlSession(
         _ session: URLSession,
@@ -235,15 +254,8 @@ private final class Release022URLSessionTrust: NSObject, URLSessionDelegate, @un
         }
         var failure: CFError?
         guard SecTrustEvaluateWithError(trust, &failure) else {
-            if let failure {
-                let domain = String(describing: CFErrorGetDomain(failure))
-                XCTFail(
-                    "URLSession trust denied: domain=\(domain), code=\(CFErrorGetCode(failure)); "
-                        + "host=\(challenge.protectionSpace.host), proxy=\(challenge.protectionSpace.isProxy())"
-                )
-            } else {
-                XCTFail("URLSession trust denied without an error object")
-            }
+            let facts = release022TrustDiagnostic(trust: trust, expectedRoot: root, failure: failure)
+            XCTFail("URLSession trust denied: \(facts); host=\(challenge.protectionSpace.host)")
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }
