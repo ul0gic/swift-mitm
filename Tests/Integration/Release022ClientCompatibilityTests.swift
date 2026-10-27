@@ -236,8 +236,11 @@ private final class Release022URLSessionTrust: NSObject, URLSessionDelegate, @un
         var failure: CFError?
         guard SecTrustEvaluateWithError(trust, &failure) else {
             if let failure {
-                XCTFail("URLSession trust denied: domain=\(CFErrorGetDomain(failure)), code=\(CFErrorGetCode(failure)); "
-                    + "host=\(challenge.protectionSpace.host), proxy=\(challenge.protectionSpace.isProxy)")
+                let domain = String(describing: CFErrorGetDomain(failure))
+                XCTFail(
+                    "URLSession trust denied: domain=\(domain), code=\(CFErrorGetCode(failure)); "
+                        + "host=\(challenge.protectionSpace.host), proxy=\(challenge.protectionSpace.isProxy())"
+                )
             } else {
                 XCTFail("URLSession trust denied without an error object")
             }

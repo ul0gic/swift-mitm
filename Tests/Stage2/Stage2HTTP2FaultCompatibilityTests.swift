@@ -58,7 +58,9 @@ final class Stage2HTTP2FaultCompatibilityTests: XCTestCase {
 
     private func reportFailures(capture: Release022Events, controls: Stage2ControlEvents) {
         let controlFailures = controls.events.compactMap { event -> String? in
-            if case let .failure(_, code) = event { return String(describing: code) }
+            if case let .failure(_, code) = event {
+                return String(describing: code)
+            }
             return nil
         }
         let captured = capture.events.compactMap { event -> String? in
