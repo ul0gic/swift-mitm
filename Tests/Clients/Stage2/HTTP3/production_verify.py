@@ -28,6 +28,9 @@ from production_memory import CASES as MEMORY_CASES, run_case as run_memory_case
 from production_ownership import CASES as OWNERSHIP_CASES, run_case as run_ownership_case
 from production_migration import CASES as MIGRATION_CASES, run_case as run_migration_case
 from production_upload import CASES as UPLOAD_CASES, run_case as run_upload_case
+from production_early_data import CASES as EARLY_DATA_CASES, run_case as run_early_data_case
+from production_deadlines import CASES as DEADLINE_CASES, run_case as run_deadline_case
+from production_shared_ceiling import CASES as SHARED_CEILING_CASES, run_case as run_shared_ceiling_case
 from production_resources import production_goaway, read_resources, stream_limit
 
 
@@ -36,7 +39,7 @@ CASES = (
     "denied-route", "separated-fin", "oversized-request-headers", "oversized-response-headers",
     "fragmented-headers", "sni-policy", "goaway-drain", "octet-fidelity", "request-stream-limit",
     "slow-receiver", "cancelled-credit-churn", "storage-refusal", "maximum-storage-refusal",
-) + CONTROL_CASES + LIFECYCLE_CASES + SECURITY_CASES + MEMORY_CASES + OWNERSHIP_CASES + MIGRATION_CASES + UPLOAD_CASES
+) + CONTROL_CASES + LIFECYCLE_CASES + SECURITY_CASES + MEMORY_CASES + OWNERSHIP_CASES + MIGRATION_CASES + UPLOAD_CASES + EARLY_DATA_CASES + DEADLINE_CASES + SHARED_CEILING_CASES
 
 
 async def exercise(name, ready, authority, certificate, peer, artifacts):
@@ -254,7 +257,7 @@ async def main(arguments):
     artifacts = arguments.output.parent / "production-http3-peer-logs"
     for name in arguments.case or CASES:
         try:
-            timeout = 150 if name in ("memory-cancel-cycles", "orphan-stop-restart") else 90
+            timeout = 150 if name in ("memory-cancel-cycles", "orphan-stop-restart", "shared-maximum-storage") else 90
             async with asyncio.timeout(timeout):
                 if name in LIFECYCLE_CASES:
                     observation = await run_lifecycle_case(arguments.binary, name, artifacts / name)
@@ -268,6 +271,12 @@ async def main(arguments):
                     observation = await run_migration_case(arguments.binary, name, artifacts / name)
                 elif name in UPLOAD_CASES:
                     observation = await run_upload_case(arguments.binary, name, artifacts / name)
+                elif name in EARLY_DATA_CASES:
+                    observation = await run_early_data_case(arguments.binary, name, artifacts / name)
+                elif name in DEADLINE_CASES:
+                    observation = await run_deadline_case(arguments.binary, name, artifacts / name)
+                elif name in SHARED_CEILING_CASES:
+                    observation = await run_shared_ceiling_case(arguments.binary, name, artifacts / name)
                 else:
                     observation = await run_case(arguments.binary, name, artifacts)
             results["checks"][name] = {"result": "passed", "observation": observation}

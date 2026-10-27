@@ -311,7 +311,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        partition: [transport, resources, controls, lifecycle, security, ownership, memory]
+        partition: [transport, resources, controls, lifecycle, security, ownership, memory, capacity]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -362,13 +362,15 @@ jobs:
             cases=(control-headers control-body control-synthetic control-breakpoint control-delay)
           elif [[ "$PARTITION" == lifecycle ]]; then
             cases=(lifecycle-restart pending-handshake-reset-churn connection-ceiling
-              maximum-connection-ceiling maximum-handshake-ceiling)
+              maximum-connection-ceiling maximum-handshake-ceiling handshake-deadline-1 handshake-deadline-30)
           elif [[ "$PARTITION" == security ]]; then
             cases=(cross-client-pooling mapped-route-isolation mapped-route-trust
               upstream-invalid-goaway upstream-increasing-goaway downstream-increasing-goaway
-              downstream-goaway-drain unsupported-connect unsupported-webtransport validated-address-migration)
+              downstream-goaway-drain unsupported-connect unsupported-webtransport validated-address-migration unsolicited-early-data)
           elif [[ "$PARTITION" == ownership ]]; then
             cases=(shared-byte-refusal orphan-stop-restart)
+          elif [[ "$PARTITION" == capacity ]]; then
+            cases=(shared-maximum-storage)
           else
             cases=(memory-cancel-cycles memory-maximum-storage)
           fi

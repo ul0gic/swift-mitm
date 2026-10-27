@@ -85,7 +85,13 @@ final class Stage2HTTPOrigin: Sendable {
             state.listener = nil
             return channels
         }
-        for channel in channels where channel.isActive { try await channel.close().get() }
+        for channel in channels {
+            try await channel.eventLoop.flatSubmit {
+                channel.close().flatMapErrorThrowing { error in
+                    guard case ChannelError.alreadyClosed = error else { throw error }
+                }.flatMap { channel.closeFuture }
+            }.get()
+        }
     }
 }
 
@@ -193,9 +199,12 @@ func stage2WithHTTPOrigin(
         admission: admission,
         http1ReusePolicy: reuse
     )
+    var phase = "origin-start"
     do {
         try await origin.start()
+        phase = "proxy-start"
         let port = try await proxy.start(port: 0)
+        phase = "workload"
         try await body(Stage2HTTPContext(
             origin: origin,
             proxy: proxy,
@@ -205,13 +214,18 @@ func stage2WithHTTPOrigin(
             inspected: inspected,
             inspector: inspector
         ))
+        phase = "proxy-stop"
         try await proxy.stop()
+        phase = "origin-stop"
         try await origin.stop()
+        phase = "inspector-shutdown"
         let shutdown = await inspector.shutdown()
         XCTAssertTrue(shutdown.drained)
+        phase = "group-shutdown"
         try await group.shutdownGracefully()
     } catch {
         let failure = error
+        XCTFail("HTTP fixture failed during \(phase): \(failure)")
         do { try await proxy.stop() } catch { XCTFail("Proxy teardown failed: \(error)") }
         do { try await origin.stop() } catch { XCTFail("Origin teardown failed: \(error)") }
         let shutdown = await inspector.shutdown()

@@ -59,8 +59,14 @@ final class Release022ClientCompatibilityTests: XCTestCase {
     }
 
     private func urlSession(protocolName: String, version: HTTPProtocolVersion) async throws {
+        let originHost = try release022RunnerIPv4()
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 2)
-        let origin = try TLSOriginServer(group: group, bodySize: 32, applicationProtocols: [protocolName])
+        let origin = try TLSOriginServer(
+            group: group,
+            bodySize: 32,
+            applicationProtocols: [protocolName],
+            hostname: originHost
+        )
         let authority = try CertificateAuthority.generate().authority
         let sink = Release022Events()
         let proxy = ProxyServer(
@@ -73,11 +79,11 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         )
         var session: URLSession?
         do {
-            try origin.start()
+            try origin.start(bindAddress: originHost)
             let port = try await proxy.start(port: 0)
-            let client = try trustedURLSession(port: port, authority: authority)
+            let client = try trustedURLSession(port: port, authority: authority, originHost: originHost)
             session = client
-            let url = try XCTUnwrap(URL(string: "https://localhost:\(origin.localPort)/"))
+            let url = try XCTUnwrap(URL(string: "https://\(originHost):\(origin.localPort)/"))
             let (data, response) = try await client.data(from: url)
             XCTAssertEqual(data, Data(repeating: 0x41, count: 32))
             XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
@@ -181,14 +187,13 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         }
     }
 
-    private func trustedURLSession(port: Int, authority: CertificateAuthority) throws -> URLSession {
+    private func trustedURLSession(port: Int, authority: CertificateAuthority, originHost: String) throws -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 10
         let proxyPort = try XCTUnwrap(UInt16(exactly: port))
         let endpointPort = try XCTUnwrap(NWEndpoint.Port(rawValue: proxyPort))
         var proxyConfiguration = ProxyConfiguration(httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: endpointPort))
-        // Explicitly select loopback: the default selection reached the origin directly in client acceptance.
-        proxyConfiguration.matchDomains = ["localhost"]
+        proxyConfiguration.matchDomains = [originHost]
         configuration.proxyConfigurations = [proxyConfiguration]
         let der = try NIOSSLCertificate(bytes: Array(authority.caCertificatePEM.utf8), format: .pem).toDERBytes()
         let root = try XCTUnwrap(SecCertificateCreateWithData(nil, Data(der) as CFData))

@@ -37,7 +37,9 @@ final class HTTP3Exchange {
         let exchange = HTTP3Exchange(channel: channel, downstream: downstream, transport: transport)
         var registered = false
         do {
-            try transport.registerExchange(id: exchange.id, downstream: downstream) { reason in
+            try transport.registerExchange(id: exchange.id, downstream: downstream, originCompleted: {
+                exchange.request.outputEnded && exchange.response.inputEnded && exchange.response.inputDisposed
+            }) { reason in
                 switch reason {
                 case .cancelled: exchange.fail(HTTPControlError.cancelled)
                 case let .transportFailure(error): exchange.fail(error)

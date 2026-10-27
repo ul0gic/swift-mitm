@@ -200,7 +200,9 @@ async def run_case(binary, name, artifacts):
                 peer = await readiness(origin_ready, origin)
                 config = {"authority": "localhost:443", "destinationAddress": "127.0.0.1",
                           "destinationPort": peer["port"], "originCAPath": peer["certificate"],
-                          "readyPath": str(ready_path), "allowInternal": True}
+                          "readyPath": str(ready_path), "allowInternal": True,
+                          "maximumConnections": 128, "maximumPendingHandshakes": 64,
+                          "maximumRequestStreamsPerConnection": 128, "maximumRetainedBytes": 67108864}
                 config_path = directory / "configuration.json"
                 config_path.write_text(json.dumps(config), encoding="utf-8")
                 host = await asyncio.create_subprocess_exec(

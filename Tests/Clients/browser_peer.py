@@ -120,11 +120,13 @@ class Peer(BaseHTTPRequestHandler):
         pass
 
 
-def server(ready_file):
+def server(ready_file, bind_address):
     print("origin-start: identity", file=sys.stderr, flush=True)
-    certificate, key = create_identity(ready_file.parent)
+    certificate, key = create_identity(
+        ready_file.parent, additional_ip=None if bind_address == "127.0.0.1" else bind_address
+    )
     print("origin-start: bind", file=sys.stderr, flush=True)
-    instance = LoopbackHTTPServer(("127.0.0.1", 0), Peer)
+    instance = LoopbackHTTPServer((bind_address, 0), Peer)
     instance.daemon_threads = True
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     print("origin-start: tls", file=sys.stderr, flush=True)
@@ -142,4 +144,6 @@ def server(ready_file):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--ready-file", type=Path, required=True)
-    server(parser.parse_args().ready_file)
+    parser.add_argument("--bind-address", default="127.0.0.1")
+    arguments = parser.parse_args()
+    server(arguments.ready_file, arguments.bind_address)

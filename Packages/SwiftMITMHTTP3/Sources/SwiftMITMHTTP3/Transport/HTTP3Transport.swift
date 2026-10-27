@@ -63,6 +63,7 @@ final class HTTP3Transport {
     func registerExchange(
         id: UUID,
         downstream: HTTP3DownstreamConnection,
+        originCompleted: @escaping () -> Bool,
         cancel: @escaping (HTTP3ExchangeCancellation) -> Void
     ) throws {
         guard !closing, downstreams[downstream.id] != nil, downstream.channel.isActive else {
@@ -75,7 +76,12 @@ final class HTTP3Transport {
         }
         guard exchanges[id] == nil else { throw HTTP3ProxyError.protocolViolation }
         let leases = try resources.acquire(.requestStreams)
-        exchanges[id] = HTTP3ExchangeRegistration(downstream: downstream, leases: leases, cancel: cancel)
+        exchanges[id] = HTTP3ExchangeRegistration(
+            downstream: downstream,
+            leases: leases,
+            originCompleted: originCompleted,
+            cancel: cancel
+        )
     }
 
     func cancelOriginSetup(requestID: UUID) {
@@ -145,6 +151,7 @@ final class HTTP3Transport {
 final class HTTP3ExchangeRegistration {
     let downstream: HTTP3DownstreamConnection
     let leases: [ResourceReservation]
+    let originCompleted: () -> Bool
     var cancel: ((HTTP3ExchangeCancellation) -> Void)?
     var sessionID: UUID?
     var setupCancelled = false
@@ -154,10 +161,12 @@ final class HTTP3ExchangeRegistration {
     init(
         downstream: HTTP3DownstreamConnection,
         leases: [ResourceReservation],
+        originCompleted: @escaping () -> Bool,
         cancel: @escaping (HTTP3ExchangeCancellation) -> Void
     ) {
         self.downstream = downstream
         self.leases = leases
+        self.originCompleted = originCompleted
         self.cancel = cancel
     }
 }

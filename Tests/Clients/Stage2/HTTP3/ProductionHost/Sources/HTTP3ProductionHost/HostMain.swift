@@ -24,9 +24,14 @@ struct HostMain {
 
     private static func run() async throws {
         let arguments = CommandLine.arguments
-        guard arguments.count == 3, arguments[1] == "--configuration" else { throw HostError.arguments }
+        guard arguments.count == 3,
+              ["--configuration", "--shared-ceiling"].contains(arguments[1]) else { throw HostError.arguments }
         let input = try Data(contentsOf: URL(fileURLWithPath: arguments[2]))
         let config = try JSONDecoder().decode(HostConfiguration.self, from: input)
+        if arguments[1] == "--shared-ceiling" {
+            try await HostSharedCeiling.run(config)
+            return
+        }
         let authority = try CertificateAuthority.generate()
         let sink = HostCapture()
         let embedding = try HostEmbedding(config)

@@ -116,6 +116,7 @@ final class Release022RunnerTrust {
             keychain.path,
             certificate.path
         ])
+        try release022ReportRunnerTrust(certificate: certificate)
     }
 
     func restore() throws {

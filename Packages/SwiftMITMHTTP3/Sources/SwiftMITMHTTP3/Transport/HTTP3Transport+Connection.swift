@@ -72,7 +72,7 @@ extension HTTP3Transport {
         let state = NIOLoopBound(self, eventLoop: eventLoop)
         let owned = NIOLoopBound(session, eventLoop: eventLoop)
         channel.closeFuture.whenComplete { _ in
-            state.value.connectionFailed(owned.value, error: owned.value.ownership.failure ?? .upstreamConnectionFailed)
+            state.value.connectionClosed(owned.value)
         }
         var native = HTTP3ClientConfiguration.defaults
         native.inboundMemory = inboundMemoryConfiguration()
@@ -101,6 +101,29 @@ extension HTTP3Transport {
     }
 
     func connectionFailed(_ session: HTTP3OriginSession, error: HTTP3ProxyError) {
+        let wasPresent = retireSession(session, error: error)
+        if wasPresent, !closing, !session.closedIntentionally {
+            emitFailure(id: session.id, target: session.target, error: error)
+        }
+        cancelExchanges(matching: { $0.sessionID == session.id }, reason: .transportFailure(error))
+    }
+
+    private func connectionClosed(_ session: HTTP3OriginSession) {
+        guard session.draining, !closing, !session.closedIntentionally, session.ownership.failure == nil else {
+            connectionFailed(session, error: session.ownership.failure ?? .upstreamConnectionFailed)
+            return
+        }
+        let wasPresent = retireSession(session, error: .upstreamConnectionFailed)
+        let incomplete: (HTTP3ExchangeRegistration) -> Bool = {
+            $0.sessionID == session.id && !$0.originCompleted()
+        }
+        if wasPresent, exchanges.values.contains(where: incomplete) {
+            emitFailure(id: session.id, target: session.target, error: .upstreamConnectionFailed)
+        }
+        cancelExchanges(matching: incomplete, reason: .transportFailure(.upstreamConnectionFailed))
+    }
+
+    private func retireSession(_ session: HTTP3OriginSession, error: HTTP3ProxyError) -> Bool {
         let wasPresent = sessions.removeValue(forKey: session.id) != nil
         session.draining = true
         removeFixedEntry(session)
@@ -112,10 +135,7 @@ extension HTTP3Transport {
             session.connectionCompleted = true
             session.promise.fail(error)
         }
-        if wasPresent, !closing, !session.closedIntentionally {
-            emitFailure(id: session.id, target: session.target, error: error)
-        }
-        cancelExchanges(matching: { $0.sessionID == session.id }, reason: .transportFailure(error))
+        return wasPresent
     }
 
     func removeFixedEntry(_ session: HTTP3OriginSession) {

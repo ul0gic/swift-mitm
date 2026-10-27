@@ -1,5 +1,5 @@
 import asyncio
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, asynccontextmanager
 import json
 import os
 from pathlib import Path
@@ -23,23 +23,30 @@ def sample(path, byte_limit):
     return value
 
 
-async def observe(path, byte_limit, predicate, after=0):
+async def observe(path, byte_limit, predicate, after=0, diagnostics=None):
     async with asyncio.timeout(8):
         while True:
             value = sample(path, byte_limit)
+            if diagnostics is not None:
+                diagnostics("ownership-observation", resources=value,
+                            newerThanBarrier=value["sampleStartedNanoseconds"] > after)
             if value["sampleStartedNanoseconds"] > after and predicate(value):
                 return value
             await asyncio.sleep(0.05)
 
 
-async def zero(path, byte_limit, after=0):
+async def zero(path, byte_limit, after=0, diagnostics=None):
     first = await observe(path, byte_limit, lambda value: (
         all(value[name] == 0 for name in CURRENT) and all(count == 0 for count in value["local"].values())
-    ), after)
+    ), after, diagnostics)
+    if diagnostics is not None:
+        diagnostics("zero-first-observed", resources=first)
     await quiescent(path, current(first), byte_limit=byte_limit)
+    if diagnostics is not None:
+        diagnostics("zero-quiescence-completed")
     return await observe(path, byte_limit, lambda value: (
         all(value[name] == 0 for name in CURRENT) and all(count == 0 for count in value["local"].values())
-    ), first["sampleEndedNanoseconds"])
+    ), first["sampleEndedNanoseconds"], diagnostics)
 
 
 async def cancel_cycles(ready, authority, certificate, evidence):
@@ -89,22 +96,79 @@ async def cancel_cycles(ready, authority, certificate, evidence):
 
 async def maximum_storage(ready, authority, certificate, evidence):
     path, byte_limit = ready["resourcesPath"], 268435456
-    baseline = await zero(path, byte_limit)
-    async with AsyncExitStack() as stack:
-        clients = []
-        for _ in range(8):
-            clients.append(await stack.enter_async_context(connect(
-                "127.0.0.1", ready["port"], configuration=configuration(certificate, "localhost"), create_protocol=Client
-            )))
-            assert clients[-1].alpn == "h3"
-        report = await storage_ceiling(clients, authority, path, response_complete,
-                                       evidence.parent / "capacity-samples.json", byte_limit)
-        resumed = sample(path, byte_limit)
-    final = await zero(path, byte_limit, resumed["sampleEndedNanoseconds"])
-    phases = {"baseline": baseline, "admittedCeiling": report["atRefusal"],
-              "resumed": resumed, "closedQuiescent": final}
     evidence.parent.mkdir(parents=True, exist_ok=True)
-    evidence.write_text(json.dumps(phases, indent=2), encoding="utf-8")
+    phases = {}
+    phase = "baseline"
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    records = 0
+    with evidence.with_name("ownership-progress.jsonl").open("w", encoding="utf-8") as progress:
+        def record(event, **fields):
+            nonlocal records
+            assert records < 1024, "maximum-storage diagnostic record bound exceeded"
+            progress.write(json.dumps({"event": event, "phase": phase,
+                                       "elapsedSeconds": loop.time() - started, **fields}) + "\n")
+            progress.flush()
+            records += 1
+
+        @asynccontextmanager
+        async def recorded_client(index):
+            diagnostics = {}
+            context = connect("127.0.0.1", ready["port"],
+                              configuration=configuration(certificate, "localhost"),
+                              create_protocol=lambda *args, **kwargs: Client(
+                                  *args, diagnostics=diagnostics, **kwargs))
+            client = await context.__aenter__()
+            try:
+                record("client-handshake-completed", clientIndex=index)
+                yield client
+            finally:
+                body_error = sys.exception()
+                completed = False
+                try:
+                    record("client-close-initiated", clientIndex=index, diagnostics=diagnostics)
+                finally:
+                    error = sys.exception()
+                    diagnostic_error = error if error is not body_error else None
+                    try:
+                        await context.__aexit__(None, None, None)
+                        completed = True
+                    finally:
+                        close_error = None if completed else sys.exception()
+                        record("client-context-exited", clientIndex=index, closeCompleted=completed,
+                               bodyErrorType=type(body_error).__name__ if body_error is not None else None,
+                               closeErrorType=type(close_error).__name__ if close_error is not None else None,
+                               closeDiagnosticErrorType=(type(diagnostic_error).__name__
+                                                         if diagnostic_error is not None else None),
+                               diagnostics=diagnostics)
+
+        try:
+            baseline = await zero(path, byte_limit, diagnostics=record)
+            phases["baseline"] = baseline
+            phase = "connecting-clients"
+            async with AsyncExitStack() as stack:
+                clients = []
+                for index in range(8):
+                    clients.append(await stack.enter_async_context(recorded_client(index)))
+                    assert clients[-1].alpn == "h3"
+                phase = "storage-ceiling"
+                record("phase-started")
+                report = await storage_ceiling(clients, authority, path, response_complete,
+                                               evidence.parent / "capacity-samples.json", byte_limit)
+                phases["admittedCeiling"] = report["atRefusal"]
+                resumed = sample(path, byte_limit)
+                phases["resumed"] = resumed
+                phase = "closing-clients"
+                record("phase-started", resources=resumed)
+            phase = "awaiting-zero-after-client-close"
+            record("phase-started")
+            final = await zero(path, byte_limit, resumed["sampleEndedNanoseconds"], diagnostics=record)
+            phases["closedQuiescent"] = final
+            phase = "complete"
+        finally:
+            error = sys.exception()
+            record("scenario-exit", errorType=type(error).__name__ if error is not None else None)
+            evidence.write_text(json.dumps(phases, indent=2), encoding="utf-8")
     assert all(isinstance(value["residentBytes"], int) and value["residentBytes"] > 0 for value in phases.values())
     return dict(report, rssPhases={name: value["residentBytes"] for name, value in phases.items()},
                 exactZeroCurrentResourcesAfterDisconnect=True,

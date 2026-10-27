@@ -40,9 +40,14 @@ extension ExplicitHTTPProxyHandler {
                 writeOriginHead(head, exchange: exchange, channel: channel)
             }
             if let release = connection.releaseBufferedReads {
-                release()
-                    .flatMap { channel.setOption(ChannelOptions.autoRead, value: false) }
-                    .whenFailure { _ in channel.close(promise: nil) }
+                let owner = NIOLoopBound(self, eventLoop: channel.eventLoop)
+                let restored = release().flatMap { channel.setOption(ChannelOptions.autoRead, value: false) }
+                restored.whenSuccess { _ in
+                    guard owner.value.upstream === channel else { return }
+                    // Disabling autoRead cancels the pending socket read established before ALPN buffer release.
+                    owner.value.readOriginIfNeeded()
+                }
+                restored.whenFailure { _ in channel.close(promise: nil) }
             }
             readClientIfNeeded()
         } catch {

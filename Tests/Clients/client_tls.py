@@ -8,11 +8,14 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 
-def create_identity(directory):
+def create_identity(directory, additional_ip=None):
     directory = Path(directory)
     key = ec.generate_private_key(ec.SECP256R1())
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "SwiftMITM independent client peer")])
     now = datetime.datetime.now(datetime.timezone.utc)
+    subject_names = [x509.DNSName("localhost"), x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]
+    if additional_ip is not None:
+        subject_names.append(x509.IPAddress(ipaddress.ip_address(additional_ip)))
     certificate = (
         x509.CertificateBuilder()
         .subject_name(name)
@@ -28,9 +31,7 @@ def create_identity(directory):
             data_encipherment=False, key_agreement=False, key_cert_sign=True,
             crl_sign=True, encipher_only=False, decipher_only=False
         ), critical=True)
-        .add_extension(x509.SubjectAlternativeName([
-            x509.DNSName("localhost"), x509.IPAddress(ipaddress.ip_address("127.0.0.1"))
-        ]), critical=False)
+        .add_extension(x509.SubjectAlternativeName(subject_names), critical=False)
         .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
         .sign(key, hashes.SHA256())
     )

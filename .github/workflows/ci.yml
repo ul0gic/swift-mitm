@@ -543,9 +543,93 @@ jobs:
           path: evidence/
           if-no-files-found: error
 
+  performance:
+    name: Disabled-feature performance regression
+    runs-on: xcode-27
+    timeout-minutes: 75
+    env:
+      BASELINE_REVISION: dc36969d94c9bbbfb2b7f8546b10ec441a4c3a13
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: dc36969d94c9bbbfb2b7f8546b10ec441a4c3a13
+          path: baseline-performance
+          persist-credentials: false
+      - name: Record the paired candidates and common harness
+        run: |
+          mkdir -p evidence
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C baseline-performance rev-parse HEAD)" = "$BASELINE_REVISION"
+          git rev-parse HEAD > evidence/candidate-sha.txt
+          git -C baseline-performance rev-parse HEAD > evidence/baseline-sha.txt
+          swift --version > evidence/swift.txt
+          xcodebuild -version > evidence/xcode.txt
+          sw_vers > evidence/os.txt
+          uname -m > evidence/architecture.txt
+          grep -Fx 'Xcode 27.1' evidence/xcode.txt
+          grep -Fx 'Build version 27A9275' evidence/xcode.txt
+          grep -Eq 'Swift version 6\.4([ .]|$)' evidence/swift.txt
+          cp -R Tests/Clients/PerformanceAcceptance baseline-performance/Tests/Clients/PerformanceAcceptance
+          find Tests/Clients/PerformanceAcceptance -type f -exec shasum -a 256 {} + > evidence/harness-sha256.txt
+      - name: Set up independent peer Python
+        id: peer-python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.14.9'
+          architecture: arm64
+      - name: Install pinned identity support
+        env:
+          PEER_PYTHON: ${{ steps.peer-python.outputs.python-path }}
+        run: |
+          "$PEER_PYTHON" -m venv "$RUNNER_TEMP/performance-peers"
+          "$RUNNER_TEMP/performance-peers/bin/python" -m pip install --require-hashes --only-binary=:all: \
+            -r Tests/Clients/Stage2/HTTP3/requirements.txt
+          "$RUNNER_TEMP/performance-peers/bin/python" -m pip freeze > evidence/peer-versions.txt
+      - name: Build both variants with their own committed pins
+        run: |
+          for variant in baseline candidate; do
+            variant_root="$GITHUB_WORKSPACE"
+            if [[ "$variant" == baseline ]]; then variant_root="$GITHUB_WORKSPACE/baseline-performance"; fi
+            benchmark_package="$variant_root/Tests/Clients/PerformanceAcceptance"
+            cp "$variant_root/Package.resolved" "$benchmark_package/Package.resolved"
+            swift package --package-path "$benchmark_package" resolve
+            cp "$variant_root/Package.resolved" "evidence/$variant-root-Package.resolved"
+            cp "$benchmark_package/Package.resolved" "evidence/$variant-benchmark-Package.resolved"
+            python3 - "$variant_root/Package.resolved" "$benchmark_package/Package.resolved" <<'PY_PINS'
+          import json
+          import sys
+          def pins(path):
+              with open(path) as source:
+                  return {pin['identity']: pin['state'] for pin in json.load(source)['pins']}
+          assert pins(sys.argv[1]) == pins(sys.argv[2]), 'benchmark altered committed pins'
+          PY_PINS
+            swift build --package-path "$benchmark_package" --configuration release \
+              --product PerformanceAcceptance --force-resolved-versions -Xswiftc -warnings-as-errors \
+              2>&1 | tee "evidence/$variant-build.log"
+            binary_directory="$(swift build --package-path "$benchmark_package" --configuration release --show-bin-path)"
+            printf '%s_BINARY=%s/PerformanceAcceptance\n' "$variant" "$binary_directory" >> "$GITHUB_ENV"
+          done
+      - name: Measure five interleaved pairs on the same runner
+        timeout-minutes: 12
+        run: |
+          "$RUNNER_TEMP/performance-peers/bin/python" Tests/Clients/PerformanceAcceptance/compare.py \
+            --baseline "$baseline_BINARY" --candidate "$candidate_BINARY" \
+            --baseline-revision "$BASELINE_REVISION" --candidate-revision "$GITHUB_SHA" \
+            --benchmark-revision "$GITHUB_SHA" --output evidence/performance-results.json
+      - name: Retain performance evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: performance-${{ github.sha }}
+          path: evidence/
+          if-no-files-found: error
+
   verify:
     name: Verify
-    needs: [tests, quality, distribution, consumer, minimum-runtime]
+    needs: [tests, quality, distribution, consumer, minimum-runtime, performance]
     if: always()
     runs-on: ubuntu-24.04
     steps:

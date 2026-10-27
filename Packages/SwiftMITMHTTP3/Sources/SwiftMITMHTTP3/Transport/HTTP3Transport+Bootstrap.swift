@@ -44,8 +44,8 @@ extension HTTP3Transport {
             do {
                 return try resources.reserve(bytes, kind: .nativeStream)
             } catch HTTP3ProxyError.resourceLimit {
-                // RFC 9114 §8.1: H3_EXCESSIVE_LOAD refuses unadmitted work without closing sibling streams.
-                guard let code = QUICApplicationErrorCode(0x10B) else {
+                // RFC 9114 §8.1: H3_EXCESSIVE_LOAD applies to either role before stream classification.
+                guard let code = QUICApplicationErrorCode(0x107) else {
                     throw HTTP3ProxyError.invalidConfiguration
                 }
                 throw QUICStreamStorageAdmissionError(code: code)

@@ -41,7 +41,7 @@ final class TLSOriginServer {
     var localPort: Int { channel?.localAddress?.port ?? 0 }
     var activeChildChannels: [Channel] { activeChildren.withLockedValue { Array($0.values) } }
 
-    func start() throws {
+    func start(bindAddress: String = "127.0.0.1") throws {
         let leaf = try ca.leaf(forHost: hostname)
         var configuration = TLSConfiguration.makeServerConfiguration(
             certificateChain: leaf.certificateChain,
@@ -76,7 +76,7 @@ final class TLSOriginServer {
                     try channel.pipeline.syncOperations.addHandler(alpn)
                 }
             }
-            .bind(host: "127.0.0.1", port: 0)
+            .bind(host: bindAddress, port: 0)
             .wait()
     }
 

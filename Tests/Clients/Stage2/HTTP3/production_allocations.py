@@ -160,11 +160,19 @@ async def workload(tool, host, ready, peer, output, phases):
                 await capture_phase(tool, host, path, output, "cancelled-with-live-connection", phases)
                 assert client.connection_error is None
             finally:
+                primary_error = sys.exception()
                 keeper.cancel()
                 try:
                     await keeper
                 except asyncio.CancelledError:
                     pass
+                except (TimeoutError, ConnectionError) as error:
+                    failure = {"result": "failed", "reason": f"{type(error).__name__}: {error}",
+                               "traceback": traceback.format_exc(limit=8),
+                               "primaryErrorPreserved": primary_error is not None}
+                    (output / "keep-alive-failure.json").write_text(json.dumps(failure, indent=2), encoding="utf-8")
+                    if primary_error is None:
+                        raise
         await zero(path, 67108864)
         await capture_phase(tool, host, path, output, "disconnected-quiescent", phases)
         await collect(tool, host.pid, "-allEvents", output / "allocation-free-events.txt")

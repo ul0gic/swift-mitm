@@ -23,7 +23,7 @@ from client_tls import create_identity
 
 
 class Origin(QuicConnectionProtocol):
-    def __init__(self, *args, stats, publish, release_file, flow_proof, **kwargs):
+    def __init__(self, *args, stats, publish, release_file, flow_proof, capacity_tasks=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.http = H3Connection(self._quic)
         self.stats = stats
@@ -35,6 +35,8 @@ class Origin(QuicConnectionProtocol):
         self.release_file = release_file
         self.fin_tasks = set()
         self.flow_task = None
+        self.capacity_tasks = capacity_tasks
+        self.capacity_task = None
         self.slow_stream = None
         if flow_proof:
             self.flow_task = asyncio.create_task(self.sample_flow())
@@ -47,11 +49,34 @@ class Origin(QuicConnectionProtocol):
                 self.publish()
             await asyncio.sleep(0.1)
 
+    async def keep_capacity_active(self):
+        while True:
+            await asyncio.wait_for(self.ping(), timeout=5)
+            self.stats["capacityKeepalive"]["acknowledgedPings"] += 1
+            self.publish()
+            await asyncio.sleep(0.5)
+
+    def capacity_done(self, task):
+        self.capacity_tasks.discard(task)
+        self.capacity_task = None
+        counters = self.stats["capacityKeepalive"]
+        counters["activeTasks"] = len(self.capacity_tasks)
+        if not task.cancelled() and task.exception() is not None:
+            counters["failures"] += 1
+        self.publish()
+
     def quic_event_received(self, event):
         if isinstance(event, HandshakeCompleted):
             self.stats["handshakes"] += 1
             self.stats["alpn"].append(event.alpn_protocol)
             self.stats["earlyDataAccepted"] |= event.early_data_accepted
+            if self.capacity_tasks is not None:
+                self.capacity_task = asyncio.create_task(self.keep_capacity_active())
+                self.capacity_tasks.add(self.capacity_task)
+                self.capacity_task.add_done_callback(self.capacity_done)
+                counters = self.stats["capacityKeepalive"]
+                counters["activeTasks"] = len(self.capacity_tasks)
+                counters["peakTasks"] = max(counters["peakTasks"], counters["activeTasks"])
         elif isinstance(event, (StreamReset, StopSendingReceived)):
             self.stats["cancelSignals"] += 1
             self.paths.pop(event.stream_id, None)
@@ -59,6 +84,8 @@ class Origin(QuicConnectionProtocol):
             self.stats["connectionErrors"].append(event.error_code)
             if self.flow_task is not None:
                 self.flow_task.cancel()
+            if self.capacity_task is not None:
+                self.capacity_task.cancel()
         for received in self.http.handle_event(event):
             if isinstance(received, HeadersReceived):
                 self.headers(received)
@@ -195,7 +222,7 @@ class CountingServer(QuicServer):
         super().datagram_received(data, address)
 
 
-async def serve(arguments, origin_type=Origin):
+async def serve(arguments, origin_type=Origin, capacity_peer=False):
     directory = arguments.ready_file.parent
     directory.mkdir(parents=True, exist_ok=True)
     certificate, key = create_identity(directory)
@@ -206,6 +233,9 @@ async def serve(arguments, origin_type=Origin):
              "fragmentedRequest": False, "fragmentedResponseBytes": 0,
              "slowResponseSentOffset": 0, "flowSamples": 0, "goawayIDs": [],
              "octetHeaders": [], "octetTrailers": [], "octetBody": ""}
+    capacity_tasks = set() if capacity_peer else None
+    if capacity_peer:
+        stats["capacityKeepalive"] = {"activeTasks": 0, "peakTasks": 0, "acknowledgedPings": 0, "failures": 0}
     stats_file = directory / "stats.json"
     release_file = directory / "release-fin.txt"
 
@@ -223,7 +253,7 @@ async def serve(arguments, origin_type=Origin):
         lambda: CountingServer(
             configuration=configuration, stats=stats, publish=publish,
             create_protocol=partial(origin_type, stats=stats, publish=publish, release_file=release_file,
-                                    flow_proof=arguments.flow_proof)
+                                    flow_proof=arguments.flow_proof, capacity_tasks=capacity_tasks)
         ), local_addr=("127.0.0.1", 0)
     )
     stopped = asyncio.Event()
@@ -239,6 +269,11 @@ async def serve(arguments, origin_type=Origin):
         await asyncio.wait_for(stopped.wait(), timeout=180)
     finally:
         server.close()
+        if capacity_tasks is not None:
+            pending = tuple(capacity_tasks)
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
         transport.close()
         publish()
         if flow_logger is not None:
@@ -249,4 +284,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--ready-file", type=Path, required=True)
     parser.add_argument("--flow-proof", action="store_true")
-    asyncio.run(serve(parser.parse_args()))
+    parser.add_argument("--capacity-peer", action="store_true")
+    arguments = parser.parse_args()
+    asyncio.run(serve(arguments, capacity_peer=arguments.capacity_peer))

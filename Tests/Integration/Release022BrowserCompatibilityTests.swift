@@ -12,6 +12,7 @@ import SwiftMITM
 @MainActor
 final class Release022BrowserCompatibilityTests: XCTestCase {
     func testWKWebViewSSEAndWebSocketThroughPublicProxyWithExplicitTrust() async throws {
+        let originHost = try release022RunnerIPv4()
         let peer = try Release022ExternalPeer()
         defer { peer.stop() }
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 2)
@@ -19,12 +20,12 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
         var proxy: ProxyServer?
         var webView: WKWebView?
         do {
-            let ready = try await peer.start(script: "browser_peer.py")
+            let ready = try await peer.start(script: "browser_peer.py", arguments: ["--bind-address", originHost])
             let authority = try CertificateAuthority.generate().authority
             let server = try makeProxy(group: group, ready: ready, authority: authority, sink: sink)
             proxy = server
             let port = try await server.start(port: 0)
-            let (configuration, root) = try browserConfiguration(port: port, authority: authority)
+            let (configuration, root) = try browserConfiguration(port: port, authority: authority, originHost: originHost)
             let completion = Phase2FixtureCompletion<String>(eventLoop: group.next(), timeout: .seconds(20))
             let observer = Release022BrowserObserver(root: root, completion: completion)
             configuration.userContentController.add(observer, name: "result")
@@ -32,7 +33,7 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
             let view = WKWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: configuration)
             webView = view
             view.navigationDelegate = observer
-            let url = try XCTUnwrap(URL(string: "https://localhost:\(ready.port)/"))
+            let url = try XCTUnwrap(URL(string: "https://\(originHost):\(ready.port)/"))
             view.load(URLRequest(url: url))
             let result = try await completion.futureResult.get()
             XCTAssertEqual(result, "passed")
@@ -196,14 +197,14 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
 
     private func browserConfiguration(
         port: Int,
-        authority: CertificateAuthority
+        authority: CertificateAuthority,
+        originHost: String
     ) throws -> (WKWebViewConfiguration, SecCertificate) {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         let endpointPort = try XCTUnwrap(NWEndpoint.Port(rawValue: try XCTUnwrap(UInt16(exactly: port))))
         var proxyConfiguration = ProxyConfiguration(httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: endpointPort))
-        // Explicitly select loopback: the default selection reached the origin directly in client acceptance.
-        proxyConfiguration.matchDomains = ["localhost"]
+        proxyConfiguration.matchDomains = [originHost]
         configuration.websiteDataStore.proxyConfigurations = [proxyConfiguration]
         let der = try NIOSSLCertificate(bytes: Array(authority.caCertificatePEM.utf8), format: .pem).toDERBytes()
         let root = try XCTUnwrap(SecCertificateCreateWithData(nil, Data(der) as CFData))
