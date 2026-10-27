@@ -51,5 +51,4 @@ final class CertificateAuthorityTests: XCTestCase {
         let basicConstraints = try XCTUnwrap(ca.caCertificate.extensions.basicConstraints)
         XCTAssertEqual(basicConstraints, .isCertificateAuthority(maxPathLength: 0))
     }
-
 }

@@ -156,6 +156,9 @@ def run(binary):
         except Exception as error:
             for path in directory.glob("*.log"):
                 print(f"{path.name}:\n{path.read_text(errors='replace')[-2048:]}", file=sys.stderr)
+            if phase == "replay" and isinstance(error, subprocess.CalledProcessError):
+                print(f"replay returncode={error.returncode}\nstdout:\n{(error.stdout or '')[:512]}\n"
+                      f"stderr:\n{(error.stderr or '')[:4096]}", file=sys.stderr, flush=True)
             print(json.dumps({"labFailurePhase": phase, "exceptionType": type(error).__name__[:128],
                               "missingMarker": missing_marker}), file=sys.stderr, flush=True)
             raise

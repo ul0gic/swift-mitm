@@ -1,26 +1,24 @@
 # SwiftMITM 0.2.2
 
-**Candidate preparation only.** Version 0.2.2 has not passed its release acceptance gate or been published. Version 0.2.1 remains the latest published release.
+Unreleased candidate.
 
-## Candidate changes
+## Added
 
-- Opt-in `.explicitHTTP` accepts ordinary HTTP/1.1 absolute-form requests and HTTPS `CONNECT` on one listener. `.explicitConnect` remains the default.
-- Exact-authority interception policy can select opaque pass-through. Policy-selected forwarding remains encrypted end-to-end and is distinguished from protocol-classification fallback in capture metadata.
-- Capture failures expose optional typed stage and code metadata. HTTP/1 request correlation has configurable per-connection bounds.
-- The external `Examples/FirstCapture/` package demonstrates the public proxy integration and has optional bounded asynchronous event delivery. Delivery overflow is terminal and marks active captures incomplete while forwarding continues.
-- Candidate SSE and gRPC qualification concerns raw streaming body bytes and HTTP trailers; it does not decode SSE, protobuf, gRPC message boundaries, or compressed payloads.
-- The public-import example has optional bounded asynchronous delivery. On SIGINT, `--async` drains immediately writable output and cancels if it would block; on SIGTERM it cancels delivery. Loss marks active captures incomplete and suppresses `stopped`.
+- Optional `SwiftMITMInspection`: incremental SSE, native gRPC, binary/text gRPC-Web, descriptor-backed protobuf, gzip/deflate/Brotli decoding, and fragmented WebSocket messages with supported permessage-deflate negotiation.
+- Ordered HTTP rules, header edits, bounded body replacement, synthetic responses, destination mapping, breakpoints, delays, throttling, and resets.
+- Explicit request replay and streaming HAR 1.2 export with credential redaction, measured timings, and separate original/effective provenance.
+- Shared resource admission, configurable capture/inspection budgets, and scoped HTTP/1 connection reuse.
+- Ordinary HTTP proxying alongside HTTPS CONNECT, configured prior-knowledge HTTP/2, exact-authority encrypted pass-through, and typed setup diagnostics.
+- `InterceptionLab` demonstrates inspection and active debugging through public APIs; `FirstCapture` provides bounded asynchronous event delivery and explicit loss reporting.
 
-## Migration
+## Changed
 
-Exhaustive switches must handle `.explicitHTTP` in `ProxyIngress` and `CapturedIngressProvenance`. Existing explicit CONNECT construction remains unchanged. `ProxyServer` adds defaulted `correlationPolicy` and `interceptionPolicy` parameters. `CapturedOpaqueFlow` adds defaulted `reason`; `CapturedConnectionFailure` adds defaulted optional `stage` and `code`.
+Requires macOS 26+ and Swift tools 6.4; builds use Xcode 27.1. The package uses Crypto 5 and official Apple NIO transport dependencies. A narrow vendored HTTP/1 codec preserves permitted header/trailer octets; whitespace and message framing may be normalized.
 
-Read the [candidate migration guide](Sources/SwiftMITM.docc/CaptureEvents.md#migrate-to-the-0-2-2-candidate) and [Getting Started](Sources/SwiftMITM.docc/GettingStarted.md) before using candidate source.
+Existing CONNECT-only ingress remains the default. Inspection, active controls, shared admission, and connection reuse are opt-in. Host applications still own client routing/trust, authorization, CA persistence, and stored traffic.
 
-## Candidate limitations and verification
+## Migration and boundaries
 
-- Package and example require Swift tools 6.4 and macOS 26+. The build baseline is Xcode 27.1 with bundled Swift 6.4; candidate verification remains pending.
-- Explicit HTTP forwarding uses an in-repository codec fork. It maps permitted received header and trailer octets back to equal octets when serializing, but does not preserve original whitespace or full wire formatting. Compilation, linkage, and runtime fidelity remain unverified; raw interception continues forwarding original HTTP octets.
-- The configured matrix covers curl, URLSession, WKWebView, Chromium, independent gRPC, and the external example; its candidate results have not completed. The candidate DocC archive is configured as a downloadable workflow artifact; it is not hosted or published yet.
+The deployment minimum increases to macOS 26. Review exhaustive switches over public ingress/capture enums and the [capture migration guide](Sources/SwiftMITM.docc/CaptureEvents.md#migrate-to-the-0-2-2-candidate). Add the `SwiftMITMInspection` product only when semantic inspection is needed.
 
-The minimum supported macOS version increases to 26 in 0.2.2; earlier macOS versions are no longer supported.
+HTTP/3 and QUIC are not included. There is no h2c upgrade, ECH decryption, or certificate-pinning bypass. HTTP controls do not edit CONNECT or upgrade handshakes. See [inspection](Documentation/Inspection.md), [active debugging](Documentation/ActiveDebugging.md), and the [security model](Sources/SwiftMITM.docc/SecurityModel.md).

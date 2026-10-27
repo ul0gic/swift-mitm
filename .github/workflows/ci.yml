@@ -446,17 +446,34 @@ jobs:
           if-no-files-found: error
 
   minimum-runtime:
-    name: macOS 26 public consumer smoke
+    name: macOS 26 public consumers
     needs: consumer
     runs-on: macos-26
     env:
       DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: consumer-current-${{ github.sha }}
           path: ${{ runner.temp }}/consumer
+      - name: Set up independent peer Python
+        id: peer-python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.14.9'
+          architecture: arm64
+      - name: Install pinned public-consumer peers
+        env:
+          PEER_PYTHON: ${{ steps.peer-python.outputs.python-path }}
+        run: |
+          "$PEER_PYTHON" -m venv "$RUNNER_TEMP/minimum-clients"
+          "$RUNNER_TEMP/minimum-clients/bin/python" -m pip install --only-binary=:all: \
+            cryptography==50.0.2 typing-extensions==4.16.0 cffi==2.1.1 pycparser==3.12 grpcio==1.85.0
+          echo "SWIFTMITM_CLIENT_PYTHON=$RUNNER_TEMP/minimum-clients/bin/python" >> "$GITHUB_ENV"
       - name: Exercise the Xcode 27.1 binary on the deployment minimum
         run: |
           mkdir -p evidence
@@ -537,7 +554,16 @@ jobs:
               origin.server_close()
               origin_thread.join(timeout=10)
           PY
-      - name: Retain minimum-runtime smoke evidence
+      - name: Exercise six inspection and debugging workflows on macOS 26
+        run: |
+          tar -xzf "$RUNNER_TEMP/consumer/InterceptionLab.tar.gz" -C "$RUNNER_TEMP/consumer"
+          "$SWIFTMITM_CLIENT_PYTHON" --version > evidence/python.txt
+          "$SWIFTMITM_CLIENT_PYTHON" -m pip freeze > evidence/python-packages.txt
+          "$SWIFTMITM_CLIENT_PYTHON" Tests/Clients/Stage2/lab_acceptance.py \
+            --binary "$RUNNER_TEMP/consumer/InterceptionLab" 2>&1 | tee evidence/lab-acceptance.log
+          printf 'Additional public-consumer proof: trusted TLS, SSE, gRPC, WebSocket, paused edit, replay and redacted HAR.\n' >> evidence/scope.txt
+          printf 'The full native-client and resource matrix on macOS 26 remains unverified.\n' >> evidence/scope.txt
+      - name: Retain minimum-runtime consumer evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -660,4 +686,4 @@ jobs:
           jq -e 'all(.[]; .result == "success")' <<< "$RESULTS"
           printf 'Candidate `%s`: all configured checks passed.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
           printf 'Configured current-runtime clients: curl, URLSession HTTP/1.1 + HTTP/2, WKWebView SSE/WebSocket, pinned stable Chromium and independent gRPC.\n' >> "$GITHUB_STEP_SUMMARY"
-          printf 'Runtime evidence covers macOS 27 suites and a macOS 26 public-consumer smoke. Full minimum-runtime acceptance remains incomplete; the smoke does not replace the client/resource matrix.\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'Runtime evidence covers macOS 27 suites and macOS 26 public-consumer workflows. Full minimum-runtime acceptance remains incomplete; these consumers do not replace the native-client/resource matrix.\n' >> "$GITHUB_STEP_SUMMARY"

@@ -4,20 +4,25 @@ All notable SwiftMITM changes are recorded here. The project follows [Keep a Cha
 
 ## 0.2.2 - candidate preparation (unreleased)
 
-These notes describe candidate source. The release acceptance gate has not completed, and 0.2.2 has not been published.
-
 ### Added
 
-- Opt-in explicit HTTP/1.1 absolute-form forwarding on the existing listener alongside HTTPS `CONNECT`; CONNECT-only ingress remains the default.
-- Exact-authority opaque pass-through policy and explicit reasons distinguishing policy selection from protocol-classification fallback.
-- Typed connection-failure stage and code metadata, plus configurable HTTP/1 correlation bounds.
-- A public-import first-capture proxy example with bounded asynchronous event delivery and visible overflow handling.
+- Optional streaming inspection for SSE, native gRPC, gRPC-Web, descriptor-backed protobuf, compressed HTTP bodies, and fragmented/compressed WebSocket messages.
+- HTTP rules, breakpoints, bounded edits, synthetic responses, destination mapping, and directional faults with original/effective capture provenance.
+- Explicit replay, redacted streaming HAR export, shared resource admission, and scoped HTTP/1 connection reuse.
+- Explicit HTTP forwarding alongside CONNECT, configured prior-knowledge HTTP/2, deliberate encrypted pass-through, and typed setup diagnostics.
+- Public FirstCapture and InterceptionLab consumers with bounded output and explicit delivery-loss handling.
 
 ### Changed
 
-- Candidate HTTP/1.1 SSE and HTTP/2 gRPC paths capture streamed raw body bytes and HTTP trailers without semantic decoding.
-- Candidate migration adds `.explicitHTTP` ingress and provenance cases. Its in-repository codec maps permitted received header and trailer octets back to equal octets when serializing, but does not preserve original whitespace or complete wire formatting; compilation, linkage, and runtime fidelity remain unverified.
-- Raise the package/example baseline to Swift tools 6.4 and macOS 26+, with Xcode 27.1 for builds; candidate compiler and runtime verification remains pending.
+- Require macOS 26+, Swift tools 6.4, and Crypto 5; use Xcode 27.1 for builds.
+- Preserve permitted HTTP/1 header and trailer octets through a narrow vendored NIO codec while allowing framing/whitespace normalization.
+- Keep HTTP/3 and QUIC outside this release; retain the experimental implementation on its dedicated hold branch.
+
+### Fixed
+
+- Bind CONNECT/TLS identity to the authorized route and preserve independent request/response flow-control lifetimes.
+- Preserve terminal capture outcomes and read ownership across protocol handoffs, early responses, cancellation, and shutdown.
+- Execute HTTPS replay's buffered-read release on its owning event loop.
 
 ## 0.2.1 - 2026-08-21
 

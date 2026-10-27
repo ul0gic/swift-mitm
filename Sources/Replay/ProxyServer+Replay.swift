@@ -153,7 +153,8 @@ extension ProxyServer {
             }
             .get()
         if let release = connection.releaseBufferedReads {
-            try await release().get()
+            // The TLS release closure accesses event-loop-bound ALPN state.
+            try await channel.eventLoop.flatSubmit(release).get()
         } else {
             // Raw connections arrive paused; the installed async handler now owns read backpressure.
             try await channel.setOption(ChannelOptions.autoRead, value: true).get()
