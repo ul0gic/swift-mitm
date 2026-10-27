@@ -52,9 +52,17 @@ def client(target, root):
         fast = channel.unary_unary(PREFIX + "Fast")
         started = time.monotonic()
         slow = channel.unary_stream(PREFIX + "Slow")(PAYLOAD, timeout=20)
-        slow.initial_metadata()
+        metadata = slow.initial_metadata()
         head_elapsed = time.monotonic() - started
-        assert head_elapsed >= 1.5, head_elapsed
+        diagnostic = {"headElapsed": head_elapsed}
+        if head_elapsed < 1.5:
+            active = slow.is_active()
+            diagnostic = {"headElapsed": head_elapsed, "active": active,
+                          "metadata": repr(metadata)[:1024]}
+            if not active:
+                diagnostic["code"] = slow.code().name
+                diagnostic["details"] = slow.details()[:512]
+        assert head_elapsed >= 1.5, diagnostic
         completed = executor.submit(list, slow)
         assert fast(b"sibling-before-completion", timeout=5) == b"sibling-before-completion"
         assert not completed.done(), "sibling was blocked until the throttled stream completed"

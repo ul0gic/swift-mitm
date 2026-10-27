@@ -80,7 +80,7 @@ jobs:
           tar -czf core-consumer/FirstCapture.tar.gz -C "$binary_directory" FirstCapture
           cp evidence/candidate-sha.txt evidence/swift.txt evidence/xcode.txt core-consumer/
       - name: Retain Crypto5 core consumer
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: stage2-crypto5-consumer-${{ github.sha }}
           path: core-consumer/
@@ -91,14 +91,14 @@ jobs:
           cat evidence/scope.txt >> "$GITHUB_STEP_SUMMARY"
       - name: Retain feasibility evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: stage2-feasibility-${{ github.sha }}
           path: evidence/
           if-no-files-found: error
 
   core-compatibility:
-    name: Crypto5 core trust and octet compatibility
+    name: Standalone Crypto5 core with unchanged non-Crypto pins
     needs: combined-graph
     runs-on: xcode-27
     timeout-minutes: 30
@@ -106,15 +106,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: stage2-feasibility-${{ github.sha }}
           path: graph-evidence/
-      - name: Check core with the proposed graph
+      - name: Resolve standalone Crypto5 and prove trust and octet compatibility
         run: |
           mkdir -p evidence
           test "$(cat graph-evidence/candidate-sha.txt)" = "$GITHUB_SHA"
           cp graph-evidence/candidate-sha.txt evidence/
+          cp Package.resolved evidence/baseline-Package.resolved
           python3 - <<'PY_MANIFEST'
           from pathlib import Path
           manifest = Path('Package.swift')
@@ -124,10 +125,25 @@ jobs:
           assert source.count(old) == 1
           manifest.write_text(source.replace(old, new))
           PY_MANIFEST
-          cp graph-evidence/combined-Package.resolved Package.resolved
-          swift build --build-tests -Xswiftc -warnings-as-errors 2>&1 | tee evidence/core-build.log
+          swift package resolve 2>&1 | tee evidence/core-resolve.log
           cp Package.resolved evidence/core-Package.resolved
-          swift test --skip-build --filter 'Release022PublicTrustTests|Release022PublicHTTP1OctetTests' \
+          python3 - <<'PY_PINS'
+          import json
+          from pathlib import Path
+          def pins(path):
+              return {pin['identity']: pin for pin in json.loads(Path(path).read_text())['pins']}
+          baseline = pins('evidence/baseline-Package.resolved')
+          resolved = pins('evidence/core-Package.resolved')
+          assert resolved['swift-crypto']['state']['version'].startswith('5.')
+          changed = sorted(
+              identity for identity in baseline.keys() | resolved.keys()
+              if identity != 'swift-crypto' and baseline.get(identity) != resolved.get(identity)
+          )
+          assert not changed, f'Standalone non-Crypto dependency drift: {changed}'
+          PY_PINS
+          swift build --build-tests --force-resolved-versions -Xswiftc -warnings-as-errors 2>&1 | tee evidence/core-build.log
+          swift test --skip-build --parallel --num-workers 1 \
+            --filter 'Release022PublicTrustTests|Release022PublicHTTP1OctetTests' \
             --xunit-output evidence/core-results.xml 2>&1 | tee evidence/core-tests.log
           python3 - <<'PY_RESULTS'
           import xml.etree.ElementTree as ET
@@ -140,7 +156,7 @@ jobs:
           PY_RESULTS
       - name: Retain core compatibility evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: stage2-core-compatibility-${{ github.sha }}
           path: evidence/
@@ -155,7 +171,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: stage2-feasibility-${{ github.sha }}
           path: graph-evidence/
@@ -216,7 +232,7 @@ jobs:
             --binary "$SWIFTMITM_HTTP3_PROBE" --output evidence/http3-results.json
       - name: Retain transport spike evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: stage2-http3-transport-${{ github.sha }}
           path: evidence/
@@ -230,7 +246,7 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
     timeout-minutes: 10
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: stage2-crypto5-consumer-${{ github.sha }}
           path: ${{ runner.temp }}/consumer
@@ -316,7 +332,7 @@ jobs:
           PY
       - name: Retain minimum-runtime smoke evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: stage2-crypto5-minimum-runtime-${{ github.sha }}
           path: evidence/

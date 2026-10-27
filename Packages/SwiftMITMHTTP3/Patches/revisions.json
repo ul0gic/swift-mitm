@@ -2,32 +2,40 @@
   {
     "repository": "swift-tls",
     "upstreamRevision": "e1d59537852388f444a761a4e8733386a5c603c8",
-    "forkRevision": "52e645b8ffccbfb72b22d009c3fc2480c546f3bf",
+    "forkRevision": "7878fe3122b8f137896d30cd0caf3b5d89ec7bb2",
     "patches": [
-      "swift-tls-received-sni-policy.patch"
+      "swift-tls-received-sni-policy.patch",
+      "swift-tls-handshake-alert-description.patch"
     ],
     "upstreamURL": "https://github.com/apple/swift-tls",
-    "forkURL": "https://github.com/ul0gic/swift-tls"
+    "forkURL": "https://github.com/ul0gic/swift-tls",
+    "incrementalPatchParents": {
+      "swift-tls-handshake-alert-description.patch": "52e645b8ffccbfb72b22d009c3fc2480c546f3bf"
+    }
   },
   {
     "repository": "swift-network-evolution",
     "upstreamRevision": "ea74abb2beced205f5eb0379e4fa8cd66de2e66e",
-    "forkRevision": "e9278c717d4cdb12ac64cf31df6c81f2a021d309",
+    "forkRevision": "a71d3fe67915ed6c866807fbcab660cf637dfd3e",
     "patches": [
       "swift-network-evolution-split-fin.patch",
       "swift-network-evolution-storage-completion.patch",
-      "swift-network-evolution-received-sni-options.patch"
+      "swift-network-evolution-received-sni-options.patch",
+      "swift-network-evolution-quic-tls-alert.patch",
+      "swift-network-evolution-initial-close-amplification-credit.patch"
     ],
     "upstreamURL": "https://github.com/apple/swift-network-evolution",
     "forkURL": "https://github.com/ul0gic/swift-network-evolution",
     "incrementalPatchParents": {
-      "swift-network-evolution-received-sni-options.patch": "2868d16fd31216ef617311210bacaa4a1f24994f"
+      "swift-network-evolution-received-sni-options.patch": "2868d16fd31216ef617311210bacaa4a1f24994f",
+      "swift-network-evolution-quic-tls-alert.patch": "e9278c717d4cdb12ac64cf31df6c81f2a021d309",
+      "swift-network-evolution-initial-close-amplification-credit.patch": "e9278c717d4cdb12ac64cf31df6c81f2a021d309"
     }
   },
   {
     "repository": "swift-nio-quic",
     "upstreamRevision": "11b231126952b3ef408c4e1ab95d14e16af5d867",
-    "forkRevision": "2e49a5a09df400fefc7c784560de16ec0d5f4f3c",
+    "forkRevision": "020792b3e68d4f9e1a37277f9a7d44870fa05871",
     "patches": [
       "swift-nio-quic-bounded-read.patch",
       "swift-nio-quic-bounded-send.patch",
@@ -50,7 +58,7 @@
   {
     "repository": "swift-nio-http3",
     "upstreamRevision": "e2c54cdbf50dc64bf9e80861922f8d9400d2acce",
-    "forkRevision": "a5d9feffea7d241afed585ef4c35059f40a4d0c2",
+    "forkRevision": "5b20c156a8b09ef70daf91ea46b220e2d4a54d80",
     "patches": [
       "swift-nio-http3-bounded-input.patch",
       "swift-nio-http3-typed-decode-error.patch",

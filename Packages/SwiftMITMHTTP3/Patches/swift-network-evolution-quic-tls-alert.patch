@@ -1,0 +1,55 @@
+diff --git a/Sources/SwiftNetwork/Protocols/SwiftTLSProtocol.swift b/Sources/SwiftNetwork/Protocols/SwiftTLSProtocol.swift
+--- a/Sources/SwiftNetwork/Protocols/SwiftTLSProtocol.swift
++++ b/Sources/SwiftNetwork/Protocols/SwiftTLSProtocol.swift
+@@ -627,7 +627,12 @@
+ 
+         func reportError(_ error: Int32) {
+             handle.log.error("Reporting TLS error \(error)")
+-            handle.deliverDisconnectedEvent(error: NetworkError.posix(error))
++            if let alert = handshaker.alertDescription {
++                let cryptoError = QUICTransportError(.crypto(Int64(alert)), "TLS error")
++                handle.deliverDisconnectedEvent(error: NetworkError(quicTransportError: cryptoError))
++            } else {
++                handle.deliverDisconnectedEvent(error: NetworkError.posix(error))
++            }
+         }
+ 
+         func sendMessage(_ message: [UInt8], level: SwiftTLSOptions.EncryptionLevel) {
+@@ -1212,6 +1217,8 @@
+ 
+     public var errorCode: Int32 { 0 }
+ 
++    public var alertDescription: UInt8? { nil }
++
+     public func setupHandshake(options: SwiftTLSOptions) throws -> [UInt8]? { nil }
+ 
+     public var writeEncryptionLevel: SwiftTLSOptions.EncryptionLevel { .initial }
+diff --git a/Sources/SwiftNetwork/QUIC/Crypto.swift b/Sources/SwiftNetwork/QUIC/Crypto.swift
+--- a/Sources/SwiftNetwork/QUIC/Crypto.swift
++++ b/Sources/SwiftNetwork/QUIC/Crypto.swift
+@@ -380,17 +380,23 @@
+         guard let parentConnection else { return }
+         parentConnection.log.error("Disconnected: TLS error \(error?.description ?? "<none>")")
+         parentConnection.closeFrameType = .crypto
++        let alert: Int64
++        if let code = error?.quicTransportError, QUICTransportError.transportErrorCodeIsCryptoError(code) {
++            alert = code - 0x0100
++        } else {
++            alert = 0
++        }
+ 
+         // Closing already being deferred, no need to schedule asynchronously
+         if parentConnection.deferClosing {
+-            parentConnection.close(withCryptoError: 0, "TLS error")
++            parentConnection.close(withCryptoError: alert, "TLS error")
+         } else {
+             parentConnection.deferClosing = true
+             // Note that close(withCryptoError:) will set the error but not actually
+             // close when deferClosing is set. We then async to complete closing.
+             // This is done to avoid closing in the wrong protocol state and causing
+             // re-entrancy.
+-            parentConnection.close(withCryptoError: 0, "TLS error")
++            parentConnection.close(withCryptoError: alert, "TLS error")
+             parentConnection.async {
+                 parentConnection.deferClosing = false
+                 if parentConnection.closeError != nil {

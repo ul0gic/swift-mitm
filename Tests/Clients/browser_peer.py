@@ -1,7 +1,7 @@
 import argparse
 import base64
 import hashlib
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 import json
 from pathlib import Path
 import signal
@@ -10,6 +10,7 @@ import sys
 import threading
 
 from client_tls import create_identity
+from loopback_http import LoopbackHTTPServer
 
 PAGE = b'''<!doctype html><meta charset="utf-8"><body>pending<script>
 let sseDone = false, socketDone = false;
@@ -123,7 +124,7 @@ def server(ready_file):
     print("origin-start: identity", file=sys.stderr, flush=True)
     certificate, key = create_identity(ready_file.parent)
     print("origin-start: bind", file=sys.stderr, flush=True)
-    instance = ThreadingHTTPServer(("127.0.0.1", 0), Peer)
+    instance = LoopbackHTTPServer(("127.0.0.1", 0), Peer)
     instance.daemon_threads = True
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     print("origin-start: tls", file=sys.stderr, flush=True)

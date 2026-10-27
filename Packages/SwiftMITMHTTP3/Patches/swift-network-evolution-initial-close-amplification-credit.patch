@@ -1,0 +1,31 @@
+diff --git a/Sources/SwiftNetwork/QUIC/QUICConnection.swift b/Sources/SwiftNetwork/QUIC/QUICConnection.swift
+--- a/Sources/SwiftNetwork/QUIC/QUICConnection.swift
++++ b/Sources/SwiftNetwork/QUIC/QUICConnection.swift
+@@ -1638,10 +1638,13 @@
+                     return
+                 }
+                 let inConnectedState = connectionState == .connected
+-                var receivedBytes: Int = 0
+-                let receivedPackets: Int = datagrams.count
+                 datagrams.iterateMutableFrames { frame in
+-                    receivedBytes &+= frame.unclaimedLength
++                    // A synchronous handshake failure can send a close under the amplification limit.
++                    let receivedBytes = frame.unclaimedLength
++                    stats.increment(.rxPackets)
++                    stats.increment(.rxBytes, by: receivedBytes)
++                    path.pathStatistics.increment(.rxPackets)
++                    path.pathStatistics.increment(.rxBytes, by: receivedBytes)
+                     handleInbound(
+                         frame: &frame,
+                         from: path,
+@@ -1650,10 +1653,6 @@
+                     )
+                     return .removeFrameAndContinue
+                 }
+-                stats.increment(.rxPackets, by: receivedPackets)
+-                stats.increment(.rxBytes, by: receivedBytes)
+-                path.pathStatistics.increment(.rxPackets, by: receivedPackets)
+-                path.pathStatistics.increment(.rxBytes, by: receivedBytes)
+             }
+ 
+             // Note: inboundStopping() triggers any sendFrames*() as necessary due

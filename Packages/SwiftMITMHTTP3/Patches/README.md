@@ -1,6 +1,6 @@
 # Native dependency patch candidates
 
-These source patches are experimental. Candidate `2acc476` compiled remotely and passed ten of fifteen transport scenarios. Follow-on terminal-packet delivery and field-octet repairs await the sixteen-scenario remote run. They do not establish a production memory bound. Apply each patch with strip level 1 to the exact upstream revision below; publish the resulting reviewed trees as immutable dependency revisions. Preserve each repository's license, notices, contributors file and existing source headers.
+These source patches are experimental. Candidate `0bfc2cb` compiled remotely and passed thirteen of sixteen transport scenarios, including field-octet fidelity. Follow-on cancellation cleanup and Initial-rejection repairs await the next remote run. They do not establish a production memory bound. Apply each patch with strip level 1 to the exact upstream revision below; publish the resulting reviewed trees as immutable dependency revisions. Preserve each repository's license, notices, contributors file and existing source headers.
 
 | Patch | Upstream repository | Revision |
 |---|---|---|
@@ -73,3 +73,5 @@ These seams add pinned SwiftTLS maintenance and small lifecycle state. Their pur
 QPACK values now retain raw bytes through literal/Huffman coding, static/dynamic tables and HTTPTypes construction. The existing decoded-byte and field-count limits remain; invalid HTTP values fail before HTTPTypes legalization, and bounded Huffman scratch is compacted before retention. The companion measures the same raw field bytes. Independent literal and Huffman cases compare exact headers, interim fields and trailers in both directions.
 
 Terminal packet cleanup stops producers, drains pending UDP output, removes handlers, disposes residual coalescers and only then seals the storage barrier. This preserves locally generated rejection packets during ordinary and forced closure without waiting for acknowledgements. Request-initialization failures use the direction-appropriate HTTP3 code.
+
+The Initial-rejection patches credit each received datagram before synchronous TLS processing, retaining the same three-times amplification bound. SwiftTLS exposes its existing alert classification through a read-only SPI byte; SwiftNetwork carries that structured crypto error into QUIC. This lets rejection of the first ClientHello emit the correct peer-visible alert without guessing from errno or error text. These follow-on patches await remote validation.

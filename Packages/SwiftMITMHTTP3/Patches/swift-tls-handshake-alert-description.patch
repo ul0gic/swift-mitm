@@ -1,0 +1,36 @@
+diff --git a/Sources/SwiftTLSProtocol.swift b/Sources/SwiftTLSProtocol.swift
+--- a/Sources/SwiftTLSProtocol.swift
++++ b/Sources/SwiftTLSProtocol.swift
+@@ -481,6 +481,11 @@
+         errorCodeFromLatestError(latestError)
+     }
+ 
++    public var alertDescription: UInt8? {
++        guard case .tlsError(let error)? = self.latestError else { return nil }
++        return TLSRecordHandler.tlsErrorToAlert(error: error).alertDescription
++    }
++
+     static func encryptionLevel(_ level: EncryptionLevel?) -> SwiftTLSOptions.EncryptionLevel {
+         guard let level else {
+             return .initial
+diff --git a/Sources/RecordProtocol/TLSRecordHandler.swift b/Sources/RecordProtocol/TLSRecordHandler.swift
+--- a/Sources/RecordProtocol/TLSRecordHandler.swift
++++ b/Sources/RecordProtocol/TLSRecordHandler.swift
+@@ -568,7 +568,7 @@
+     }
+ 
+     // TLSError -> Alert
+-    private func tlsErrorToAlert(error: TLSError) -> Alert {
++    static func tlsErrorToAlert(error: TLSError) -> Alert {
+         switch error {
+         case .truncatedMessage:
+             return .decodeError
+@@ -775,7 +775,7 @@
+                 self.tlsError = TLSError.processNetworkDataErrorBeforeHandshakeStart
+                 throw TLSError.processNetworkDataErrorBeforeHandshakeStart
+             }
+-            let alert = tlsErrorToAlert(error: error)
++            let alert = Self.tlsErrorToAlert(error: error)
+             if alert != .closeNotify {
+                 self.tlsError = error
+             }

@@ -1,7 +1,7 @@
 import argparse
 import base64
 import hashlib
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 import json
 from pathlib import Path
 import secrets
@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from client_tls import create_identity
+from loopback_http import LoopbackHTTPServer
 
 
 def exact(stream, count):
@@ -144,7 +145,7 @@ def server(ready_file):
     print("origin-start: identity", file=sys.stderr, flush=True)
     certificate, key = create_identity(ready_file.parent)
     print("origin-start: bind", file=sys.stderr, flush=True)
-    instance = ThreadingHTTPServer(("127.0.0.1", 0), Peer)
+    instance = LoopbackHTTPServer(("127.0.0.1", 0), Peer)
     instance.daemon_threads = True
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     print("origin-start: tls", file=sys.stderr, flush=True)

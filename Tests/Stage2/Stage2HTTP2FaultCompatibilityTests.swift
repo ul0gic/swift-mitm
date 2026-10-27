@@ -25,6 +25,7 @@ final class Stage2HTTP2FaultCompatibilityTests: XCTestCase {
         let runtime = try faultRuntime()
         let admission = ResourceAdmissionController(configuration: try ResourceAdmissionConfiguration())
         let capture = Release022Events()
+        let controls = Stage2ControlEvents()
         let proxy = ProxyServer(
             certificateAuthority: authority,
             sink: capture,
@@ -32,6 +33,7 @@ final class Stage2HTTP2FaultCompatibilityTests: XCTestCase {
             upstreamPolicy: .init(additionalTrustRootsPEM: [try String(contentsOfFile: ready.root, encoding: .utf8)]),
             egressPolicy: .init(allowInternal: true),
             controlRuntime: runtime,
+            controlEventSink: controls,
             admission: admission
         )
         do {
@@ -47,10 +49,32 @@ final class Stage2HTTP2FaultCompatibilityTests: XCTestCase {
             try await group.shutdownGracefully()
         } catch {
             let failure = error
+            reportFailures(capture: capture, controls: controls)
             do { try await proxy.stop() } catch { XCTFail("Proxy teardown failed: \(error)") }
             do { try await group.shutdownGracefully() } catch { XCTFail("Group teardown failed: \(error)") }
             throw failure
         }
+    }
+
+    private func reportFailures(capture: Release022Events, controls: Stage2ControlEvents) {
+        let controlFailures = controls.events.compactMap { event -> String? in
+            if case let .failure(_, code) = event { return String(describing: code) }
+            return nil
+        }
+        let captured = capture.events.compactMap { event -> String? in
+            switch event {
+            case let .streamError(_, message):
+                return String(message.prefix(160))
+            case let .connectionFailure(failure):
+                return "\(failure.reason):\(String(describing: failure.code))"
+            case let .responseHead(head):
+                return "response-status=\(head.status)"
+            default:
+                return nil
+            }
+        }
+        XCTFail("H2 fault diagnostics: controls=\(Array(controlFailures.prefix(8))); "
+            + "capture=\(Array(captured.prefix(8)))")
     }
 
     private func runFaultClient(

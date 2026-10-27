@@ -273,6 +273,7 @@ final class ProbeRelay<Part: ProbeMessagePart>: ChannelInboundHandler {
         }
         channel.triggerUserOutboundEvent(QUICResetStreamEvent(code: code), promise: nil)
         channel.triggerUserOutboundEvent(QUICStopSendingEvent(code: code), promise: nil)
+        channel.close(promise: nil)
     }
 
     private func finish() {

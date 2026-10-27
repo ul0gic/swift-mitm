@@ -216,11 +216,31 @@ private final class Release022URLSessionTrust: NSObject, URLSessionDelegate, @un
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
-        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
-              let trust = challenge.protectionSpace.serverTrust,
-              SecTrustSetAnchorCertificates(trust, [root] as CFArray) == errSecSuccess,
-              SecTrustSetAnchorCertificatesOnly(trust, true) == errSecSuccess,
-              SecTrustEvaluateWithError(trust, nil) else {
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust else {
+            XCTFail("URLSession unexpected authentication method: \(challenge.protectionSpace.authenticationMethod)")
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+        guard let trust = challenge.protectionSpace.serverTrust else {
+            XCTFail("URLSession server-trust challenge omitted trust")
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+        let anchorStatus = SecTrustSetAnchorCertificates(trust, [root] as CFArray)
+        let exclusiveStatus = SecTrustSetAnchorCertificatesOnly(trust, true)
+        guard anchorStatus == errSecSuccess, exclusiveStatus == errSecSuccess else {
+            XCTFail("URLSession custom-root setup failed: anchor=\(anchorStatus), exclusive=\(exclusiveStatus)")
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+        var failure: CFError?
+        guard SecTrustEvaluateWithError(trust, &failure) else {
+            if let failure {
+                XCTFail("URLSession trust denied: domain=\(CFErrorGetDomain(failure)), code=\(CFErrorGetCode(failure)); "
+                    + "host=\(challenge.protectionSpace.host), proxy=\(challenge.protectionSpace.isProxy)")
+            } else {
+                XCTFail("URLSession trust denied without an error object")
+            }
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }
