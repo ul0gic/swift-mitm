@@ -172,7 +172,8 @@ final class Stage2AggregateCapacityAcceptanceTests: XCTestCase {
         authority: CertificateAuthority,
         admission: ResourceAdmissionController
     ) async throws -> Leg {
-        let (budget, gate, inspector) = try makeObservation(admission: admission)
+        let budget = try InspectionMemoryBudget(maximumBytes: Self.localLimit, admission: admission)
+        let (gate, inspector) = try makeObservation(budget: budget)
         let capture = CountingSink()
         let proxy = ProxyServer(
             certificateAuthority: authority,
@@ -221,9 +222,8 @@ final class Stage2AggregateCapacityAcceptanceTests: XCTestCase {
     }
 
     private func makeObservation(
-        admission: ResourceAdmissionController
-    ) throws -> (InspectionMemoryBudget, AggregateInspectionGate, HTTPInspector) {
-        let budget = try InspectionMemoryBudget(maximumBytes: Self.localLimit, admission: admission)
+        budget: InspectionMemoryBudget
+    ) throws -> (AggregateInspectionGate, HTTPInspector) {
         let gate = AggregateInspectionGate()
         let inspector = try HTTPInspector(configuration: InspectionConfiguration(
             budget: budget,
@@ -231,7 +231,7 @@ final class Stage2AggregateCapacityAcceptanceTests: XCTestCase {
             maximumQueuedItems: 65_536,
             maximumActiveBodies: 2
         ), sink: gate)
-        return (budget, gate, inspector)
+        return (gate, inspector)
     }
 
     private func connect(
@@ -267,10 +267,10 @@ final class Stage2AggregateCapacityAcceptanceTests: XCTestCase {
         var queuedItems = 0
         defer {
             let line = "aggregate phase=\(phase) elapsed=\(started.duration(to: clock.now)) sent=\(sent) "
-                + "received=\(legs.map { $0.receiver.received }) sharedBytes=\(admission.usage.retainedBytes) "
-                + "localBytes=\(legs.map { $0.budget.retainedBytes }) lastQueueItems=\(queuedItems) "
-                + "blocked=\(legs.map { $0.gate.entered }) "
-                + "losses=\(legs.map { $0.inspector.observationLossDetected })\n"
+                + "received=\(legs.map(\.receiver.received)) sharedBytes=\(admission.usage.retainedBytes) "
+                + "localBytes=\(legs.map(\.budget.retainedBytes)) lastQueueItems=\(queuedItems) "
+                + "blocked=\(legs.map(\.gate.entered)) "
+                + "losses=\(legs.map(\.inspector.observationLossDetected))\n"
             FileHandle.standardError.write(Data(line.utf8))
         }
         while rejected == nil {
