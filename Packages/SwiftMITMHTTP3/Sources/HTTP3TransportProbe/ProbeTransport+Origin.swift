@@ -38,6 +38,9 @@ extension ProbeTransport {
 
     private func originConnection(for downstream: Channel) -> EventLoopFuture<Channel> {
         let id = ObjectIdentifier(downstream)
+        guard !drainingOrigins.contains(id) else {
+            return downstream.eventLoop.makeFailedFuture(ProbeError.invalidRequest)
+        }
         if let existing = origins[id] {
             return existing
         }
@@ -79,11 +82,13 @@ extension ProbeTransport {
         downstream: Channel
     ) -> EventLoopFuture<Void> {
         channel.eventLoop.makeCompletedFuture {
+            try state.value.trackConnectionStorage(channel)
             var configuration = HTTP3ClientConfiguration.defaults
             configuration.inboundMemory = state.value.inboundMemoryConfiguration()
             downstream.closeFuture.whenComplete { _ in channel.close(promise: nil) }
             channel.closeFuture.whenComplete { _ in
                 state.value.origins.removeValue(forKey: id)
+                state.value.drainingOrigins.remove(id)
                 downstream.close(promise: nil)
             }
             let handler = ProbeHTTP3Handler.client(
@@ -98,7 +103,11 @@ extension ProbeTransport {
                 streamCreator: creator,
                 logger: state.value.logger
             ) { $0.channel.close() }
-            try channel.pipeline.syncOperations.addHandlers([ProbeHandshakeDeadline(), handler])
+            let observer = ProbeConnectionObserver {
+                state.value.drainingOrigins.insert(id)
+                state.value.metrics.observeGoaway()
+            }
+            try channel.pipeline.syncOperations.addHandlers([ProbeHandshakeDeadline(), handler, observer])
         }
     }
 

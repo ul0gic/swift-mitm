@@ -24,6 +24,7 @@ from wire import ENCODED_HEADER_LIMIT, FRAGMENT_VALUE, fragmented_headers, overs
 from flow import (
     FlowLogger, SLOW_BYTES, STREAM_CREDIT, budget_refusal, cancelled_credit_churn, read_metrics, slow_receiver,
 )
+from lifecycle import goaway_drain, sni_policy
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from client_tls import create_identity
@@ -407,6 +408,12 @@ async def run_case(binary, name, artifacts):
                         report = await credit_stall(ready, authority, certificate, peer, artifacts / name, churn=True)
                     elif name == "storage-refusal":
                         report = await storage_refusal(ready, authority, certificate, artifacts / name)
+                    elif name == "sni-policy":
+                        report = await sni_policy(ready, authority, certificate, peer, artifacts / name,
+                                                  Client, configuration, response_complete)
+                    elif name == "goaway-drain":
+                        report = await goaway_drain(ready, authority, certificate, peer, Client,
+                                                   configuration, response_complete)
                     elif name == "changed-authority":
                         await rejected(ready["port"], f"other.invalid:{peer['port']}", certificate, hostname)
                     elif name == "downstream-trust":
@@ -417,6 +424,13 @@ async def run_case(binary, name, artifacts):
                 if proxy_ready.exists():
                     assert proxy.returncode == 0, "ready proxy failed during the scenario or shutdown"
                 stats = json.loads(Path(peer["stats"]).read_text())
+                if name in ("sni-policy", "goaway-drain"):
+                    final_metrics = read_metrics(Path(ready["metricsPath"]), stopped=True)
+                    expected = 3 if name == "sni-policy" else 2
+                    assert stats["requests"] == expected and stats["handshakes"] == expected, stats
+                    assert stats["alpn"] == ["h3"] * expected, stats
+                    assert final_metrics["peakConnectionStorageLifetimes"] > 0, final_metrics
+                    return dict(report, finalMetrics=final_metrics, originRequests=stats["requests"])
                 if name in ("slow-receiver", "cancelled-credit-churn", "storage-refusal"):
                     final_metrics = read_metrics(Path(ready["metricsPath"]), stopped=True)
                     if name == "slow-receiver":
@@ -475,7 +489,7 @@ async def main(arguments):
     for name in ("streaming", "changed-authority", "upstream-hostname", "upstream-trust",
                  "downstream-trust", "denied-route", "separated-fin", "oversized-request-headers",
                  "oversized-response-headers", "fragmented-headers", "slow-receiver",
-                 "cancelled-credit-churn", "storage-refusal"):
+                 "cancelled-credit-churn", "storage-refusal", "sni-policy", "goaway-drain"):
         try:
             async with asyncio.timeout(90):
                 observation = await run_case(arguments.binary, name, artifacts)

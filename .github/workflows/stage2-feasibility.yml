@@ -150,7 +150,7 @@ jobs:
     name: Independent HTTP3 transport spike
     needs: [combined-graph, crypto5-minimum-runtime]
     runs-on: xcode-27
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -210,7 +210,7 @@ jobs:
             -r Tests/Clients/Stage2/HTTP3/requirements.txt
           "$RUNNER_TEMP/http3-peers/bin/python" -m pip freeze > evidence/http3-peer-versions.txt
       - name: Exercise verified TLS and independent HTTP3 streams
-        timeout-minutes: 25
+        timeout-minutes: 30
         run: |
           "$RUNNER_TEMP/http3-peers/bin/python" Tests/Clients/Stage2/HTTP3/verify.py \
             --binary "$SWIFTMITM_HTTP3_PROBE" --output evidence/http3-results.json

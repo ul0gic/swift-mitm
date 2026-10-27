@@ -14,6 +14,7 @@ CURRENT_METRICS = (
     "sharedRetainedBytes", "parserReservedBytes", "nativeStreamReservedBytes", "queuedCopyBytes",
     "sampledNativePendingBytes", "sampledNativeRetainedBytes", "sampledNativeStorageTickets",
     "sampledNativeTrackedStreams",
+    "activeConnectionStorageLifetimes",
 )
 
 

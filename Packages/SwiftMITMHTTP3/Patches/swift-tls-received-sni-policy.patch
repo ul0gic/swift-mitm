@@ -1,0 +1,89 @@
+--- a/Sources/SwiftTLSProtocol.swift
++++ b/Sources/SwiftTLSProtocol.swift
+@@ -72,6 +72,7 @@
+ 
+     // options used for clients and servers
+     public var serverName: String?
++    public var receivedServerNameValidator: (@Sendable (String?) -> Bool)? = nil
+     public var quicTransportParameters: [UInt8]?
+     public var applicationProtocols: [String]?
+ 
+@@ -352,6 +353,7 @@
+         let configuration = ServerHandshakeStateMachine
+             .Configuration(
+                 serverName: options.serverName,
++                receivedServerNameValidator: options.receivedServerNameValidator,
+                 quicTransportParameters: quicTransportParameters,
+                 alpn: options.applicationProtocols,
+                 transportIsQUIC: forQUIC,
+--- a/Sources/Handshake/ServerHandshakeStateMachineConfiguration.swift
++++ b/Sources/Handshake/ServerHandshakeStateMachineConfiguration.swift
+@@ -61,6 +61,7 @@
+ 
+         /// The server name for the purposes of the SNI extension.
+         let serverName: String?
++        let receivedServerNameValidator: (@Sendable (String?) -> Bool)?
+ 
+         /// The QUIC transport parameters, if any are set.
+         let quicTransportParameters: ByteBuffer?
+@@ -131,6 +132,7 @@
+ 
+         init(
+             serverName: String? = nil,
++            receivedServerNameValidator: (@Sendable (String?) -> Bool)? = nil,
+             quicTransportParameters: ByteBuffer? = nil,
+             alpn: [ApplicationLayerProtocol]? = nil,
+             transportIsQUIC: Bool = false,
+@@ -146,6 +148,7 @@
+         ) {
+             do throws(TLSError) {
+                 self.serverName = serverName
++                self.receivedServerNameValidator = receivedServerNameValidator
+                 self.quicTransportParameters = quicTransportParameters
+                 self.alpn = alpn
+                 self.transportIsQUIC = transportIsQUIC
+--- a/Sources/Handshake/ServerHandshakeState.swift
++++ b/Sources/Handshake/ServerHandshakeState.swift
+@@ -306,6 +306,7 @@
+         var clientALPN: [ApplicationLayerProtocol]? = nil
+         var clientOfferedPSKs: Extension.PreSharedKey.OfferedPSKs? = nil
+         var clientIndicatedEarlyData: Bool = false
++        var clientServerName: ByteBuffer? = nil
+         let serverSupportedGroups: [NamedGroup]
+         let serverSupportedSignatureAlgs: [SignatureScheme] /* must include at least one element */
+         let serverSupportedCertificateTypes: [CertificateType] /* must include at least one element */
+@@ -341,10 +342,8 @@
+                 clientRequestedClientCertificateTypes = requestedCertificateTypes
+             case .preSharedKeyKexModes(let pskKexModes):
+                 clientRequestPSKKexModes = pskKexModes
+-            case .serverName(_):
+-                // pass. Currently never used by server so we don't bother storing it.
+-                // TODO: Flesh out when supporting session resumption/certificate selection.
+-                break
++            case .serverName(.clientHello(let names)):
++                clientServerName = names.hostName
+             case .quicTransportParameters(let transportParams):
+                 clientQUICTransportParameters = transportParams.opaqueOffer
+             case .alpn(.offer(let alpnExt)):
+@@ -817,6 +816,21 @@
+             }
+ 
+             try clientHelloVerifier.validateExtensions()
++            if let validateServerName = idleState.configuration.receivedServerNameValidator {
++                let serverName: String?
++                if let bytes = clientHelloVerifier.clientServerName?.readableBytesView {
++                    guard bytes.allSatisfy({ $0 < 128 }),
++                          let name = String(validating: bytes, as: UTF8.self) else {
++                        throw TLSError.illegalParameter
++                    }
++                    serverName = name
++                } else {
++                    serverName = nil
++                }
++                guard validateServerName(serverName) else {
++                    throw TLSError.handshakeFailure
++                }
++            }
+ 
+             let serverSupportedCipherSuites: [CipherSuite]
+             if let configuredCipherSuites = idleState.configuration.supportedCipherSuites {

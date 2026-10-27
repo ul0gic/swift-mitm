@@ -1,39 +1,71 @@
 [
   {
+    "repository": "swift-tls",
+    "upstreamRevision": "e1d59537852388f444a761a4e8733386a5c603c8",
+    "forkRevision": "52e645b8ffccbfb72b22d009c3fc2480c546f3bf",
+    "patches": [
+      "swift-tls-received-sni-policy.patch"
+    ],
+    "upstreamURL": "https://github.com/apple/swift-tls",
+    "forkURL": "https://github.com/ul0gic/swift-tls"
+  },
+  {
     "repository": "swift-network-evolution",
     "upstreamRevision": "ea74abb2beced205f5eb0379e4fa8cd66de2e66e",
-    "forkRevision": "2868d16fd31216ef617311210bacaa4a1f24994f",
+    "forkRevision": "e9278c717d4cdb12ac64cf31df6c81f2a021d309",
     "patches": [
       "swift-network-evolution-split-fin.patch",
-      "swift-network-evolution-storage-completion.patch"
+      "swift-network-evolution-storage-completion.patch",
+      "swift-network-evolution-received-sni-options.patch"
     ],
     "upstreamURL": "https://github.com/apple/swift-network-evolution",
-    "forkURL": "https://github.com/ul0gic/swift-network-evolution"
+    "forkURL": "https://github.com/ul0gic/swift-network-evolution",
+    "incrementalPatchParents": {
+      "swift-network-evolution-received-sni-options.patch": "2868d16fd31216ef617311210bacaa4a1f24994f"
+    }
   },
   {
     "repository": "swift-nio-quic",
     "upstreamRevision": "11b231126952b3ef408c4e1ab95d14e16af5d867",
-    "forkRevision": "b82a67556a5d9d3acd9c00348eb17f0817d4627f",
+    "forkRevision": "0cde51338e44835ba77416d787f2d974f70d6ba5",
     "patches": [
       "swift-nio-quic-bounded-read.patch",
       "swift-nio-quic-bounded-send.patch",
       "swift-nio-quic-stream-admission.patch",
-      "swift-nio-quic-rounded-read-reservation.patch"
+      "swift-nio-quic-rounded-read-reservation.patch",
+      "swift-nio-quic-received-sni-policy.patch",
+      "swift-nio-quic-connection-storage-release.patch",
+      "swift-nio-quic-read-delivery-transaction.patch"
     ],
     "upstreamURL": "https://github.com/apple/swift-nio-quic",
-    "forkURL": "https://github.com/ul0gic/swift-nio-quic"
+    "forkURL": "https://github.com/ul0gic/swift-nio-quic",
+    "incrementalPatchParents": {
+      "swift-nio-quic-received-sni-policy.patch": "b82a67556a5d9d3acd9c00348eb17f0817d4627f",
+      "swift-nio-quic-connection-storage-release.patch": "c22dfd6e6dd828709cabf5018369976c9557154f",
+      "swift-nio-quic-read-delivery-transaction.patch": "6d5657ba20047f5852f7d8b8fa5c0649a8e4b6cb"
+    }
   },
   {
     "repository": "swift-nio-http3",
     "upstreamRevision": "e2c54cdbf50dc64bf9e80861922f8d9400d2acce",
-    "forkRevision": "1fc55937e2f6ef62ebc156d0b91475766d8ef777",
+    "forkRevision": "ce4c86c961401abb7bf8085bddd603e1c74daf6e",
     "patches": [
       "swift-nio-http3-bounded-input.patch",
       "swift-nio-http3-typed-decode-error.patch",
       "swift-nio-http3-rounded-read-capacity.patch",
-      "swift-nio-http3-terminal-input-close.patch"
+      "swift-nio-http3-terminal-input-close.patch",
+      "swift-nio-http3-received-goaway-event.patch",
+      "swift-nio-http3-static-stream-cancellation.patch",
+      "swift-nio-http3-terminal-connection-error.patch",
+      "swift-nio-http3-initialization-refusal.patch"
     ],
     "upstreamURL": "https://github.com/apple/swift-nio-http3",
-    "forkURL": "https://github.com/ul0gic/swift-nio-http3"
+    "forkURL": "https://github.com/ul0gic/swift-nio-http3",
+    "incrementalPatchParents": {
+      "swift-nio-http3-received-goaway-event.patch": "1fc55937e2f6ef62ebc156d0b91475766d8ef777",
+      "swift-nio-http3-static-stream-cancellation.patch": "40c653361a38618b37daf0dbc7ee92b83218fe5d",
+      "swift-nio-http3-terminal-connection-error.patch": "ad0e5b2600c70e3d27cff013a1e3f5a80a7e7751",
+      "swift-nio-http3-initialization-refusal.patch": "03e71f0a47df2120d1852c1a53d870a65f918b3c"
+    }
   }
 ]

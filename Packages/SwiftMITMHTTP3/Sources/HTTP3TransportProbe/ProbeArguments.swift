@@ -22,7 +22,11 @@ struct ProbeArguments: Sendable {
     let readyPath: String
     let allowInternal: Bool
 
-    var authority: String { "\(hostname):\(originPort)" }
+    var authority: String { "\(Self.authorityHost(hostname)):\(originPort)" }
+
+    private static func authorityHost(_ host: String) -> String {
+        host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
+    }
 
     init(_ arguments: [String]) throws {
         guard arguments.first == "serve" else { throw ProbeError.arguments }
@@ -61,9 +65,12 @@ struct ProbeArguments: Sendable {
               let port = Int(portValue), (0...65535).contains(port), let readyPath = values["--ready-file"] else {
             throw ProbeError.arguments
         }
+        guard let identity = HTTPAuthority(authority: "\(Self.authorityHost(hostname)):\(originPort)") else {
+            throw ProbeError.arguments
+        }
         self.certificatePath = certificatePath
         self.keyPath = keyPath
-        self.hostname = hostname
+        self.hostname = identity.host
         originAddress = try SocketAddress(ipAddress: address, port: originPort)
         self.originPort = originPort
         self.originRootPath = originRootPath

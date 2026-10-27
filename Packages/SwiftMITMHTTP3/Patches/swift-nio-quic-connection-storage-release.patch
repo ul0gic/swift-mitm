@@ -1,0 +1,510 @@
+--- /dev/null
++++ b/Sources/NIOQUIC/SwiftNetwork/QUICConnectionStreamStorage.swift
+@@ -0,0 +1,57 @@
++// SPDX-License-Identifier: Apache-2.0
++// Copyright (c) 2026 Apple Inc. and the SwiftNIO project authors
++
++import NIOCore
++
++@available(anyAppleOS 26, *)
++public struct QUICConnectionStreamStorageReleasedFutureOption: ChannelOption {
++    public typealias Value = EventLoopFuture<Void>
++    public init() {}
++}
++
++@available(anyAppleOS 26, *)
++final class QUICConnectionStreamStorage {
++    private let promise: EventLoopPromise<Void>
++    private var children = 0
++    private(set) var isAcceptingChildren = true
++    private var isSealed = false
++    private var completed = false
++
++    init(eventLoop: any EventLoop) {
++        self.promise = eventLoop.makePromise(of: Void.self)
++    }
++
++    var futureResult: EventLoopFuture<Void> { self.promise.futureResult }
++
++    func registerChild() -> Bool {
++        self.promise.futureResult.eventLoop.preconditionInEventLoop()
++        guard self.isAcceptingChildren else { return false }
++        self.children += 1
++        return true
++    }
++
++    func closeAdmission() {
++        self.promise.futureResult.eventLoop.preconditionInEventLoop()
++        self.isAcceptingChildren = false
++    }
++
++    func releaseChild() {
++        self.promise.futureResult.eventLoop.preconditionInEventLoop()
++        precondition(self.children > 0)
++        self.children -= 1
++        self.completeIfReleased()
++    }
++
++    func seal() {
++        self.promise.futureResult.eventLoop.preconditionInEventLoop()
++        precondition(!self.isAcceptingChildren)
++        self.isSealed = true
++        self.completeIfReleased()
++    }
++
++    private func completeIfReleased() {
++        guard self.isSealed, self.children == 0, !self.completed else { return }
++        self.completed = true
++        self.promise.succeed()
++    }
++}
+--- a/Sources/NIOQUIC/SwiftNetwork/SwiftNetworkQUICConnection.swift
++++ b/Sources/NIOQUIC/SwiftNetwork/SwiftNetworkQUICConnection.swift
+@@ -120,6 +120,7 @@
+     private let maximumBytesPerRead: Int
+     private let maximumPendingWriteBytes: Int?
+     private let streamStorageReservationFactory: QUICStreamStorageReservationFactory?
++    let connectionStreamStorage: QUICConnectionStreamStorage?
+     private let swiftNetworkParameters: SwiftNetwork.Parameters
+     private let eventLoop: any EventLoop
+ 
+@@ -143,6 +144,7 @@
+     private var datagramTransport: DatagramTransport?
+ 
+     private var connectionStateMachine = QUICConnectionStateMachine()
++    private var connectionStateTornDown = false
+ 
+     private var finalizedOutput: Deque<ByteBuffer> = []
+     private var networkContext: NetworkContext
+@@ -336,6 +338,17 @@
+         logger: Logger,
+         usesStreamTable: Bool
+     ) throws {
++        let connectionStreamStorage = !usesStreamTable && configuration.maximumPendingWriteBytes != nil
++            && configuration.maximumBytesPerRead < Int.max
++            ? QUICConnectionStreamStorage(eventLoop: eventLoop) : nil
++        self.connectionStreamStorage = connectionStreamStorage
++        var initialized = false
++        defer {
++            if !initialized {
++                connectionStreamStorage?.closeAdmission()
++                connectionStreamStorage?.seal()
++            }
++        }
+         precondition(configuration.maximumBytesPerRead > 0)
+         self.maximumBytesPerRead = configuration.maximumBytesPerRead
+         self.maximumPendingWriteBytes = configuration.maximumPendingWriteBytes
+@@ -450,7 +463,8 @@
+                 ? configuration.keepAliveInterval
+                 : nil,
+             maximumPendingWriteBytes: configuration.maximumPendingWriteBytes,
+-            streamStorageReservationFactory: configuration.streamStorageReservationFactory
++            streamStorageReservationFactory: configuration.streamStorageReservationFactory,
++            connectionStreamStorage: connectionStreamStorage
+         )
+         newFlowHandler?.maximumBytesPerRead = configuration.maximumBytesPerRead
+         self.connectionNewFlowHandler = newFlowHandler
+@@ -475,7 +489,8 @@
+                 connectionChannel: nil,
+                 eventLoop: self.eventLoop,
+                 keepAliveInterval: configuration.keepAliveInterval,
+-                maximumPendingWriteBytes: configuration.maximumPendingWriteBytes
++                maximumPendingWriteBytes: configuration.maximumPendingWriteBytes,
++                connectionStreamStorage: connectionStreamStorage
+             )
+ 
+             if let streamHandler {
+@@ -544,6 +559,7 @@
+             path: swiftNetworkPath,
+             keyLogPath: configuration.keyLogPath
+         )
++        initialized = true
+     }
+ 
+     private func start(
+@@ -612,6 +628,9 @@
+         onStreamReady:
+             @escaping (Result<(streamID: QUICStreamID, handler: QUICChannelStreamHandler), any Error>) -> Void
+     ) throws {
++        guard self.connectionStreamStorage?.isAcceptingChildren != false else {
++            throw ChannelError.ioOnClosedChannel
++        }
+         // Generate a new temporary ID for the stream.
+         let temporaryID = self.temporaryIDGenerator.generate()
+ 
+@@ -635,6 +654,8 @@
+             } else {
+                 pendingInitialClientStream.clearHandlers()
+                 self.pendingInitialClientStream = nil
++                pendingInitialClientStream.stop(detachFromLowerProtocol: true)
++                pendingInitialClientStream.closeIfNeeded()
+                 log("Initial stream is not connected. Setting up a new stream instead.")
+             }
+         }
+@@ -696,7 +717,8 @@
+                 listenerProtocol: listenerLinkage,
+                 connectionChannel: connectionChannel,
+                 eventLoop: connectionChannel.eventLoop,
+-                maximumPendingWriteBytes: self.maximumPendingWriteBytes
++                maximumPendingWriteBytes: self.maximumPendingWriteBytes,
++                connectionStreamStorage: self.connectionStreamStorage
+             )
+         else {
+             fatalError("Could not create a new outbound stream handler")
+@@ -710,6 +732,11 @@
+             throw error
+         }
+         streamHandler.start()
++        guard self.connectionStreamStorage?.isAcceptingChildren != false else {
++            streamHandler.stop(detachFromLowerProtocol: true)
++            streamHandler.closeIfNeeded()
++            throw ChannelError.ioOnClosedChannel
++        }
+ 
+         // Fast path: Check if the metadata is available immediately.
+         guard let metadata: ProtocolMetadata<QUICProtocol> = streamHandler.getStreamMetadata(),
+@@ -756,12 +783,14 @@
+                 let pendingStreamData = self.pendingOutboundStreams.removeValue(forKey: temporaryID)
+                 if let pendingStreamData {
+                     pendingStreamData.streamHandler.clearHandlers()
++                    pendingStreamData.streamHandler.stop(detachFromLowerProtocol: true)
++                    pendingStreamData.streamHandler.closeIfNeeded()
+                     pendingStreamData.onStreamReady(.failure(QUICError.invalidStreamState))
+                 }
+                 return
+             }
+ 
+-            guard let outboundStreamData = self.pendingOutboundStreams[temporaryID] else {
++            guard let outboundStreamData = self.pendingOutboundStreams.removeValue(forKey: temporaryID) else {
+                 // Fast path already ran
+                 return
+             }
+@@ -771,7 +800,6 @@
+                 streamHandler: outboundStreamData.streamHandler,
+                 onStreamReady: outboundStreamData.onStreamReady
+             )
+-            self.pendingOutboundStreams.removeValue(forKey: temporaryID)
+         }
+     }
+ 
+@@ -792,13 +820,19 @@
+         streamHandler: QUICChannelStreamHandler,
+         onStreamReady: (Result<(streamID: QUICStreamID, handler: QUICChannelStreamHandler), any Error>) -> Void
+     ) {
+-        // This should be true. Either we arrive here throught he connected callback,
+-        // which schedules this on the event loop or through the fast path, which
+-        // checks the connected status.
+-        assert(
+-            streamHandler.streamStateMachine.isConnected,
+-            "Outbound stream handler for temporary ID \(temporaryID) is not connected"
+-        )
++        guard self.connectionStreamStorage?.isAcceptingChildren != false else {
++            streamHandler.stop(detachFromLowerProtocol: true)
++            streamHandler.closeIfNeeded()
++            onStreamReady(.failure(ChannelError.ioOnClosedChannel))
++            return
++        }
++        guard streamHandler.streamStateMachine.isConnected, streamHandler.isActive else {
++            streamHandler.clearHandlers()
++            streamHandler.stop(detachFromLowerProtocol: true)
++            streamHandler.closeIfNeeded()
++            onStreamReady(.failure(QUICError.invalidStreamState))
++            return
++        }
+ 
+         // Ensure the stream handler has the stream ID assigned.
+         streamHandler.streamID = streamID
+@@ -832,7 +866,8 @@
+             remoteAddress: self.remoteAddress,
+             localAddress: self.localAddress,
+             connectionChannel: connectionChannel,
+-            maximumPendingWriteBytes: self.maximumPendingWriteBytes
++            maximumPendingWriteBytes: self.maximumPendingWriteBytes,
++            connectionStreamStorage: self.connectionStreamStorage
+         )
+         handler.maximumBytesPerRead = self.maximumBytesPerRead
+         do {
+@@ -881,18 +916,21 @@
+ 
+     // We may need to propagate an error through here in the future
+     private func tearDownConnectionState() {
++        guard !self.connectionStateTornDown else { return }
++        self.connectionStateTornDown = true
++        self.connectionStreamStorage?.closeAdmission()
++        let pendingStreams = self.pendingOutboundStreams
++        self.pendingOutboundStreams.removeAll()
+         self.activePath.finalizeQueuedInboundFramesAsFailed()
+         for path in self.otherPaths {
+             path.finalizeQueuedInboundFramesAsFailed()
+         }
+-        for (_, streamHandler) in self.streamInputHandlers {
+-            streamHandler.stop(detachFromLowerProtocol: true)
+-        }
+-        for (_, pendingStreamData) in self.pendingOutboundStreams {
++        _ = self.closeAllStreams()
++        for (_, pendingStreamData) in pendingStreams {
+             pendingStreamData.streamHandler.stop(detachFromLowerProtocol: true)
++            pendingStreamData.streamHandler.closeIfNeeded()
+             pendingStreamData.onStreamReady(.failure(ChannelError.ioOnClosedChannel))
+         }
+-        self.pendingOutboundStreams.removeAll()
+         if let connectionNewFlowHandler = self.connectionNewFlowHandler {
+             connectionNewFlowHandler.stop()
+             connectionNewFlowHandler.teardown()
+@@ -903,8 +941,10 @@
+         self.datagramTransport = nil
+         // Detach all paths: breaks their cycles with this connection and with SwiftNetwork, and makes them drop late
+         // packets.
++        self.activePath.finalizeQueuedOutboundFramesAsFailed()
+         self.activePath.detach()
+         for path in self.otherPaths {
++            path.finalizeQueuedOutboundFramesAsFailed()
+             path.detach()
+         }
+         // Break cycle with the stream table's 'outOfBandDrain'.
+@@ -931,6 +971,8 @@
+             log("close() returning early - already terminating")
+             return .alreadyClosed
+         }
++
++        self.connectionStreamStorage?.closeAdmission()
+ 
+         // Capture before initiateClose() below mutates the state machine. A `.connecting`
+         // connection transitions straight to `.closed`, and `hasEstablishedConnection`
+@@ -991,6 +1033,8 @@
+     /// a retain cycle that keeps both alive forever. The channel calls this once it has gone
+     /// inactive so both can deinit.
+     func dropChannelReferences() {
++        self.connectionStreamStorage?.closeAdmission()
++        self.tearDownConnectionState()
+         self.channelView = nil
+         self.connectionNewFlowHandler?.clearConnectionChannel()
+ 
+@@ -1001,6 +1045,7 @@
+             streamHandler.connectionChannel = nil
+         }
+         self.streamInputHandlers.removeAll()
++        self.connectionStreamStorage?.seal()
+     }
+ 
+     func removeStreamHandler(streamID: QUICStreamID) -> Bool {
+@@ -1012,11 +1057,11 @@
+     }
+ 
+     func closeAllStreams() -> [EventLoopFuture<Void>] {
+-        if streamInputHandlers.isEmpty {
+-            return []
+-        }
+-        let futures = streamInputHandlers.map { $0.1.closeFuture }
+-        for (_, stream) in streamInputHandlers {
++        var streams = streamInputHandlers.map { $0.1 }
++        if let pendingInitialClientStream { streams.append(pendingInitialClientStream) }
++        streams.append(contentsOf: pendingOutboundStreams.values.map { $0.streamHandler })
++        let futures = streams.map { $0.closeFuture }
++        for stream in streams {
+             stream.stop(detachFromLowerProtocol: true)
+             stream.closeIfNeeded()
+         }
+@@ -1407,6 +1452,7 @@
+ 
+     /// Handle disconnected events from SwiftNetwork for connection-level handlers (e.g., newFlowHandler).
+     private func handleConnectionDisconnected(error: NetworkError?) {
++        self.connectionStreamStorage?.closeAdmission()
+         // State machine handles all error inspection and conversion
+         let (stateAction, errorAction) = self.connectionStateMachine.receiveDisconnectedEvent(error: error)
+ 
+--- a/Sources/NIOQUIC/SwiftNetwork/QUICChannelNewFlowHandler.swift
++++ b/Sources/NIOQUIC/SwiftNetwork/QUICChannelNewFlowHandler.swift
+@@ -73,6 +73,7 @@
+     var maximumBytesPerRead: Int = .max
+     private let maximumPendingWriteBytes: Int?
+     private let streamStorageReservationFactory: QUICStreamStorageReservationFactory?
++    private let connectionStreamStorage: QUICConnectionStreamStorage?
+ 
+     /// The stream table inbound flows attach to, or nil if inbound streams become
+     /// child channels.
+@@ -91,7 +92,8 @@
+         datagramListenerProtocol: DatagramListenerLinkage,
+         keepAliveInterval: Duration? = nil,
+         maximumPendingWriteBytes: Int? = nil,
+-        streamStorageReservationFactory: QUICStreamStorageReservationFactory? = nil
++        streamStorageReservationFactory: QUICStreamStorageReservationFactory? = nil,
++        connectionStreamStorage: QUICConnectionStreamStorage? = nil
+     ) {
+         self.local = local
+         self.remote = remote
+@@ -104,6 +106,7 @@
+         self.keepAliveInterval = keepAliveInterval
+         self.maximumPendingWriteBytes = maximumPendingWriteBytes
+         self.streamStorageReservationFactory = streamStorageReservationFactory
++        self.connectionStreamStorage = connectionStreamStorage
+         self.logPrefix = "[\(self.role.description)][NewFlowHandler]"
+         self.localAddress = localAddress
+         self.datagramListener = datagramListenerProtocol
+@@ -216,6 +219,7 @@
+         flowMetadata: AbstractProtocolMetadata?
+     ) {
+         log("received new inbound flow")
++        guard self.connectionStreamStorage?.isAcceptingChildren != false else { return }
+ 
+         guard let lowerProtocol = self.lowerProtocol else {
+             self.log("Dropping new inbound flow: lower protocol has been detached")
+@@ -249,15 +253,21 @@
+                     localAddress: self.localAddress,
+                     connectionChannel: connectionChannel,
+                     keepAliveInterval: keepAliveInterval,
+-                    maximumPendingWriteBytes: self.maximumPendingWriteBytes
++                    maximumPendingWriteBytes: self.maximumPendingWriteBytes,
++                    connectionStreamStorage: self.connectionStreamStorage
+                 )
+ 
+                 streamHandler.maximumBytesPerRead = self.maximumBytesPerRead
+-                let linkage = try lowerProtocol.invokeAttachUpperStreamProtocolToExistingFlow(
+-                    streamHandler.reference,
+-                    flowReference: flowReference
+-                )
+-                streamHandler.swiftNetworkStreamHandle = SwiftNetworkStreamHandle(linkage: linkage)
++                do throws(NetworkError) {
++                    let linkage = try lowerProtocol.invokeAttachUpperStreamProtocolToExistingFlow(
++                        streamHandler.reference,
++                        flowReference: flowReference
++                    )
++                    streamHandler.swiftNetworkStreamHandle = SwiftNetworkStreamHandle(linkage: linkage)
++                } catch {
++                    streamHandler.closeIfNeeded()
++                    throw error
++                }
+                 streamHandler.setNewFlowMetadata(metadata)
+                 do {
+                     try streamHandler.acquireStorageReservation(factory: self.streamStorageReservationFactory)
+--- a/Sources/NIOQUIC/SwiftNetwork/QUICChannelStreamHandler.swift
++++ b/Sources/NIOQUIC/SwiftNetwork/QUICChannelStreamHandler.swift
+@@ -176,6 +176,8 @@
+     private var storageReleaseScheduled = false
+     private var storageAdmissionAttempted = false
+     private var streamStorageReservation: (any AnyObject & Sendable)?
++    private var connectionStreamStorage: QUICConnectionStreamStorage?
++    private var registeredConnectionStorage = false
+     private var legacyBufferedWriteData: TinyArray<ByteBuffer> = []
+     private var nextWriteID = 0
+     private var flushedWriteCount = 0
+@@ -216,9 +218,11 @@
+         localAddress: SocketAddress?,
+         connectionChannel: any Channel,
+         keepAliveInterval: Duration? = nil,
+-        maximumPendingWriteBytes: Int? = nil
++        maximumPendingWriteBytes: Int? = nil,
++        connectionStreamStorage: QUICConnectionStreamStorage? = nil
+     ) {
+         self.role = role
++        self.connectionStreamStorage = connectionStreamStorage
+         self.streamID = streamID
+         self.logger = logger
+         self._remoteAddress = remoteAddress
+@@ -247,6 +251,7 @@
+ 
+         // This creates a retain cycle, it's broken in close '_close(error:promise:)'
+         self.reference = ProtocolInstanceReference(custom: self)
++        self.registeredConnectionStorage = connectionStreamStorage?.registerChild() ?? false
+     }
+ 
+     internal init?(
+@@ -264,8 +269,10 @@
+         eventLoop: any EventLoop,
+         keepAliveInterval: Duration? = nil,
+         maximumPendingWriteBytes: Int? = nil,
++        connectionStreamStorage: QUICConnectionStreamStorage? = nil
+     ) {
+         self.role = role
++        self.connectionStreamStorage = connectionStreamStorage
+         self.streamID = streamID
+         self.logger = logger
+         self._remoteAddress = remoteAddress
+@@ -305,10 +312,12 @@
+             )
+         } catch {
+             self.log("Error attaching lower protocol: \(error)")
++            self.reference = ProtocolInstanceReference()
+             return nil
+         }
+         self.swiftNetworkStreamHandle = SwiftNetworkStreamHandle(linkage: linkage)
+         self._pipeline = ChannelPipeline(channel: self)
++        self.registeredConnectionStorage = connectionStreamStorage?.registerChild() ?? false
+     }
+ 
+     /// The stream direction based on the stream ID and the local peer's role.
+@@ -963,6 +972,10 @@
+         eventLoop.preconditionInEventLoop()
+         precondition(!storageAdmissionAttempted && !isActive)
+         storageAdmissionAttempted = true
++        if let connectionStreamStorage,
++            !registeredConnectionStorage || !connectionStreamStorage.isAcceptingChildren {
++            throw ChannelError.ioOnClosedChannel
++        }
+         guard let factory else { return }
+         guard boundedWritesEnabled, maximumBytesPerRead > 0, maximumBytesPerRead < Int.max else {
+             throw QUICWriteBufferError.capacityExceeded
+@@ -1003,6 +1016,8 @@
+             self.streamStorageReservation = nil
+             self.writeStorageReleased = true
+             self.writeStorageReleasedPromise.succeed()
++            if self.registeredConnectionStorage { self.connectionStreamStorage?.releaseChild() }
++            self.connectionStreamStorage = nil
+         }
+     }
+ 
+--- a/Sources/NIOQUIC/QUICConnectionChannel.swift
++++ b/Sources/NIOQUIC/QUICConnectionChannel.swift
+@@ -62,6 +62,7 @@
+ 
+     /// The underlying SwiftNetwork-backed QUIC connection.
+     private let _connection: Connection
++    private let _streamStorageReleasedFuture: EventLoopFuture<Void>?
+ 
+     /// A registrar for connection IDs.
+     private let _registrar: ConnectionIDRegistrar
+@@ -152,6 +153,12 @@
+         self.isServer = isServer
+ 
+         self._connection = connection
++        switch connection {
++        case .live(let live):
++            self._streamStorageReleasedFuture = live.connectionStreamStorage?.futureResult
++        case .test:
++            self._streamStorageReleasedFuture = nil
++        }
+         self._registrar = registrar
+         self._transport = transport
+         self._table = table
+@@ -256,6 +263,11 @@
+             switch option {
+             case is ChannelOptions.Types.AutoReadOption:
+                 return self.channel._autoRead as! Option.Value
++            case is QUICConnectionStreamStorageReleasedFutureOption:
++                guard let future = self.channel._streamStorageReleasedFuture else {
++                    throw ChannelError.operationUnsupported
++                }
++                return future as! Option.Value
+             default:
+                 throw ChannelError.operationUnsupported
+             }
+@@ -814,6 +826,9 @@
+ 
+     fileprivate func fireChannelInactiveNow(error: (any Error)? = nil) {
+         self.eventLoop.assertInEventLoop()
++        if case .live(let connection) = self._connection {
++            connection.connectionStreamStorage?.closeAdmission()
++        }
+ 
+         // Stop accepting more inbound streams.
+         switch self._streamInitializer.take() {
+@@ -942,6 +957,9 @@
+     /// Used by the registry when graceful shutdown overran its deadline.
+     fileprivate func _forceClose() {
+         self.eventLoop.assertInEventLoop()
++        if case .live(let connection) = self._connection {
++            connection.connectionStreamStorage?.closeAdmission()
++        }
+ 
+         switch self._lifecycle.forceClosing() {
+         case .alreadyClosed:

@@ -258,11 +258,15 @@ final class ProbeRelay<Part: ProbeMessagePart>: ChannelInboundHandler {
     private func fail() {
         guard !closed else { return }
         finish()
-        if let source = context?.channel { Self.abort(source) }
-        if let destination { Self.abort(destination) }
+        if let source = context?.channel {
+            Self.abort(source)
+        }
+        if let destination {
+            Self.abort(destination)
+        }
     }
 
-    private static func abort(_ channel: Channel) {
+    static func abort(_ channel: Channel) {
         // H3_REQUEST_CANCELLED: failure must not become a graceful empty response.
         guard let code = QUICApplicationErrorCode(0x10C) else {
             preconditionFailure("HTTP/3 cancellation code must fit a QUIC variable-length integer")

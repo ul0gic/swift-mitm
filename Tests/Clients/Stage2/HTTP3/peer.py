@@ -8,7 +8,8 @@ import sys
 
 from aioquic.asyncio.protocol import QuicConnectionProtocol
 from aioquic.asyncio.server import QuicServer
-from aioquic.h3.connection import H3Connection, Setting, encode_frame
+from aioquic.buffer import encode_uint_var
+from aioquic.h3.connection import FrameType, H3Connection, Setting, encode_frame
 from aioquic.h3.events import DataReceived, HeadersReceived
 from aioquic.quic.configuration import QuicConfiguration
 from aioquic.quic.events import ConnectionTerminated, HandshakeCompleted, StopSendingReceived, StreamReset
@@ -100,8 +101,14 @@ class Origin(QuicConnectionProtocol):
         self.http.send_headers(event.stream_id, [
             (b":status", b"200"), (b"x-duplicate", b"first"), (b"x-duplicate", b"second")
         ])
-        if path == b"/duplex":
+        if path in (b"/duplex", b"/goaway-drain"):
             self.http.send_data(event.stream_id, b"early:", end_stream=False)
+            if path == b"/goaway-drain":
+                assert event.stream_id == 0
+                for stream_id in (8, 4, 4):
+                    self._quic.send_stream_data(self.http._local_control_stream_id,
+                                                encode_frame(FrameType.GOAWAY, encode_uint_var(stream_id)))
+                    self.stats["goawayIDs"].append(stream_id)
         elif path == b"/hold":
             self.http.send_data(event.stream_id, b"held", end_stream=False)
         elif path == b"/large":
@@ -142,7 +149,7 @@ class Origin(QuicConnectionProtocol):
     def data(self, event):
         path = self.paths.get(event.stream_id)
         self.stats["uploadBytes"] += len(event.data)
-        if path == b"/duplex":
+        if path in (b"/duplex", b"/goaway-drain"):
             self.http.send_data(event.stream_id, event.data, end_stream=False)
             if event.stream_ended:
                 self.http.send_headers(event.stream_id, [
@@ -172,7 +179,7 @@ async def serve(arguments):
              "peerQpackCapacity": None, "peerQpackBlocked": None,
              "splitRequestTrailers": [], "splitResponseFin": [], "connectionErrors": [],
              "fragmentedRequest": False, "fragmentedResponseBytes": 0,
-             "slowResponseSentOffset": 0, "flowSamples": 0}
+             "slowResponseSentOffset": 0, "flowSamples": 0, "goawayIDs": []}
     stats_file = directory / "stats.json"
     release_file = directory / "release-fin.txt"
 

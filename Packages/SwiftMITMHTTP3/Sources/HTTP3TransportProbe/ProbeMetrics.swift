@@ -46,6 +46,12 @@ final class ProbeMetrics: Sendable {
         var sharedRetainedBytes = 0
         var peakSharedRetainedBytes = 0
         var storageAdmissionRefusals = 0
+        var parserAdmissionRefusals = 0
+        var nativeStreamAdmissionRefusals = 0
+        var queuedCopyAdmissionRefusals = 0
+        var acceptedGoawayEvents = 0
+        var activeConnectionStorageLifetimes = 0
+        var peakConnectionStorageLifetimes = 0
         var parserReservedBytes = 0
         var nativeStreamReservedBytes = 0
         var queuedCopyBytes = 0
@@ -74,6 +80,11 @@ final class ProbeMetrics: Sendable {
         try state.withLock { state in
             guard account.reserve(bytes) else {
                 state.storageAdmissionRefusals += 1
+                switch kind {
+                case .parser: state.parserAdmissionRefusals += 1
+                case .nativeStream: state.nativeStreamAdmissionRefusals += 1
+                case .queuedCopy: state.queuedCopyAdmissionRefusals += 1
+                }
                 throw ProbeError.capacity
             }
             switch kind {
@@ -108,6 +119,24 @@ final class ProbeMetrics: Sendable {
 
     func observeRawCapacity(_ bytes: Int) {
         state.withLock { $0.peakObservedRawReadCapacity = max($0.peakObservedRawReadCapacity, bytes) }
+    }
+
+    func observeGoaway() {
+        state.withLock { $0.acceptedGoawayEvents += 1 }
+    }
+
+    func connectionStorageStarted() {
+        state.withLock {
+            $0.activeConnectionStorageLifetimes += 1
+            $0.peakConnectionStorageLifetimes = max(
+                $0.peakConnectionStorageLifetimes,
+                $0.activeConnectionStorageLifetimes
+            )
+        }
+    }
+
+    func connectionStorageReleased() {
+        state.withLock { $0.activeConnectionStorageLifetimes -= 1 }
     }
 
     func track(_ channel: Channel) {

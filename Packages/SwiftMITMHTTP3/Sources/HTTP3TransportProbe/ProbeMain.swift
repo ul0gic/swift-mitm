@@ -154,9 +154,29 @@ struct ProbeMain {
         do {
             try await shutdown.get()
         } catch {
-            try await EventLoopFuture.andAllSucceed([server.close(), client.close()], on: loop).get()
+            try await closeSocketsAndStorage(state: state, server: server, client: client, loop: loop)
             throw error
         }
-        try await EventLoopFuture.andAllSucceed([server.close(), client.close()], on: loop).get()
+        try await closeSocketsAndStorage(state: state, server: server, client: client, loop: loop)
+    }
+
+    private static func closeSocketsAndStorage(
+        state: NIOLoopBound<ProbeTransport>,
+        server: Channel,
+        client: Channel,
+        loop: EventLoop
+    ) async throws {
+        var closeError: (any Error)?
+        do {
+            try await EventLoopFuture.andAllSucceed([server.close(), client.close()], on: loop).get()
+        } catch {
+            closeError = error
+        }
+        try await loop.flatSubmit {
+            EventLoopFuture.andAllSucceed(Array(state.value.connectionStorage.values), on: loop)
+        }.get()
+        if let closeError {
+            throw closeError
+        }
     }
 }

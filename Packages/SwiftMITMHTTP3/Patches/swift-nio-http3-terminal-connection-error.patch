@@ -1,0 +1,11 @@
+--- a/Sources/NIOHTTP3/HTTP3ConnectionCoordinator.swift
++++ b/Sources/NIOHTTP3/HTTP3ConnectionCoordinator.swift
+@@ -875,7 +875,7 @@
+         case .emitConnectionError(let error):
+             self.connection?.emitConnectionError(error)
+         case .none:
+-            assertionFailure("Tried to emit stream error when already finished.")
++            break
+         }
+     }
+ 

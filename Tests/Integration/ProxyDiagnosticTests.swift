@@ -8,8 +8,22 @@ import SwiftMITM
 final class ProxyDiagnosticTests: XCTestCase {
     private func runTransfer(bodySize: Int) async throws -> Int {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-        defer { try? group.syncShutdownGracefully() }
+        let received: Int
+        do {
+            received = try await performTransfer(group: group, bodySize: bodySize)
+        } catch {
+            do {
+                try await group.shutdownGracefully()
+            } catch {
+                XCTFail("Event-loop shutdown failed during transfer cleanup: \(error)")
+            }
+            throw error
+        }
+        try await group.shutdownGracefully()
+        return received
+    }
 
+    private func performTransfer(group: MultiThreadedEventLoopGroup, bodySize: Int) async throws -> Int {
         let origin = try TLSOriginServer(group: group, bodySize: bodySize)
         try origin.start()
         defer { origin.stop() }

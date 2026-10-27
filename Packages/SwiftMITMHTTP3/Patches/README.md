@@ -1,6 +1,6 @@
 # Native dependency patch candidates
 
-These source patches are experimental. The initial bounded-storage graph compiled remotely and passed six of thirteen transport scenarios on candidate `3a880da`; the terminal-input-close repair awaits its next remote run. They do not establish a production memory bound. Apply each patch with strip level 1 to the exact upstream revision below; publish the resulting reviewed trees as immutable dependency revisions. Preserve each repository's license, notices, contributors file and existing source headers.
+These source patches are experimental. Candidate `18a954b` compiled remotely and passed nine of thirteen transport scenarios. Follow-on SNI, GOAWAY, storage-lifetime and runtime-ordering repairs await the next remote run. They do not establish a production memory bound. Apply each patch with strip level 1 to the exact upstream revision below; publish the resulting reviewed trees as immutable dependency revisions. Preserve each repository's license, notices, contributors file and existing source headers.
 
 | Patch | Upstream repository | Revision |
 |---|---|---|
@@ -59,3 +59,13 @@ No local verification was executed. Patch application, compilation, upstream con
 Admission now precedes all real native child starts and retains reservations through raw-buffer disposal and native output release. The256 limit counts submitted storage tickets, not every internally split native Frame. Record charges are a stride-derived logical model; allocator/spare-capacity/native callback workspace still requires independent ceiling measurement. The rounded-capacity patches preserve logical read limits while reserving/checking actual NIO backing capacity.
 
 The terminal-input-close patch preserves the finished state when native read abort synchronously delivers channel inactivity before a late input-closed event. Open-stream FIN handling remains unchanged. The prior runtime reached this assertion in streaming and slow-reader scenarios; the repair still requires those scenarios to pass.
+
+## Follow-on native seams
+
+The SwiftTLS policy validates parsed client SNI before handshake progress; a nil policy preserves upstream behavior. SwiftNetwork and NIOQUIC propagate the same pinned implementation. The companion accepts absent SNI and canonical fixed DNS identity, and keeps certificate verification enabled.
+
+Accepted GOAWAY notifications follow the native state transition and precede cancellation effects. Reentrant observers cannot cause duplicate shutdown or cancellation of an already-removed stream. Static QPACK accepts legal stream-cancellation instructions without weakening invalid acknowledgement/increment handling. A secondary connection error after the terminal transition is ignored; the first error still closes the connection.
+
+The connection storage barrier closes admission before terminal callbacks, detaches native ingress and disposes pending children/coalescers before sealing, then waits for every registered child's read/write storage release. It is distinct from channel close completion. Final native reads must deliver the returned DATA/FIN before deferred disconnect cleanup. Failed parser installation retains a close callback so native stream accounting can unwind even before the application handler exists.
+
+These seams add pinned SwiftTLS maintenance and small lifecycle state. Their purpose is fixed-route identity enforcement, protocol-correct cancellation, and truthful disposal accounting. They do not establish the production proxy's stop deadline, maximum-state memory bound, or total RSS. Remote checks must prove those properties separately.

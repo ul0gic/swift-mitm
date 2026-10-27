@@ -1,3 +1,4 @@
+import Foundation
 import Logging
 import NIOCore
 import NIOHTTP3
@@ -17,6 +18,8 @@ final class ProbeTransport {
     var clientHandler: NIOLoopBound<ProbeQUICHandler>?
     var serverHandler: NIOLoopBound<ProbeQUICHandler>?
     var origins: [ObjectIdentifier: EventLoopFuture<Channel>] = [:]
+    var drainingOrigins: Set<ObjectIdentifier> = []
+    var connectionStorage: [UUID: EventLoopFuture<Void>] = [:]
 
     init(arguments: ProbeArguments) throws {
         self.arguments = arguments
@@ -37,6 +40,12 @@ final class ProbeTransport {
                 ),
                 applicationProtocols: ["h3"]
             )
+            configuration.receivedServerNameValidator = { received in
+                guard let received else { return true }
+                guard (try? SocketAddress(ipAddress: received, port: server.originPort)) == nil,
+                      !received.contains(":"), !received.hasPrefix("[") else { return false }
+                return HTTPAuthority(authority: "\(received):\(server.originPort)")?.host == server.hostname
+            }
         } else {
             configuration = .forClient(
                 verificationConfiguration: .x509Certificates(trustRootsFilePath: nil),
@@ -73,7 +82,12 @@ final class ProbeTransport {
             do {
                 try channel.pipeline.syncOperations.addHandler(ProbeRawReadMeter(metrics: metrics), position: .first)
                 let handler = try parent.pipeline.syncOperations.handler(type: ProbeHTTP3Handler.self)
-                return handler.inboundStreamReceived(channel)
+                return handler.inboundStreamReceived(channel).flatMapError { error in
+                    if let probeError = error as? ProbeError, case .capacity = probeError {
+                        ProbeRelay<HTTPRequestPart>.abort(channel)
+                    }
+                    return channel.eventLoop.makeFailedFuture(error)
+                }
             } catch { return channel.eventLoop.makeFailedFuture(error) }
         }
     }
@@ -143,6 +157,7 @@ final class ProbeTransport {
         state: NIOLoopBound<ProbeTransport>
     ) -> EventLoopFuture<Void> {
         channel.eventLoop.makeCompletedFuture {
+            try state.value.trackConnectionStorage(channel)
             var configuration = HTTP3ServerConfiguration.defaults
             configuration.inboundMemory = state.value.inboundMemoryConfiguration()
             let handler = ProbeHTTP3Handler.server(
@@ -167,7 +182,8 @@ final class ProbeTransport {
                     }
                 }
             }
-            try channel.pipeline.syncOperations.addHandlers([ProbeHandshakeDeadline(), handler])
+            let observer = ProbeConnectionObserver { state.value.metrics.observeGoaway() }
+            try channel.pipeline.syncOperations.addHandlers([ProbeHandshakeDeadline(), handler, observer])
         }
     }
 }

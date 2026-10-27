@@ -163,7 +163,7 @@ extension Release022PublicHTTP2StreamingTests {
     }
 
     func dataBytes(_ frames: [HTTP2Frame.FramePayload]) -> [UInt8] {
-        frames.flatMap { frame in
+        frames.flatMap { frame -> [UInt8] in
             if case let .data(data) = frame, case let .byteBuffer(buffer) = data.data {
                 Array(buffer.readableBytesView)
             } else {
@@ -173,8 +173,8 @@ extension Release022PublicHTTP2StreamingTests {
     }
 
     func responseBytes(_ events: [CaptureEvent]) -> [UInt8] {
-        events.flatMap {
-            if case let .responseBodyChunk(_, bytes, _) = $0 {
+        events.flatMap { event -> [UInt8] in
+            if case let .responseBodyChunk(_, bytes, _) = event {
                 bytes
             } else {
                 []
