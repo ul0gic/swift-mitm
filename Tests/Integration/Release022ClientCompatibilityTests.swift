@@ -59,8 +59,8 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         protocolName: String,
         version: HTTPProtocolVersion
     ) async throws {
-        let bindAddress = try release022RunnerIPv4()
-        let originHost = bindAddress
+        let bindAddress = "127.0.0.1"
+        let originHost = "swiftmitm.localhost"
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 2)
         let origin = try TLSOriginServer(
             group: group,

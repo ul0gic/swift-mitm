@@ -58,7 +58,6 @@ final class Stage2InspectionAcceptanceTests: XCTestCase {
             )
         }
     }
-
 }
 
 extension Stage2InspectionAcceptanceTests {

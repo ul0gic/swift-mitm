@@ -43,5 +43,4 @@ final class Release022PublicHTTP1Tests: XCTestCase {
             XCTAssertEqual(release022ResponseBodyBytes(sink.events), Array(body.prefix(8)))
         }
     }
-
 }
