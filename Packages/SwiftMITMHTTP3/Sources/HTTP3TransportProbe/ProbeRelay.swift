@@ -47,7 +47,9 @@ extension HTTPRequestPart: ProbeMessagePart {
     }
 
     func compacted() -> HTTPRequestPart {
-        if case let .body(body) = self { return .body(ByteBuffer(bytes: body.readableBytesView)) }
+        if case let .body(body) = self {
+            return .body(ByteBuffer(bytes: body.readableBytesView))
+        }
         return self
     }
 
@@ -78,7 +80,9 @@ extension HTTPResponsePart: ProbeMessagePart {
     }
 
     func compacted() -> HTTPResponsePart {
-        if case let .body(body) = self { return .body(ByteBuffer(bytes: body.readableBytesView)) }
+        if case let .body(body) = self {
+            return .body(ByteBuffer(bytes: body.readableBytesView))
+        }
         return self
     }
 
@@ -141,8 +145,12 @@ final class ProbeRelay<Part: ProbeMessagePart>: ChannelInboundHandler {
         let bytes = incoming.forwardedPayloadBytes
         guard bytes <= 65_536 - pendingBytes else { fail(); return }
         let lease: ProbeStorageLease
-        do { lease = try metrics.reserve(incoming.retainedBytes, kind: .queuedCopy) }
-        catch { fail(); return }
+        do {
+            lease = try metrics.reserve(incoming.retainedBytes, kind: .queuedCopy)
+        } catch {
+            fail()
+            return
+        }
         let part = incoming.compacted()
         pendingBytes += bytes
         pendingStorageBytes += lease.bytes
@@ -198,7 +206,8 @@ final class ProbeRelay<Part: ProbeMessagePart>: ChannelInboundHandler {
                     self.finish()
                     destination.close(promise: nil)
                 } else {
-                    destination.eventLoop.execute { self.readIfReady() }
+                    let bound = NIOLoopBound(self, eventLoop: destination.eventLoop)
+                    destination.eventLoop.execute { bound.value.readIfReady() }
                 }
             case .failure: self.fail()
             }

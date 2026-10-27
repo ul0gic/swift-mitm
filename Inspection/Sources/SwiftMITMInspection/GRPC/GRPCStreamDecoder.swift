@@ -231,8 +231,9 @@ private extension GRPCStreamDecoder {
                     maximum: maximumMessageBytes,
                     budget: budget
                 )
-            } catch let diagnostic as GRPCDiagnostic { fail(diagnostic) }
-            catch { fail(.malformedEnvelope) }
+            } catch let diagnostic as GRPCDiagnostic {
+                fail(diagnostic)
+            } catch { fail(.malformedEnvelope) }
             return
         }
         if compressed && decoded == nil {

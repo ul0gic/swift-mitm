@@ -196,8 +196,7 @@ public final class HTTPInspector: HTTPObservationSink, WebSocketObservationSink 
             if result.drained || clock.now >= deadline {
                 return result
             }
-            do { try await Task.sleep(for: .milliseconds(10)) }
-            catch { return result }
+            do { try await Task.sleep(for: .milliseconds(10)) } catch { return result }
         }
     }
 

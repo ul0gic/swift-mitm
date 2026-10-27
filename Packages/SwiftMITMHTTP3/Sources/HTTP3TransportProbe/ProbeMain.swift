@@ -20,8 +20,11 @@ struct ProbeMain {
             } else {
                 message = "HTTP3TransportProbe: startup-failure \(type(of: error))"
             }
-            do { try FileHandle.standardError.write(contentsOf: Data((message + "\n").utf8)) }
-            catch { exit(3) }
+            do {
+                try FileHandle.standardError.write(contentsOf: Data((message + "\n").utf8))
+            } catch {
+                exit(3)
+            }
             exit(2)
         }
     }
@@ -43,7 +46,13 @@ struct ProbeMain {
             }
             .get()
             let verifier = try AsyncVerifier(trustRootsPath: arguments.originRootPath, eventLoop: loop)
-            metrics = try await serve(arguments, state: state, loop: loop, authenticator: authenticator, verifier: verifier)
+            metrics = try await serve(
+                arguments,
+                state: state,
+                loop: loop,
+                authenticator: authenticator,
+                verifier: verifier
+            )
         } catch {
             try await group.shutdownGracefully()
             throw error
@@ -121,8 +130,9 @@ struct ProbeMain {
         try data.write(to: URL(fileURLWithPath: arguments.readyPath), options: .atomic)
         for await _ in signals { break }
         writer.cancel()
-        do { try await writer.value }
-        catch is CancellationError {
+        do {
+            try await writer.value
+        } catch is CancellationError {
             // The periodic writer stops with the signal-driven probe shutdown.
         }
     }

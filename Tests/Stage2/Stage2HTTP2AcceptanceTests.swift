@@ -18,7 +18,7 @@ func stage2H2Stream(_ multiplexer: NIOHTTP2Handler.StreamMultiplexer) throws -> 
 }
 
 func stage2H2Bytes(_ frames: [HTTP2Frame.FramePayload]) -> [UInt8] {
-    frames.flatMap { payload in
+    frames.flatMap { payload -> [UInt8] in
         if case let .data(data) = payload, case let .byteBuffer(buffer) = data.data {
             Array(buffer.readableBytesView)
         } else {

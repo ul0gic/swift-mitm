@@ -45,6 +45,7 @@ final class ProbeMetrics: Sendable {
         var phase = "running"
         var sharedRetainedBytes = 0
         var peakSharedRetainedBytes = 0
+        var storageAdmissionRefusals = 0
         var parserReservedBytes = 0
         var nativeStreamReservedBytes = 0
         var queuedCopyBytes = 0
@@ -54,6 +55,9 @@ final class ProbeMetrics: Sendable {
         var sampledNativePendingBytes = 0
         var sampledNativeRetainedBytes = 0
         var peakSampledNativePendingBytesPerStream = 0
+        var sampledNativeStorageTickets = 0
+        var peakSampledNativeStorageTicketsPerStream = 0
+        var sampledNativeTrackedStreams = 0
     }
 
     private let state = OSAllocatedUnfairLock(initialState: Snapshot())
@@ -68,7 +72,10 @@ final class ProbeMetrics: Sendable {
 
     func reserve(_ bytes: Int, kind: ProbeStorageKind) throws -> ProbeStorageLease {
         try state.withLock { state in
-            guard account.reserve(bytes) else { throw ProbeError.capacity }
+            guard account.reserve(bytes) else {
+                state.storageAdmissionRefusals += 1
+                throw ProbeError.capacity
+            }
             switch kind {
             case .parser: state.parserReservedBytes += bytes
             case .nativeStream: state.nativeStreamReservedBytes += bytes
@@ -106,7 +113,7 @@ final class ProbeMetrics: Sendable {
     func track(_ channel: Channel) {
         let id = ObjectIdentifier(channel)
         channels.withLock { $0[id] = channel }
-        channel.getOption(QUICWriteStorageReleasedFutureOption()).flatMap { $0 }.whenComplete { _ in
+        channel.getOption(QUICWriteStorageReleasedFutureOption()).flatMap(\.self).whenComplete { _ in
             _ = self.channels.withLock { $0.removeValue(forKey: id) }
         }
     }
@@ -116,17 +123,25 @@ final class ProbeMetrics: Sendable {
         var pending = 0
         var retained = 0
         var peak = 0
+        var tickets = 0
+        var peakTickets = 0
         for channel in tracked {
             let available = try await channel.getOption(QUICPendingWriteBytesAvailableOption()).get()
             let bytes = 65_536 - available
             pending += bytes
             peak = max(peak, bytes)
             retained += try await channel.getOption(QUICNativeWriteBytesRetainedOption()).get()
+            let streamTickets = try await channel.getOption(QUICNativeWriteStorageTicketsRetainedOption()).get()
+            tickets += streamTickets
+            peakTickets = max(peakTickets, streamTickets)
         }
-        state.withLock {
+        state.withLock { [pending, retained, peak, tickets, peakTickets] in
             $0.sampledNativePendingBytes = pending
             $0.sampledNativeRetainedBytes = retained
             $0.peakSampledNativePendingBytesPerStream = max($0.peakSampledNativePendingBytesPerStream, peak)
+            $0.sampledNativeStorageTickets = tickets
+            $0.peakSampledNativeStorageTicketsPerStream = max($0.peakSampledNativeStorageTicketsPerStream, peakTickets)
+            $0.sampledNativeTrackedStreams = tracked.count
         }
     }
 
@@ -137,6 +152,8 @@ final class ProbeMetrics: Sendable {
         if stopped, channels.withLock({ $0.isEmpty }) {
             snapshot.sampledNativePendingBytes = 0
             snapshot.sampledNativeRetainedBytes = 0
+            snapshot.sampledNativeStorageTickets = 0
+            snapshot.sampledNativeTrackedStreams = 0
         }
         let data = try JSONEncoder().encode(snapshot)
         try data.write(to: URL(fileURLWithPath: path), options: .atomic)

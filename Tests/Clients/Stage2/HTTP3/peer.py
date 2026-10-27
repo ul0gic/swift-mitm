@@ -14,13 +14,14 @@ from aioquic.quic.configuration import QuicConfiguration
 from aioquic.quic.events import ConnectionTerminated, HandshakeCompleted, StopSendingReceived, StreamReset
 
 from wire import FRAGMENT_VALUE, fragmented_headers, oversized_headers_prefix
+from flow import FlowLogger, SLOW_BYTES, SLOW_CHUNK
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from client_tls import create_identity
 
 
 class Origin(QuicConnectionProtocol):
-    def __init__(self, *args, stats, publish, release_file, **kwargs):
+    def __init__(self, *args, stats, publish, release_file, flow_proof, **kwargs):
         super().__init__(*args, **kwargs)
         self.http = H3Connection(self._quic)
         self.stats = stats
@@ -28,6 +29,18 @@ class Origin(QuicConnectionProtocol):
         self.paths = {}
         self.release_file = release_file
         self.fin_tasks = set()
+        self.flow_task = None
+        self.slow_stream = None
+        if flow_proof:
+            self.flow_task = asyncio.create_task(self.sample_flow())
+
+    async def sample_flow(self):
+        while True:
+            if self.slow_stream is not None:
+                self.stats["slowResponseSentOffset"] = self._quic._quic_logger.sent_offsets.get(self.slow_stream, 0)
+                self.stats["flowSamples"] += 1
+                self.publish()
+            await asyncio.sleep(0.1)
 
     def quic_event_received(self, event):
         if isinstance(event, HandshakeCompleted):
@@ -39,6 +52,8 @@ class Origin(QuicConnectionProtocol):
             self.paths.pop(event.stream_id, None)
         elif isinstance(event, ConnectionTerminated):
             self.stats["connectionErrors"].append(event.error_code)
+            if self.flow_task is not None:
+                self.flow_task.cancel()
         for received in self.http.handle_event(event):
             if isinstance(received, HeadersReceived):
                 self.headers(received)
@@ -91,6 +106,11 @@ class Origin(QuicConnectionProtocol):
             self.http.send_data(event.stream_id, b"held", end_stream=False)
         elif path == b"/large":
             self.http.send_data(event.stream_id, bytes(range(256)) * 1024, end_stream=True)
+            self.paths.pop(event.stream_id)
+        elif path == b"/slow-receiver":
+            self.slow_stream = event.stream_id
+            for offset in range(0, SLOW_BYTES, len(SLOW_CHUNK)):
+                self.http.send_data(event.stream_id, SLOW_CHUNK, end_stream=offset + len(SLOW_CHUNK) == SLOW_BYTES)
             self.paths.pop(event.stream_id)
         elif path.startswith(b"/split-fin/"):
             self.http.send_data(event.stream_id, b"split-response", end_stream=False)
@@ -151,7 +171,8 @@ async def serve(arguments):
              "requests": 0, "paths": [], "uploadBytes": 0, "cancelSignals": 0,
              "peerQpackCapacity": None, "peerQpackBlocked": None,
              "splitRequestTrailers": [], "splitResponseFin": [], "connectionErrors": [],
-             "fragmentedRequest": False, "fragmentedResponseBytes": 0}
+             "fragmentedRequest": False, "fragmentedResponseBytes": 0,
+             "slowResponseSentOffset": 0, "flowSamples": 0}
     stats_file = directory / "stats.json"
     release_file = directory / "release-fin.txt"
 
@@ -161,12 +182,15 @@ async def serve(arguments):
         temporary.replace(stats_file)
 
     configuration = QuicConfiguration(is_client=False, alpn_protocols=["h3"], idle_timeout=15)
+    flow_logger = FlowLogger() if arguments.flow_proof else None
+    configuration.quic_logger = flow_logger
     configuration.load_cert_chain(certificate, key)
     loop = asyncio.get_running_loop()
     transport, server = await loop.create_datagram_endpoint(
         lambda: CountingServer(
             configuration=configuration, stats=stats, publish=publish,
-            create_protocol=partial(Origin, stats=stats, publish=publish, release_file=release_file)
+            create_protocol=partial(Origin, stats=stats, publish=publish, release_file=release_file,
+                                    flow_proof=arguments.flow_proof)
         ), local_addr=("127.0.0.1", 0)
     )
     stopped = asyncio.Event()
@@ -184,9 +208,12 @@ async def serve(arguments):
         server.close()
         transport.close()
         publish()
+        if flow_logger is not None:
+            flow_logger.write(directory / "flow.qlog")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--ready-file", type=Path, required=True)
+    parser.add_argument("--flow-proof", action="store_true")
     asyncio.run(serve(parser.parse_args()))

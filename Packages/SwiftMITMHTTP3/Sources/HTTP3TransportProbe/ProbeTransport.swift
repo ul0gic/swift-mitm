@@ -61,9 +61,8 @@ final class ProbeTransport {
         let metrics = metrics
         return HTTP3InboundMemoryConfiguration(
             maximumEncodedFieldSectionBytes: 32_768,
-            maximumBytesPerRead: 16_384,
-            makeStorageReservation: { bytes in try metrics.reserve(bytes, kind: .parser) }
-        )
+            maximumBytesPerRead: 16_384
+        ) { bytes in try metrics.reserve(bytes, kind: .parser) }
     }
 
     static func receiveStream(_ channel: Channel, metrics: ProbeMetrics) -> EventLoopFuture<Void> {

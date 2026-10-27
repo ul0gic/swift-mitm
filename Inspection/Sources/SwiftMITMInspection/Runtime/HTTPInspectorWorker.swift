@@ -92,8 +92,7 @@ extension HTTPInspector {
     private func processCurrent(_ state: inout Worker) {
         if let item = state.current {
             let complete: Bool
-            do { complete = try process(item, state: &state) }
-            catch {
+            do { complete = try process(item, state: &state) } catch {
                 fail(item.key, error: error, state: &state)
                 complete = true
             }

@@ -38,21 +38,32 @@ extension ProbeTransport {
 
     private func originConnection(for downstream: Channel) -> EventLoopFuture<Channel> {
         let id = ObjectIdentifier(downstream)
-        if let existing = origins[id] { return existing }
+        if let existing = origins[id] {
+            return existing
+        }
         guard origins.count < 128, let clientHandler else {
             return downstream.eventLoop.makeFailedFuture(ProbeError.capacity)
         }
         let promise = downstream.eventLoop.makePromise(of: Channel.self)
         origins[id] = promise.futureResult
         let state = NIOLoopBound(self, eventLoop: downstream.eventLoop)
-        clientHandler.value.createOutboundConnection(
-            serverName: arguments.hostname,
-            remoteAddress: arguments.originAddress,
-            connectionInitializer: { channel, creator in
-                Self.configureOriginConnection(channel, creator: creator, state: state, id: id, downstream: downstream)
-            },
-            inboundStreamInitializer: { Self.receiveStream($0, metrics: state.value.metrics) }
-        ).map { connection, _ in connection }.cascade(to: promise)
+        clientHandler.value
+            .createOutboundConnection(
+                serverName: arguments.hostname,
+                remoteAddress: arguments.originAddress,
+                connectionInitializer: { channel, creator in
+                    Self.configureOriginConnection(
+                        channel,
+                        creator: creator,
+                        state: state,
+                        id: id,
+                        downstream: downstream
+                    )
+                },
+                inboundStreamInitializer: { Self.receiveStream($0, metrics: state.value.metrics) }
+            )
+            .map { connection, _ in connection }
+            .cascade(to: promise)
         promise.futureResult.whenFailure { _ in
             state.value.origins.removeValue(forKey: id)
             downstream.close(promise: nil)

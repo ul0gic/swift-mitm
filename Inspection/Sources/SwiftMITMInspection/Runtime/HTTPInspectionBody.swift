@@ -105,16 +105,15 @@ final class HTTPInspectionBody {
                 expectsStatus: context.direction == .response,
                 initialMetadata: headers.map { ($0.name, $0.value) },
                 httpStatus: status,
-                compressionEncoding: encoding,
-                emit: { [weak self] event in
-                    guard let self else { return }
-                    self.output(.grpc(event))
-                    if case let .message(message) = event,
-                       media == "application/grpc" || media.hasSuffix("+proto") {
-                        self.inspectProtobuf(message.bytes, path: path)
-                    }
+                compressionEncoding: encoding
+            ) { [weak self] event in
+                guard let self else { return }
+                self.output(.grpc(event))
+                if case let .message(message) = event,
+                   media == "application/grpc" || media.hasSuffix("+proto") {
+                    self.inspectProtobuf(message.bytes, path: path)
                 }
-            )
+            }
         }
     }
 
