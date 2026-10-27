@@ -62,10 +62,8 @@ struct ProbeArguments: Sendable {
               let address = values["--origin-address"], let originPortValue = values["--origin-port"],
               let originPort = Int(originPortValue), (1...65535).contains(originPort),
               let originRootPath = values["--origin-ca"], let portValue = values["--port"],
-              let port = Int(portValue), (0...65535).contains(port), let readyPath = values["--ready-file"] else {
-            throw ProbeError.arguments
-        }
-        guard let identity = HTTPAuthority(authority: "\(Self.authorityHost(hostname)):\(originPort)") else {
+              let port = Int(portValue), (0...65535).contains(port), let readyPath = values["--ready-file"],
+              let identity = HTTPAuthority(authority: "\(Self.authorityHost(hostname)):\(originPort)") else {
             throw ProbeError.arguments
         }
         self.certificatePath = certificatePath

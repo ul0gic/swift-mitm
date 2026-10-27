@@ -166,7 +166,7 @@ struct ProbeMain {
         client: Channel,
         loop: EventLoop
     ) async throws {
-        var closeError: (any Error)?
+        var closeError: any Error?
         do {
             try await EventLoopFuture.andAllSucceed([server.close(), client.close()], on: loop).get()
         } catch {
@@ -174,7 +174,8 @@ struct ProbeMain {
         }
         try await loop.flatSubmit {
             EventLoopFuture.andAllSucceed(Array(state.value.connectionStorage.values), on: loop)
-        }.get()
+        }
+        .get()
         if let closeError {
             throw closeError
         }

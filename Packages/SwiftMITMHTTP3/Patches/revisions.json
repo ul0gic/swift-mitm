@@ -48,7 +48,7 @@
   {
     "repository": "swift-nio-http3",
     "upstreamRevision": "e2c54cdbf50dc64bf9e80861922f8d9400d2acce",
-    "forkRevision": "ce4c86c961401abb7bf8085bddd603e1c74daf6e",
+    "forkRevision": "8863d1e84f1d50f59230d0404a73ded8328a72f5",
     "patches": [
       "swift-nio-http3-bounded-input.patch",
       "swift-nio-http3-typed-decode-error.patch",
@@ -57,7 +57,8 @@
       "swift-nio-http3-received-goaway-event.patch",
       "swift-nio-http3-static-stream-cancellation.patch",
       "swift-nio-http3-terminal-connection-error.patch",
-      "swift-nio-http3-initialization-refusal.patch"
+      "swift-nio-http3-initialization-refusal.patch",
+      "swift-nio-http3-goaway-public-import.patch"
     ],
     "upstreamURL": "https://github.com/apple/swift-nio-http3",
     "forkURL": "https://github.com/ul0gic/swift-nio-http3",
@@ -65,7 +66,8 @@
       "swift-nio-http3-received-goaway-event.patch": "1fc55937e2f6ef62ebc156d0b91475766d8ef777",
       "swift-nio-http3-static-stream-cancellation.patch": "40c653361a38618b37daf0dbc7ee92b83218fe5d",
       "swift-nio-http3-terminal-connection-error.patch": "ad0e5b2600c70e3d27cff013a1e3f5a80a7e7751",
-      "swift-nio-http3-initialization-refusal.patch": "03e71f0a47df2120d1852c1a53d870a65f918b3c"
+      "swift-nio-http3-initialization-refusal.patch": "03e71f0a47df2120d1852c1a53d870a65f918b3c",
+      "swift-nio-http3-goaway-public-import.patch": "ce4c86c961401abb7bf8085bddd603e1c74daf6e"
     }
   }
 ]
