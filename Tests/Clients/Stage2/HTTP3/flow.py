@@ -105,20 +105,23 @@ async def quiescent_metrics(path, expected=None):
     previous = None
     stable_since = None
     loop = asyncio.get_running_loop()
-    async with asyncio.timeout(8):
-        while True:
-            value = read_metrics(path)
-            current = {name: value[name] for name in CURRENT_METRICS}
-            quiet = all(value[name] == 0 for name in (
-                "queuedCopyBytes", "sampledNativePendingBytes", "sampledNativeRetainedBytes", "sampledNativeStorageTickets"
-            ))
-            now = loop.time()
-            if not quiet or current != previous or (expected is not None and current != expected):
-                stable_since = now
-            elif now - stable_since >= 0.3:
-                return current
-            previous = current
-            await asyncio.sleep(0.12)
+    try:
+        async with asyncio.timeout(8):
+            while True:
+                value = read_metrics(path)
+                current = {name: value[name] for name in CURRENT_METRICS}
+                quiet = all(value[name] == 0 for name in (
+                    "queuedCopyBytes", "sampledNativePendingBytes", "sampledNativeRetainedBytes", "sampledNativeStorageTickets"
+                ))
+                now = loop.time()
+                if not quiet or current != previous or (expected is not None and current != expected):
+                    stable_since = now
+                elif now - stable_since >= 0.3:
+                    return current
+                previous = current
+                await asyncio.sleep(0.12)
+    except TimeoutError as error:
+        raise AssertionError(f"native quiescence deadline: observed={previous}, expected={expected}") from error
 
 
 async def cancelled_credit_churn(client, authority, metrics_path, complete, evidence):

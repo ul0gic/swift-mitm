@@ -32,13 +32,13 @@ final class Release022PublicHTTP1OctetTests: XCTestCase {
                 + octets + Array("\r\n\r\n".utf8)
             try origin.write(response)
             _ = try sink.wait { responseEnds($0).count == 1 }
-            origin.received.reset()
             try phase4BoundedWait(client
                 .writeAndFlush(
                     ByteBuffer(string: "GET http://127.0.0.1:\(origin.port)/next HTTP/1.1\r\nHost: localhost\r\n\r\n")
                 ))
-            _ = try origin.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
-            try origin.write(Array("HTTP/1.1 204 No Content\r\n\r\n".utf8))
+            let next = try origin.waitForConnection(at: 1)
+            _ = try next.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
+            try phase4BoundedWait(next.channel.writeAndFlush(ByteBuffer(string: "HTTP/1.1 204 No Content\r\n\r\n")))
             let events = try sink.wait { responseEnds($0).count == 2 }
             assertOctetCapture(events)
         }

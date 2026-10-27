@@ -1,0 +1,833 @@
+diff --git a/Sources/HTTP3/HTTP3Error+QPACKCoderError.swift b/Sources/HTTP3/HTTP3Error+QPACKCoderError.swift
+--- a/Sources/HTTP3/HTTP3Error+QPACKCoderError.swift
++++ b/Sources/HTTP3/HTTP3Error+QPACKCoderError.swift
+@@ -93,8 +93,8 @@
+                 errorCode: .excessiveLoad,
+                 location: location
+             )
+-        case .decodeError(.invalidHeaderName):
+-            // The field section decoded fine, but a field name isn't valid in HTTP/3: a malformed message.
++        case .decodeError(.invalidHeaderName), .decodeError(.invalidHeaderValue):
++            // The field section decoded, but a field name or value makes the HTTP message malformed.
+             self.init(
+                 code: .qpackDecoderError,
+                 message: "Could not decode QPACK headers",
+diff --git a/Sources/QPACK/FieldLineCoding.swift b/Sources/QPACK/FieldLineCoding.swift
+--- a/Sources/QPACK/FieldLineCoding.swift
++++ b/Sources/QPACK/FieldLineCoding.swift
+@@ -156,12 +156,12 @@
+         requireLiteralRepresentation: Bool,
+         table: QPACKReferenceTable,
+         index: Int,
+-        value: String
++        value: QPACKBytes
+     )
+     /// 4.5.5. Literal Field Line with Post-Base Name Reference.
+-    case literalWithNameReferenceWithPostBase(requireLiteralRepresentation: Bool, index: Int, value: String)
++    case literalWithNameReferenceWithPostBase(requireLiteralRepresentation: Bool, index: Int, value: QPACKBytes)
+     /// 4.5.6. Literal Field Line with Literal Name.
+-    case literal(requireLiteralRepresentation: Bool, name: String, value: String)
++    case literal(requireLiteralRepresentation: Bool, name: QPACKBytes, value: QPACKBytes)
+ }
+ 
+ /// Represents a full field section as per RFC 9204 § 4.5.
+@@ -222,7 +222,7 @@
+             guard let index = try self.getQPACKPrefixedInteger(as: Int.self, at: startIndex, withPrefix: 4) else {
+                 return nil
+             }
+-            guard let value = try self.getQPACKEncodedString(at: startIndex + index.bytesRead, withPrefix: 8, budget: budget) else {
++            guard let value = try self.getQPACKEncodedBytes(at: startIndex + index.bytesRead, withPrefix: 8, budget: budget) else {
+                 return nil
+             }
+             return .init(
+@@ -238,10 +238,10 @@
+             // First 3 bits are 001. This is Literal Field Line with Literal Name
+             // 4th bit is N, if set then the encoded field line MUST always be encoded with a literal representation
+             let requireLiteralRepresentation = firstByte & 0x10 == 0x10
+-            guard let name = try self.getQPACKEncodedString(at: startIndex, withPrefix: 4, budget: budget) else {
+-                return nil
+-            }
+-            guard let value = try self.getQPACKEncodedString(at: startIndex + name.bytesRead, withPrefix: 8, budget: budget) else {
++            guard let name = try self.getQPACKEncodedBytes(at: startIndex, withPrefix: 4, budget: budget) else {
++                return nil
++            }
++            guard let value = try self.getQPACKEncodedBytes(at: startIndex + name.bytesRead, withPrefix: 8, budget: budget) else {
+                 return nil
+             }
+             return .init(
+@@ -268,7 +268,7 @@
+             guard let index = try self.getQPACKPrefixedInteger(as: Int.self, at: startIndex, withPrefix: 3) else {
+                 return nil
+             }
+-            guard let value = try self.getQPACKEncodedString(at: startIndex + index.bytesRead, withPrefix: 8, budget: budget) else {
++            guard let value = try self.getQPACKEncodedBytes(at: startIndex + index.bytesRead, withPrefix: 8, budget: budget) else {
+                 return nil
+             }
+             return .init(
+@@ -435,12 +435,12 @@
+     /// Appends a string literal, encoded as in RFC 9204 § 4.1.2.
+     @available(anyAppleOS 27, *)
+     private mutating func appendQPACKEncodedString(
+-        _ string: String,
++        _ string: QPACKBytes,
+         preferHuffmanEncoding: Bool,
+         prefix: Int,
+         prefixBits: UInt8 = 0
+     ) {
+-        string.withContiguousUTF8 {
++        string.withBytes {
+             self.appendQPACKEncodedString(
+                 $0,
+                 preferHuffmanEncoding: preferHuffmanEncoding,
+@@ -461,12 +461,12 @@
+         case .indexedWithPostBase(let index):
+             Self.prefixedInteger(index, prefix: 4)
+         case .literalWithNameReference(_, _, let index, let value):
+-            Self.prefixedInteger(index, prefix: 4) &+ Self.maxString(byteCount: value.utf8.count, prefix: 8)
++            Self.prefixedInteger(index, prefix: 4) &+ Self.maxString(byteCount: value.count, prefix: 8)
+         case .literalWithNameReferenceWithPostBase(_, let index, let value):
+-            Self.prefixedInteger(index, prefix: 3) &+ Self.maxString(byteCount: value.utf8.count, prefix: 8)
++            Self.prefixedInteger(index, prefix: 3) &+ Self.maxString(byteCount: value.count, prefix: 8)
+         case .literal(_, let name, let value):
+-            Self.maxString(byteCount: name.utf8.count, prefix: 4)
+-                &+ Self.maxString(byteCount: value.utf8.count, prefix: 8)
++            Self.maxString(byteCount: name.count, prefix: 4)
++                &+ Self.maxString(byteCount: value.count, prefix: 8)
+         }
+     }
+ 
+diff --git a/Sources/QPACK/Headers/DynamicHeaderTable.swift b/Sources/QPACK/Headers/DynamicHeaderTable.swift
+--- a/Sources/QPACK/Headers/DynamicHeaderTable.swift
++++ b/Sources/QPACK/Headers/DynamicHeaderTable.swift
+@@ -154,7 +154,7 @@
+     ///            if no matching header name could be located.
+     func findExistingHeader(
+         named name: HTTPField.Name,
+-        value: String?
++        value: QPACKBytes?
+     ) -> DynamicTableLookupResult? {
+         // looking for both name and value, but can settle for just name if no value
+         // has been provided. Return the first matching name (lowest index) in that case.
+@@ -206,7 +206,7 @@
+     /// - Throws: If the header cannot fit in the storage.
+     /// - Returns: The absolute index of the added header.
+     @discardableResult
+-    mutating func addHeader(named name: HTTPField.Name, value: String) throws(HeaderTableError) -> Int {
++    mutating func addHeader(named name: HTTPField.Name, value: QPACKBytes) throws(HeaderTableError) -> Int {
+         try self.storage.add(
+             name: name,
+             value: value,
+diff --git a/Sources/QPACK/Headers/HeaderTableStorage.swift b/Sources/QPACK/Headers/HeaderTableStorage.swift
+--- a/Sources/QPACK/Headers/HeaderTableStorage.swift
++++ b/Sources/QPACK/Headers/HeaderTableStorage.swift
+@@ -16,27 +16,13 @@
+ import HTTPTypes
+ 
+ struct HeaderTableEntry: Sendable, Hashable {
+-    /// The actual field (name and value).
+-    private var field: HTTPField
+-    /// The absolute index, which is fixed for the lifetime of the entry as per RFC 9204 § 3.2.4.
++    let name: HTTPField.Name
++    let value: QPACKBytes
+     var absoluteIndex: Int
+-    /// The name of the field.
+-    var name: HTTPField.Name {
+-        self.field.name
+-    }
+-
+-    /// The value of the field.
+-    var value: String {
+-        self.field.value
+-    }
+-
+-    fileprivate init(name: HTTPField.Name, value: String, absoluteIndex: Int) {
+-        let field = HTTPField(name: name, value: value)
+-        self.init(field: field, absoluteIndex: absoluteIndex)
+-    }
+-
+-    fileprivate init(field: HTTPField, absoluteIndex: Int) {
+-        self.field = field
++
++    fileprivate init(name: HTTPField.Name, value: QPACKBytes, absoluteIndex: Int) {
++        self.name = name
++        self.value = value
+         self.absoluteIndex = absoluteIndex
+     }
+ 
+@@ -45,7 +31,7 @@
+     /// The size of an entry is the sum of its name's length in bytes, its value's length in bytes, and 32 additional bytes.
+     /// The size of an entry is calculated using the length of its name and value without Huffman encoding applied.
+     var length: Int {
+-        self.name.rawName.utf8.count + self.value.utf8.count + 32
++        self.name.rawName.utf8.count + self.value.count + 32
+     }
+ }
+ 
+@@ -94,7 +80,7 @@
+         case none
+     }
+ 
+-    func closestMatch(name: HTTPField.Name, value: String) -> MatchType {
++    func closestMatch(name: HTTPField.Name, value: QPACKBytes) -> MatchType {
+         var partialIndex: Int?
+         var lengthBeforePartial = 0
+ 
+@@ -169,7 +155,7 @@
+ 
+     mutating func add(
+         name: HTTPField.Name,
+-        value: String,
++        value: QPACKBytes,
+         maximumEvictableAbsoluteIndex: Int?
+     ) throws(HeaderTableError) -> HeaderTableEntry {
+         // This can't overflow unless we have more than Int.max items.
+@@ -257,7 +243,7 @@
+ extension HeaderTableStorage: CustomStringConvertible {
+     @usableFromInline
+     var description: String {
+-        let array: [(String, String)] = self.headers.map { header in
++        let array: [(String, QPACKBytes)] = self.headers.map { header in
+             (header.name.canonicalName, header.value)
+         }
+         return array.description
+diff --git a/Sources/QPACK/Headers/StaticHeaderTable.swift b/Sources/QPACK/Headers/StaticHeaderTable.swift
+--- a/Sources/QPACK/Headers/StaticHeaderTable.swift
++++ b/Sources/QPACK/Headers/StaticHeaderTable.swift
+@@ -149,17 +149,17 @@
+     /// - Returns: A tuple containing the matching index and, if a value was specified as a
+     ///            parameter, an indication whether that value was also found. Returns `nil`
+     ///            if no matching header name could be located.
+-    static func find(name: HTTPField.Name, value: String?) -> (index: Int, containsValue: Bool)? {
++    static func find(name: HTTPField.Name, value: QPACKBytes?) -> (index: Int, containsValue: Bool)? {
+         let group = Self.entryGroup(for: name)
+         guard !group.isEmpty else {
+             return nil
+         }
+ 
+         if let value {
+-            for index in group.first where Self.raw[index].value == value {
++            for index in group.first where Self.raw[index].value.utf8.elementsEqual(value.bytes) {
+                 return (index: index, containsValue: true)
+             }
+-            for index in group.second where Self.raw[index].value == value {
++            for index in group.second where Self.raw[index].value.utf8.elementsEqual(value.bytes) {
+                 return (index: index, containsValue: true)
+             }
+         }
+diff --git a/Sources/QPACK/HuffmanCoding.swift b/Sources/QPACK/HuffmanCoding.swift
+--- a/Sources/QPACK/HuffmanCoding.swift
++++ b/Sources/QPACK/HuffmanCoding.swift
+@@ -88,56 +88,30 @@
+         (encodedLength * 8 + 4) / 5
+     }
+ 
+-    /// Decoded strings up to this many bytes long are decoded via a stack buffer, so that the
+-    /// resulting `String` can pick its own (possibly inline, allocation-free) storage. Chosen to
+-    /// cover every header name and all but the longest header values.
+-    fileprivate static var huffmanStackDecodeThreshold: Int { 128 }
+-
+-    /// Decodes a huffman-encoded string from the `ByteBuffer`.
+-    /// - Parameters:
+-    ///   - index: The location of the encoded bytes to read.
+-    ///   - length: The number of huffman-encoded octets to read.
+-    /// - Returns: The decoded `String`, or nil if it can't be read.
+-    @discardableResult
+     @available(anyAppleOS 27, *)
+     func getHuffmanEncodedString(at index: Int, length: Int, budget: QPACKFieldSectionBudget? = nil) -> String? {
++        guard let bytes = self.getHuffmanEncodedBytes(at: index, length: length, budget: budget) else { return nil }
++        return String(validating: bytes.bytes, as: UTF8.self)
++    }
++
++    @available(anyAppleOS 27, *)
++    func getHuffmanEncodedBytes(at index: Int, length: Int, budget: QPACKFieldSectionBudget? = nil) -> QPACKBytes? {
+         let start = index - self.readerIndex
+-        guard start >= 0, start <= self.readableBytes, length >= 0, length <= self.readableBytes - start
+-        else {
+-            assertionFailure(
+-                "Requested range out of bounds: \(index) + \(length) vs. \(self.readerIndex)..<\(self.writerIndex)"
+-            )
++        guard start >= 0, start <= self.readableBytes, length >= 0, length <= self.readableBytes - start else {
++            assertionFailure("Requested range out of bounds: \(index) + \(length) vs. \(self.readerIndex)..<\(self.writerIndex)")
+             return nil
+         }
+-        if length == 0 {
+-            return ""
++        if length == 0 { return "" }
++        let capacity = min(Self.maxHuffmanDecodedLength(ofEncodedLength: length), budget?.remainingBytes ?? Int.max)
++        var valid = false
++        let bytes = [UInt8](unsafeUninitializedCapacity: capacity) { storage, initializedCount in
++            var output = OutputSpan(buffer: storage, initializedCount: 0)
++            valid = self._getHuffmanEncodedString(at: index, length: length, into: &output, budget: budget)
++            initializedCount = output.finalize(for: storage)
+         }
+-
+-        let maxDecodedLength = min(Self.maxHuffmanDecodedLength(ofEncodedLength: length), budget?.remainingBytes ?? Int.max)
+-
+-        if maxDecodedLength <= Self.huffmanStackDecodeThreshold {
+-            // Decode into a stack buffer and then hand the exact byte count to `String`, so short
+-            // results can live inline in the `String` rather than forcing a heap allocation.
+-            return withUnsafeTemporaryAllocation(of: UInt8.self, capacity: maxDecodedLength) { scratch in
+-                var output = OutputSpan(buffer: scratch, initializedCount: 0)
+-                guard self._getHuffmanEncodedString(at: index, length: length, into: &output, budget: budget) else {
+-                    return nil
+-                }
+-                let count = output.finalize(for: scratch)
+-                return String(decoding: scratch[..<count], as: UTF8.self)
+-            }
+-        }
+-
+-        // For long values, decode straight into the `String`'s storage rather than paying for a
+-        // scratch buffer plus a copy. This over-reserves by up to 1.6x, but such values are far
+-        // beyond the inline-storage limit anyway, so the allocation was unavoidable.
+-        return try? String(unsafeUninitializedCapacity: maxDecodedLength) { backingStorage in
+-            var output = OutputSpan(buffer: backingStorage, initializedCount: 0)
+-            guard self._getHuffmanEncodedString(at: index, length: length, into: &output, budget: budget) else {
+-                throw HuffmanDecodeError.invalidState
+-            }
+-            return output.finalize(for: backingStorage)
+-        }
++        guard valid else { return nil }
++        // Do not retain the Huffman worst-case capacity in the decoded field section.
++        return bytes.withUnsafeBufferPointer { QPACKBytes($0) }
+     }
+ 
+     /// Decode `length` Huffman-encoded octets starting at `index`, appending the decoded bytes to
+@@ -212,7 +186,3 @@
+     }
+ }
+ 
+-private enum HuffmanDecodeError: Error {
+-    /// The decoder entered an invalid state. Usually this means invalid input.
+-    case invalidState
+-}
+diff --git a/Sources/QPACK/QPACKBytes.swift b/Sources/QPACK/QPACKBytes.swift
+new file mode 100644
+--- /dev/null
++++ b/Sources/QPACK/QPACKBytes.swift
+@@ -0,0 +1,33 @@
++import HTTPTypes
++
++@_spi(PackageInternal)
++public struct QPACKBytes: Sendable, Hashable, ExpressibleByStringLiteral {
++    let bytes: [UInt8]
++
++    public init(_ bytes: some Collection<UInt8>) {
++        self.bytes = Array(bytes)
++    }
++
++    public init(utf8 string: String) {
++        self.bytes = Array(string.utf8)
++    }
++
++    public init(stringLiteral value: String) {
++        self.init(utf8: value)
++    }
++
++    public var count: Int { self.bytes.count }
++
++    public func withUnsafeBytes<Result>(_ body: (UnsafeBufferPointer<UInt8>) -> Result) -> Result {
++        self.bytes.withUnsafeBufferPointer(body)
++    }
++
++    @available(anyAppleOS 27, *)
++    func withBytes<Result>(_ body: (Span<UInt8>) -> Result) -> Result {
++        self.bytes.withUnsafeBufferPointer { body($0.span) }
++    }
++
++    init(field: HTTPField) {
++        self = field.withUnsafeBytesOfValue { Self($0) }
++    }
++}
+diff --git a/Sources/QPACK/QPACKDecoder.swift b/Sources/QPACK/QPACKDecoder.swift
+--- a/Sources/QPACK/QPACKDecoder.swift
++++ b/Sources/QPACK/QPACKDecoder.swift
+@@ -18,6 +18,7 @@
+ @available(anyAppleOS 27, *)
+ @_spi(PackageInternal)
+ public enum QPACKDecoderError: Error, Sendable, Hashable {
++    case invalidHeaderValue
+     case invalidHeaderName
+     case invalidReference
+     case invalidFieldSection
+@@ -84,7 +85,8 @@
+             try self.dynamicTable.setCurrentCapacity(capacity)
+             return nil
+         case .insertWithLiteralName(let name, let value):
+-            guard let fieldName = HTTPField.Name(parsed: name) else {
++            guard let name = String(validating: name.bytes, as: UTF8.self),
++                let fieldName = HTTPField.Name(parsed: name) else {
+                 throw QPACKDecoderError.invalidHeaderName
+             }
+             return try self.addDynamicTableEntry(named: fieldName, value: value)
+@@ -114,7 +116,7 @@
+     /// Add an entry to the dynamic table and (maybe) return an insertCountIncrement.
+     private mutating func addDynamicTableEntry(
+         named name: HTTPField.Name,
+-        value: String
++        value: QPACKBytes
+     ) throws -> QPACKDecoderInstruction? {
+         try self.dynamicTable.addHeader(named: name, value: value)
+         let insertCount = self.dynamicTable.insertCount
+@@ -159,9 +161,8 @@
+             fields.reserveCapacity(lines.count)
+             var remaining = maximumDecodedBytes ?? Int.max
+             for line in lines {
+-                let field = try self.decodeLine(line, prefix: prefix)
+-                let cost = field.name.rawName.utf8.count + field.value.utf8.count + 32
+-                guard cost <= remaining else { throw QPACKDecoderError.fieldSectionTooLarge }
++                let field = try self.decodeLine(line, prefix: prefix, maximumDecodedBytes: remaining)
++                let cost = field.name.rawName.utf8.count + field.withUnsafeBytesOfValue({ $0.count }) + 32
+                 remaining -= cost
+                 fields.append(field)
+             }
+@@ -177,18 +178,33 @@
+         }
+     }
+ 
+-    private func decodeLine(_ line: FieldLine, prefix: FieldSectionPrefix) throws(QPACKDecoderError) -> HTTPField {
++    private static func makeField(
++        name: HTTPField.Name,
++        value: QPACKBytes,
++        maximumDecodedBytes: Int
++    ) throws(QPACKDecoderError) -> HTTPField {
++        let cost = name.rawName.utf8.count + value.count + 32
++        guard cost <= maximumDecodedBytes else { throw .fieldSectionTooLarge }
++        guard HTTPField.isValidValue(value.bytes) else { throw .invalidHeaderValue }
++        return HTTPField(name: name, value: value.bytes)
++    }
++
++    private func decodeLine(
++        _ line: FieldLine,
++        prefix: FieldSectionPrefix,
++        maximumDecodedBytes: Int
++    ) throws(QPACKDecoderError) -> HTTPField {
+         switch line {
+         case .indexed(let table, let index):
+             let name: HTTPField.Name
+-            let value: String
++            let value: QPACKBytes
+             switch table {
+             case .staticTable:
+                 guard let entry = StaticHeaderTable.get(at: index) else {
+                     throw QPACKDecoderError.invalidReference
+                 }
+                 name = entry.0
+-                value = entry.1
++                value = QPACKBytes(utf8: entry.1)
+             case .dynamicTable:
+                 // In a field line representation, a relative index of 0 refers to the entry with absolute index equal to Base - 1
+                 let absoluteIndex = prefix.base - 1 - index
+@@ -198,12 +214,13 @@
+                 name = entry.name
+                 value = entry.value
+             }
+-            return .init(name: name, value: value)
++            return try Self.makeField(name: name, value: value, maximumDecodedBytes: maximumDecodedBytes)
+         case .literal(_, let name, let value):
+-            guard let fieldName = HTTPField.Name(parsed: name) else {
++            guard let name = String(validating: name.bytes, as: UTF8.self),
++                let fieldName = HTTPField.Name(parsed: name) else {
+                 throw QPACKDecoderError.invalidHeaderName
+             }
+-            return .init(name: fieldName, value: value)
++            return try Self.makeField(name: fieldName, value: value, maximumDecodedBytes: maximumDecodedBytes)
+         case .literalWithNameReference(_, let table, let index, let value):
+             let name: HTTPField.Name
+             switch table {
+@@ -220,7 +237,7 @@
+                 }
+                 name = entry.name
+             }
+-            return .init(name: name, value: value)
++            return try Self.makeField(name: name, value: value, maximumDecodedBytes: maximumDecodedBytes)
+         case .indexedWithPostBase(let index):
+             // Post-Base indices are used in field line representations for entries with absolute indices greater
+             // than or equal to Base, starting at 0 for the entry with absolute index equal to Base and increasing
+@@ -229,13 +246,13 @@
+             guard let entry = self.dynamicTable.get(absoluteIndex: absoluteIndex) else {
+                 throw QPACKDecoderError.invalidReference
+             }
+-            return .init(name: entry.name, value: entry.value)
++            return try Self.makeField(name: entry.name, value: entry.value, maximumDecodedBytes: maximumDecodedBytes)
+         case .literalWithNameReferenceWithPostBase(_, let index, let value):
+             let absoluteIndex = prefix.base + index
+             guard let entry = self.dynamicTable.get(absoluteIndex: absoluteIndex) else {
+                 throw QPACKDecoderError.invalidReference
+             }
+-            return .init(name: entry.name, value: value)
++            return try Self.makeField(name: entry.name, value: value, maximumDecodedBytes: maximumDecodedBytes)
+         }
+     }
+ 
+diff --git a/Sources/QPACK/QPACKEncoder.swift b/Sources/QPACK/QPACKEncoder.swift
+--- a/Sources/QPACK/QPACKEncoder.swift
++++ b/Sources/QPACK/QPACKEncoder.swift
+@@ -123,11 +123,11 @@
+ /// A bit like ``FieldLine`` but without caring about wire representation.
+ @available(anyAppleOS 27, *)
+ private enum HeaderRepresentation {
+-    case literal(requireLiteralRepresentation: Bool, name: HTTPField.Name, value: String)
++    case literal(requireLiteralRepresentation: Bool, name: HTTPField.Name, value: QPACKBytes)
+     case staticTableReference(index: Int)
+-    case staticTableNameReference(requireLiteralRepresentation: Bool, index: Int, value: String)
++    case staticTableNameReference(requireLiteralRepresentation: Bool, index: Int, value: QPACKBytes)
+     case dynamicTableReference(absoluteIndex: Int)
+-    case dynamicTableNameReference(requireLiteralRepresentation: Bool, absoluteIndex: Int, value: String)
++    case dynamicTableNameReference(requireLiteralRepresentation: Bool, absoluteIndex: Int, value: QPACKBytes)
+ 
+     var requiredIndex: Int? {
+         switch self {
+@@ -142,7 +142,7 @@
+         case .literal(let requireLiteralRepresentation, let name, let value):
+             return .literal(
+                 requireLiteralRepresentation: requireLiteralRepresentation,
+-                name: name.canonicalName,
++                name: QPACKBytes(utf8: name.canonicalName),
+                 value: value
+             )
+         case .staticTableReference(let index):
+@@ -323,7 +323,8 @@
+         maxBlockedStreams: Int
+     ) -> QPACKEncodeSingleResult {
+         let requireLiteralRepresentation = false
+-        let staticTableEntry = StaticHeaderTable.find(name: header.name, value: header.value)
++        let value = QPACKBytes(field: header)
++        let staticTableEntry = StaticHeaderTable.find(name: header.name, value: value)
+         if let staticTableEntry, staticTableEntry.containsValue {
+             // Exact match in static table
+             return .init(headerRepresentation: .staticTableReference(index: staticTableEntry.index), instruction: nil)
+@@ -334,7 +335,7 @@
+         )
+         let avoidBlocking = potentiallyBlockedStreams >= maxBlockedStreams
+ 
+-        let dynamicTableEntry = self.table.findExistingHeader(named: header.name, value: header.value)
++        let dynamicTableEntry = self.table.findExistingHeader(named: header.name, value: value)
+ 
+         if let dynamicTableEntry, dynamicTableEntry.containsValue {
+             // Exact match in dynamic table
+@@ -345,7 +346,7 @@
+                     do {
+                         let duplicatedAbsoluteIndex = try self.table.addHeader(
+                             named: header.name,
+-                            value: header.value
++                            value: value
+                         )
+                         self.table.addReference(duplicatedAbsoluteIndex)
+                         return .init(
+@@ -380,20 +381,20 @@
+                     headerRepresentation: .staticTableNameReference(
+                         requireLiteralRepresentation: requireLiteralRepresentation,
+                         index: staticTableEntry.index,
+-                        value: header.value
++                        value: value
+                     ),
+                     instruction: nil
+                 )
+             }
+             // If we're allowed to block then try adding the match to the dynamic table then return that reference
+             do {
+-                let absoluteIndex = try self.table.addHeader(named: header.name, value: header.value)
++                let absoluteIndex = try self.table.addHeader(named: header.name, value: value)
+                 let instruction =
+                     QPACKEncoderInstruction
+                     .insertWithNameReference(
+                         .staticTable,
+                         relativeIndex: staticTableEntry.index,
+-                        value: header.value
++                        value: value
+                     )
+                 self.table.addReference(absoluteIndex)
+                 return .init(
+@@ -408,7 +409,7 @@
+                         headerRepresentation: .staticTableNameReference(
+                             requireLiteralRepresentation: requireLiteralRepresentation,
+                             index: staticTableEntry.index,
+-                            value: header.value
++                            value: value
+                         ),
+                         instruction: nil
+                     )
+@@ -424,7 +425,7 @@
+                 headerRepresentation: .dynamicTableNameReference(
+                     requireLiteralRepresentation: requireLiteralRepresentation,
+                     absoluteIndex: dynamicTableEntry.absoluteIndex,
+-                    value: header.value
++                    value: value
+                 ),
+                 instruction: nil
+             )
+@@ -435,17 +436,17 @@
+                     headerRepresentation: .literal(
+                         requireLiteralRepresentation: false,
+                         name: header.name,
+-                        value: header.value
++                        value: value
+                     ),
+                     instruction: nil
+                 )
+             }
+             do {
+-                let absoluteIndex = try self.table.addHeader(named: header.name, value: header.value)
++                let absoluteIndex = try self.table.addHeader(named: header.name, value: value)
+                 self.table.addReference(absoluteIndex)
+                 return .init(
+                     headerRepresentation: .dynamicTableReference(absoluteIndex: absoluteIndex),
+-                    instruction: .insertWithLiteralName(name: header.name.canonicalName, value: header.value)
++                    instruction: .insertWithLiteralName(name: QPACKBytes(utf8: header.name.canonicalName), value: value)
+                 )
+             } catch {
+                 switch error {
+@@ -455,7 +456,7 @@
+                         headerRepresentation: .literal(
+                             requireLiteralRepresentation: false,
+                             name: header.name,
+-                            value: header.value
++                            value: value
+                         ),
+                         instruction: nil
+                     )
+@@ -557,7 +558,8 @@
+         _ header: HTTPField,
+         requireLiteralRepresentation: Bool
+     ) -> HeaderRepresentation {
+-        let staticTableEntry = StaticHeaderTable.find(name: header.name, value: header.value)
++        let value = QPACKBytes(field: header)
++        let staticTableEntry = StaticHeaderTable.find(name: header.name, value: value)
+         if let staticTableEntry, staticTableEntry.containsValue {
+             // Exact match in static table
+             return .staticTableReference(index: staticTableEntry.index)
+@@ -566,15 +568,15 @@
+             return .staticTableNameReference(
+                 requireLiteralRepresentation: requireLiteralRepresentation,
+                 index: staticTableEntry.index,
+-                value: header.value
++                value: value
+             )
+         } else {
+             // We already checked static table, and there's no dynamic table, so it's a literal
+             return .literal(
+                 requireLiteralRepresentation: requireLiteralRepresentation,
+                 name: header.name,
+-                value: header.value
+-            )
+-        }
+-    }
+-}
++                value: value
++            )
++        }
++    }
++}
+diff --git a/Sources/QPACK/QPACKError.swift b/Sources/QPACK/QPACKError.swift
+--- a/Sources/QPACK/QPACKError.swift
++++ b/Sources/QPACK/QPACKError.swift
+@@ -43,12 +43,10 @@
+ 
+     /// Whether the failure is fatal to the connection, rather than only to the stream it happened on.
+     ///
+-    /// Everything which may leave the two dynamic tables out of sync is a connection error. The only stream error
+-    /// is a field section which decoded fine, but whose field names are not valid in HTTP/3, such as upper case
+-    /// ones: the message is malformed, but the connection is not at fault.
++    /// Compression-state failures are connection errors; malformed HTTP fields are stream errors.
+     public var isConnectionError: Bool {
+         switch self {
+-        case .decodeError(.invalidHeaderName), .decodeError(.fieldSectionTooLarge):
++        case .decodeError(.invalidHeaderName), .decodeError(.invalidHeaderValue), .decodeError(.fieldSectionTooLarge):
+             return false
+         case .duplicateSettings,
+             .invalidEncoderInstruction,
+diff --git a/Sources/QPACK/QPACKInstruction.swift b/Sources/QPACK/QPACKInstruction.swift
+--- a/Sources/QPACK/QPACKInstruction.swift
++++ b/Sources/QPACK/QPACKInstruction.swift
+@@ -36,9 +36,9 @@
+     /// 4.3.1. Set Dynamic Table Capacity.
+     case setDynamicTableCapacity(Int)
+     /// 4.3.2. Insert with Name Reference.
+-    case insertWithNameReference(QPACKReferenceTable, relativeIndex: Int, value: String)
++    case insertWithNameReference(QPACKReferenceTable, relativeIndex: Int, value: QPACKBytes)
+     /// 4.3.3. Insert with Literal Name.
+-    case insertWithLiteralName(name: String, value: String)
++    case insertWithLiteralName(name: QPACKBytes, value: QPACKBytes)
+     /// 4.3.4. Duplicate.
+     case duplicateEntry(relativeIndex: Int)
+ }
+diff --git a/Sources/QPACK/QPACKInstructionCoding.swift b/Sources/QPACK/QPACKInstructionCoding.swift
+--- a/Sources/QPACK/QPACKInstructionCoding.swift
++++ b/Sources/QPACK/QPACKInstructionCoding.swift
+@@ -39,7 +39,7 @@
+             }
+             // Integers always end on a byte boundary
+             guard
+-                let value = try self.getQPACKEncodedString(
++                let value = try self.getQPACKEncodedBytes(
+                     at: self.readerIndex + relativeIndex.bytesRead,
+                     withPrefix: 8
+                 )
+@@ -51,10 +51,10 @@
+         } else if firstByte & 0x40 == 0x40 {
+             guard allowInsertions else { throw QPACKError.invalidEncoderInstruction }
+             // Second bit is 1, i.e we begin with a 01 pattern. This is insertWithLiteralName
+-            guard let name = try self.getQPACKEncodedString(at: self.readerIndex, withPrefix: 6) else {
+-                return nil
+-            }
+-            guard let value = try self.getQPACKEncodedString(at: self.readerIndex + name.bytesRead, withPrefix: 8)
++            guard let name = try self.getQPACKEncodedBytes(at: self.readerIndex, withPrefix: 6) else {
++                return nil
++            }
++            guard let value = try self.getQPACKEncodedBytes(at: self.readerIndex + name.bytesRead, withPrefix: 8)
+             else {
+                 return nil
+             }
+diff --git a/Sources/QPACK/StringCoding.swift b/Sources/QPACK/StringCoding.swift
+--- a/Sources/QPACK/StringCoding.swift
++++ b/Sources/QPACK/StringCoding.swift
+@@ -27,60 +27,17 @@
+         return result.value
+     }
+ 
+-    /// Get one QPACK encoded string from this ByteBuffer without moving the reader index.
+     @available(anyAppleOS 27, *)
+     func getQPACKEncodedString(
+         at: Int,
+         withPrefix prefix: Int,
+         budget: QPACKFieldSectionBudget? = nil
+     ) throws(IntegerReadingError) -> Decoded<String>? {
+-        /// RFC 9204 4.1.2: The prefix size, N, can have a value between 2 and 8, inclusive. The remainder of the string literal is unmodified.
+-        precondition(prefix >= 2)
+-        precondition(prefix <= 8)
+-        // peek to read the encoding bit
+-        guard let initialByte: UInt8 = self.getInteger(at: at) else {
+-            return nil
+-        }
+-        // We are using huffman encoding if the first bit after the prefix is 1
+-        // E.g. is prefix is 4, then the 5th bit represents huffman coding
+-        // so in that case we would & 0b00001000
+-        let huffmanMask = UInt8(truncatingIfNeeded: 1 &<< (prefix - 1))
+-        let huffmanEncoded = initialByte & huffmanMask == huffmanMask
+-
+-        // read the length; the prefix is now one bit less (one-bit encoding flag above)
+-        guard let lengthInt = try self.getQPACKPrefixedInteger(as: Int.self, at: at, withPrefix: prefix - 1) else {
+-            return nil
+-        }
+-
+-        if huffmanEncoded {
+-            guard
+-                let string = self.getHuffmanEncodedString(
+-                    at: at + lengthInt.bytesRead,
+-                    length: lengthInt.value,
+-                    budget: budget
+-                )
+-            else { return nil }
+-            guard budget?.consume(string.utf8.count) != false else { return nil }
+-            return Decoded<String>(value: string, bytesRead: lengthInt.bytesRead + lengthInt.value)
+-        } else {
+-            if let budget, lengthInt.value > budget.remainingBytes {
+-                budget.exceededLimit = true
+-                return nil
+-            }
+-            guard let string = self.getString(at: at + lengthInt.bytesRead, length: lengthInt.value) else {
+-                return nil
+-            }
+-            guard budget?.consume(string.utf8.count) != false else { return nil }
+-            return Decoded<String>(value: string, bytesRead: lengthInt.bytesRead + lengthInt.value)
+-        }
+-    }
+-
+-    /// Write a string to this buffer, encoded for QPACK.
+-    /// The prefix must be between 2 and 8
+-    /// Parameters:
+-    /// - preferHuffmanEncoding: If true, huffman encoding will be used only if it will save space. If false, huffman encoding will not be used.
+-    /// - prefix: The number of bits in the first byte leave before starting the string
+-    /// - prefixBits: The bits to use in the first byte before the string begins.
++        guard let decoded = try self.getQPACKEncodedBytes(at: at, withPrefix: prefix, budget: budget),
++            let text = String(validating: decoded.value.bytes, as: UTF8.self) else { return nil }
++        return Decoded(value: text, bytesRead: decoded.bytesRead)
++    }
++
+     @available(anyAppleOS 27, *)
+     @discardableResult
+     mutating func writeQPACKEncodedString(
+@@ -89,11 +46,81 @@
+         prefix: Int,
+         prefixBits: UInt8 = 0
+     ) -> Int {
++        self.writeQPACKEncodedString(
++            QPACKBytes(utf8: string),
++            preferHuffmanEncoding: preferHuffmanEncoding,
++            prefix: prefix,
++            prefixBits: prefixBits
++        )
++    }
++
++    /// Get one QPACK encoded string from this ByteBuffer without moving the reader index.
++    @available(anyAppleOS 27, *)
++    func getQPACKEncodedBytes(
++        at: Int,
++        withPrefix prefix: Int,
++        budget: QPACKFieldSectionBudget? = nil
++    ) throws(IntegerReadingError) -> Decoded<QPACKBytes>? {
++        /// RFC 9204 4.1.2: The prefix size, N, can have a value between 2 and 8, inclusive. The remainder of the string literal is unmodified.
++        precondition(prefix >= 2)
++        precondition(prefix <= 8)
++        // peek to read the encoding bit
++        guard let initialByte: UInt8 = self.getInteger(at: at) else {
++            return nil
++        }
++        // We are using huffman encoding if the first bit after the prefix is 1
++        // E.g. is prefix is 4, then the 5th bit represents huffman coding
++        // so in that case we would & 0b00001000
++        let huffmanMask = UInt8(truncatingIfNeeded: 1 &<< (prefix - 1))
++        let huffmanEncoded = initialByte & huffmanMask == huffmanMask
++
++        // read the length; the prefix is now one bit less (one-bit encoding flag above)
++        guard let lengthInt = try self.getQPACKPrefixedInteger(as: Int.self, at: at, withPrefix: prefix - 1) else {
++            return nil
++        }
++
++        if huffmanEncoded {
++            guard
++                let string = self.getHuffmanEncodedBytes(
++                    at: at + lengthInt.bytesRead,
++                    length: lengthInt.value,
++                    budget: budget
++                )
++            else { return nil }
++            guard budget?.consume(string.count) != false else { return nil }
++            return Decoded<QPACKBytes>(value: string, bytesRead: lengthInt.bytesRead + lengthInt.value)
++        } else {
++            if let budget, lengthInt.value > budget.remainingBytes {
++                budget.exceededLimit = true
++                return nil
++            }
++            guard let bytes = self.getBytes(at: at + lengthInt.bytesRead, length: lengthInt.value) else {
++                return nil
++            }
++            guard budget?.consume(bytes.count) != false else { return nil }
++            return Decoded<QPACKBytes>(value: QPACKBytes(bytes), bytesRead: lengthInt.bytesRead + lengthInt.value)
++        }
++    }
++
++    /// Write a string to this buffer, encoded for QPACK.
++    /// The prefix must be between 2 and 8
++    /// Parameters:
++    /// - preferHuffmanEncoding: If true, huffman encoding will be used only if it will save space. If false, huffman encoding will not be used.
++    /// - prefix: The number of bits in the first byte leave before starting the string
++    /// - prefixBits: The bits to use in the first byte before the string begins.
++    @available(anyAppleOS 27, *)
++    @discardableResult
++    mutating func writeQPACKEncodedString(
++        _ string: QPACKBytes,
++        preferHuffmanEncoding: Bool,
++        prefix: Int,
++        prefixBits: UInt8 = 0
++    ) -> Int {
+         let start = self.writerIndex
+         self.writeWithOutputRawSpan(
+-            minimumWritableBytes: QPACKEncodedLength.maxString(byteCount: string.utf8.count, prefix: prefix)
++            minimumWritableBytes: QPACKEncodedLength.maxString(byteCount: string.count, prefix: prefix)
+         ) { output in
+-            string.withContiguousUTF8 {
++            string.withBytes {
+                 output.appendQPACKEncodedString(
+                     $0,
+                     preferHuffmanEncoding: preferHuffmanEncoding,

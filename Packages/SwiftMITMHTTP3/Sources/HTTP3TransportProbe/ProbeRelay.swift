@@ -14,7 +14,7 @@ protocol ProbeMessagePart: Sendable {
 private func fieldBytes(_ fields: HTTPFields?, includeMetadata: Bool = true) -> Int {
     fields?.reduce(0) {
         $0 + (includeMetadata ? MemoryLayout<HTTPField>.stride : 0)
-            + $1.name.rawName.utf8.count + $1.value.utf8.count
+            + $1.name.rawName.utf8.count + $1.withUnsafeBytesOfValue { $0.count }
     } ?? 0
 }
 

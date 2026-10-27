@@ -11,6 +11,7 @@ import shutil
 import ssl
 import sys
 import tempfile
+import traceback
 
 import aioquic
 from aioquic.asyncio.client import connect
@@ -25,6 +26,7 @@ from flow import (
     FlowLogger, SLOW_BYTES, STREAM_CREDIT, budget_refusal, cancelled_credit_churn, read_metrics, slow_receiver,
 )
 from lifecycle import goaway_drain, sni_policy
+from fidelity import octet_fidelity
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from client_tls import create_identity
@@ -33,6 +35,7 @@ from client_tls import create_identity
 @dataclass
 class Response:
     headers: list = field(default_factory=list)
+    interim: list = field(default_factory=list)
     trailers: list = field(default_factory=list)
     body: bytearray = field(default_factory=bytearray)
     first_data: asyncio.Event = field(default_factory=asyncio.Event)
@@ -72,7 +75,11 @@ class Client(QuicConnectionProtocol):
             if response is None:
                 raise RuntimeError("response for an unissued request")
             if isinstance(received, HeadersReceived):
-                if response.headers:
+                status = next((value for name, value in received.headers if name == b":status"), None)
+                if status is not None and 100 <= int(status) < 200:
+                    assert len(response.interim) < 8, "independent interim response bound exceeded"
+                    response.interim.append(received.headers)
+                elif response.headers:
                     response.trailers.extend(received.headers)
                     response.trailers_received.set()
                 else:
@@ -414,6 +421,9 @@ async def run_case(binary, name, artifacts):
                     elif name == "goaway-drain":
                         report = await goaway_drain(ready, authority, certificate, peer, Client,
                                                    configuration, response_complete)
+                    elif name == "octet-fidelity":
+                        report = await octet_fidelity(ready, authority, certificate, peer, Client,
+                                                      configuration, response_complete)
                     elif name == "changed-authority":
                         await rejected(ready["port"], f"other.invalid:{peer['port']}", certificate, hostname)
                     elif name == "downstream-trust":
@@ -424,6 +434,10 @@ async def run_case(binary, name, artifacts):
                 if proxy_ready.exists():
                     assert proxy.returncode == 0, "ready proxy failed during the scenario or shutdown"
                 stats = json.loads(Path(peer["stats"]).read_text())
+                if name == "octet-fidelity":
+                    final_metrics = read_metrics(Path(ready["metricsPath"]), stopped=True)
+                    assert stats["requests"] == 2 and stats["handshakes"] == 1 and stats["alpn"] == ["h3"], stats
+                    return dict(report, finalMetrics=final_metrics, originRequests=stats["requests"])
                 if name in ("sni-policy", "goaway-drain"):
                     final_metrics = read_metrics(Path(ready["metricsPath"]), stopped=True)
                     expected = 3 if name == "sni-policy" else 2
@@ -489,13 +503,14 @@ async def main(arguments):
     for name in ("streaming", "changed-authority", "upstream-hostname", "upstream-trust",
                  "downstream-trust", "denied-route", "separated-fin", "oversized-request-headers",
                  "oversized-response-headers", "fragmented-headers", "slow-receiver",
-                 "cancelled-credit-churn", "storage-refusal", "sni-policy", "goaway-drain"):
+                 "cancelled-credit-churn", "storage-refusal", "sni-policy", "goaway-drain", "octet-fidelity"):
         try:
             async with asyncio.timeout(90):
                 observation = await run_case(arguments.binary, name, artifacts)
             results["checks"][name] = {"result": "passed", "observation": observation}
         except (AssertionError, ConnectionError, RuntimeError, TimeoutError, OSError, KeyError, json.JSONDecodeError) as error:
-            results["checks"][name] = {"result": "failed", "error": f"{type(error).__name__}: {error}"}
+            results["checks"][name] = {"result": "failed", "error": f"{type(error).__name__}: {error}",
+                                      "traceback": traceback.format_exc(limit=8)}
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
     arguments.output.write_text(json.dumps(results, indent=2), encoding="utf-8")
     print(json.dumps(results))

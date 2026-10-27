@@ -16,6 +16,7 @@ from aioquic.quic.events import ConnectionTerminated, HandshakeCompleted, StopSe
 
 from wire import FRAGMENT_VALUE, fragmented_headers, oversized_headers_prefix
 from flow import FlowLogger, SLOW_BYTES, SLOW_CHUNK
+from fidelity import OCTET_FIELDS, RESPONSE_BODY, field_hex, octet_headers
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from client_tls import create_identity
@@ -72,6 +73,10 @@ class Origin(QuicConnectionProtocol):
         path = values.get(b":path")
         if path is None:
             path = self.paths.get(event.stream_id, b"")
+            if path == b"/octet-fidelity":
+                self.stats["octetTrailers"] = field_hex(event.headers)
+                self._quic.send_stream_data(event.stream_id, octet_headers(OCTET_FIELDS), end_stream=True)
+                self.paths.pop(event.stream_id)
             if path.startswith(b"/split-fin/"):
                 sequence = int(path.rsplit(b"/", 1)[1])
                 assert event.headers == [(b"x-request-trailer", str(sequence).encode("ascii"))]
@@ -88,6 +93,14 @@ class Origin(QuicConnectionProtocol):
         self.paths[event.stream_id] = path
         self.stats["requests"] += 1
         self.stats["paths"].append(path.decode("ascii"))
+        if path == b"/octet-fidelity":
+            self.stats["octetHeaders"] = field_hex([(name, value) for name, value in event.headers
+                                                    if not name.startswith(b":")])
+            for status in (b"103", b"200"):
+                self._quic.send_stream_data(event.stream_id,
+                                           octet_headers([(b":status", status)] + OCTET_FIELDS), end_stream=False)
+            self._quic.send_stream_data(event.stream_id, encode_frame(0, RESPONSE_BODY), end_stream=False)
+            return
         if path == b"/oversized-response-headers":
             self._quic.send_stream_data(event.stream_id, oversized_headers_prefix(), end_stream=False)
             return
@@ -149,6 +162,9 @@ class Origin(QuicConnectionProtocol):
     def data(self, event):
         path = self.paths.get(event.stream_id)
         self.stats["uploadBytes"] += len(event.data)
+        if path == b"/octet-fidelity":
+            assert len(self.stats["octetBody"]) + len(event.data) * 2 <= 128
+            self.stats["octetBody"] += event.data.hex()
         if path in (b"/duplex", b"/goaway-drain"):
             self.http.send_data(event.stream_id, event.data, end_stream=False)
             if event.stream_ended:
@@ -179,7 +195,8 @@ async def serve(arguments):
              "peerQpackCapacity": None, "peerQpackBlocked": None,
              "splitRequestTrailers": [], "splitResponseFin": [], "connectionErrors": [],
              "fragmentedRequest": False, "fragmentedResponseBytes": 0,
-             "slowResponseSentOffset": 0, "flowSamples": 0, "goawayIDs": []}
+             "slowResponseSentOffset": 0, "flowSamples": 0, "goawayIDs": [],
+             "octetHeaders": [], "octetTrailers": [], "octetBody": ""}
     stats_file = directory / "stats.json"
     release_file = directory / "release-fin.txt"
 

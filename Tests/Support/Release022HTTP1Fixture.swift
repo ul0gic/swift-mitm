@@ -43,6 +43,7 @@ func release022WithWire(
         origin.stop()
         try await group.shutdownGracefully()
     } catch {
+        release022ReportWireFailure(error, origin: origin, sink: sink)
         if let client {
             try? await client.close().get()
         }
@@ -51,6 +52,21 @@ func release022WithWire(
         try? await group.shutdownGracefully()
         throw error
     }
+}
+
+private func release022ReportWireFailure(_ error: Error, origin: Release022WireOrigin, sink: Release022Events) {
+    let failures = sink.events.compactMap { event -> String? in
+        switch event {
+        case let .connectionFailure(failure):
+            return "\(failure.reason):\(String(describing: failure.stage)):\(String(describing: failure.code))"
+        case let .streamError(_, message):
+            return String(message.prefix(160))
+        default:
+            return nil
+        }
+    }
+    XCTFail("Wire fixture failed: \(error); upstreamBytes=\(origin.received.bytes.count); "
+        + "requests=\(release022Requests(sink.events).count); failures=\(Array(failures.prefix(4)))")
 }
 
 private func release022SendProxyV2(on connection: Channel, originPort: Int, ipv6: Bool) throws {

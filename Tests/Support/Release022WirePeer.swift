@@ -112,7 +112,7 @@ final class Release022WireOrigin {
     let received = Release022WireObservation()
     private let group: EventLoopGroup
     private let accepted: Phase2FixtureCompletion<Channel>
-    private let children = NIOLockedValueBox<[Channel]>([])
+    private let children = NIOLockedValueBox<[(channel: Channel, received: Release022WireObservation)]>([])
     private var listener: Channel?
 
     init(group: EventLoopGroup) {
@@ -131,9 +131,12 @@ final class Release022WireOrigin {
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelOption(ChannelOptions.allowRemoteHalfClosure, value: true)
             .childChannelInitializer { channel in
-                children.withLockedValue { $0.append(channel) }
-                return channel.eventLoop.makeCompletedFuture {
-                    try channel.pipeline.syncOperations.addHandler(Release022WireHandler(received))
+                channel.eventLoop.makeCompletedFuture {
+                    try children.withLockedValue { peers in
+                        let observation = peers.isEmpty ? received : Release022WireObservation()
+                        try channel.pipeline.syncOperations.addHandler(Release022WireHandler(observation))
+                        peers.append((channel, observation))
+                    }
                     accepted.complete(.success(channel))
                 }
             }
@@ -150,8 +153,23 @@ final class Release022WireOrigin {
         try phase4BoundedWait(peer.close(mode: .output))
     }
 
+    func waitForConnection(at index: Int) throws -> (channel: Channel, received: Release022WireObservation) {
+        let deadline = Date().addingTimeInterval(3)
+        repeat {
+            let peer: (channel: Channel, received: Release022WireObservation)? = children.withLockedValue {
+                $0.indices.contains(index) ? $0[index] : nil
+            }
+            if let peer {
+                return peer
+            }
+            guard Date() < deadline else { throw Phase2FixtureError.deadlineExceeded }
+            Thread.sleep(forTimeInterval: 0.01)
+        } while true
+    }
+
     func stop() {
-        for peer in children.withLockedValue({ $0 }) { try? phase4BoundedWait(peer.close()) }
+        accepted.complete(.failure(Phase2FixtureError.closedBeforeExpectedBytes))
+        for peer in children.withLockedValue({ $0 }) { try? phase4BoundedWait(peer.channel.close()) }
         if let listener {
             try? phase4BoundedWait(listener.close())
         }

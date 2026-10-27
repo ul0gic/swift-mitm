@@ -1,6 +1,6 @@
 # Native dependency patch candidates
 
-These source patches are experimental. Candidate `18a954b` compiled remotely and passed nine of thirteen transport scenarios. Follow-on SNI, GOAWAY, storage-lifetime and runtime-ordering repairs await the next remote run. They do not establish a production memory bound. Apply each patch with strip level 1 to the exact upstream revision below; publish the resulting reviewed trees as immutable dependency revisions. Preserve each repository's license, notices, contributors file and existing source headers.
+These source patches are experimental. Candidate `2acc476` compiled remotely and passed ten of fifteen transport scenarios. Follow-on terminal-packet delivery and field-octet repairs await the sixteen-scenario remote run. They do not establish a production memory bound. Apply each patch with strip level 1 to the exact upstream revision below; publish the resulting reviewed trees as immutable dependency revisions. Preserve each repository's license, notices, contributors file and existing source headers.
 
 | Patch | Upstream repository | Revision |
 |---|---|---|
@@ -69,3 +69,7 @@ Accepted GOAWAY notifications follow the native state transition and precede can
 The connection storage barrier closes admission before terminal callbacks, detaches native ingress and disposes pending children/coalescers before sealing, then waits for every registered child's read/write storage release. It is distinct from channel close completion. Final native reads must deliver the returned DATA/FIN before deferred disconnect cleanup. Failed parser installation retains a close callback so native stream accounting can unwind even before the application handler exists.
 
 These seams add pinned SwiftTLS maintenance and small lifecycle state. Their purpose is fixed-route identity enforcement, protocol-correct cancellation, and truthful disposal accounting. They do not establish the production proxy's stop deadline, maximum-state memory bound, or total RSS. Remote checks must prove those properties separately.
+
+QPACK values now retain raw bytes through literal/Huffman coding, static/dynamic tables and HTTPTypes construction. The existing decoded-byte and field-count limits remain; invalid HTTP values fail before HTTPTypes legalization, and bounded Huffman scratch is compacted before retention. The companion measures the same raw field bytes. Independent literal and Huffman cases compare exact headers, interim fields and trailers in both directions.
+
+Terminal packet cleanup stops producers, drains pending UDP output, removes handlers, disposes residual coalescers and only then seals the storage barrier. This preserves locally generated rejection packets during ordinary and forced closure without waiting for acknowledgements. Request-initialization failures use the direction-appropriate HTTP3 code.

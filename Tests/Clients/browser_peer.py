@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import signal
 import ssl
+import sys
 import threading
 
 from client_tls import create_identity
@@ -119,15 +120,19 @@ class Peer(BaseHTTPRequestHandler):
 
 
 def server(ready_file):
+    print("origin-start: identity", file=sys.stderr, flush=True)
     certificate, key = create_identity(ready_file.parent)
+    print("origin-start: bind", file=sys.stderr, flush=True)
     instance = ThreadingHTTPServer(("127.0.0.1", 0), Peer)
     instance.daemon_threads = True
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    print("origin-start: tls", file=sys.stderr, flush=True)
     context.load_cert_chain(certificate, key)
     instance.socket = context.wrap_socket(instance.socket, server_side=True)
     temporary = ready_file.with_suffix(".tmp")
     temporary.write_text(json.dumps({"port": instance.server_port, "root": str(certificate)}))
     temporary.replace(ready_file)
+    print("origin-start: ready", file=sys.stderr, flush=True)
     signal.signal(signal.SIGTERM, lambda *_: threading.Thread(target=instance.shutdown).start())
     instance.serve_forever()
     instance.server_close()

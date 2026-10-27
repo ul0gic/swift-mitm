@@ -26,11 +26,17 @@ extension ExplicitHTTPProxyHandler {
             path: exchange.originalTarget?.requestTarget ?? exchange.head.uri,
             isHTTP2OrLater: typedHTTP2
         )
+        var fields = Self.fields(headers ?? exchange.head.headers)
+        if typedHTTP2 {
+            // NIO validates HTTP/2 wire headers before its HTTP/1 adapter synthesizes
+            // chunked framing. That adapter metadata is not part of the control message.
+            fields.removeAll { $0.name.lowercased() == "transfer-encoding" && $0.value == "chunked" }
+        }
         return HTTPControlMessage(
             context: identity,
             phase: phase,
             status: status,
-            headers: Self.fields(headers ?? exchange.head.headers),
+            headers: fields,
             body: body
         )
     }
