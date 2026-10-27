@@ -58,6 +58,8 @@ def run(binary):
         environment.pop(name, None)
     processes = []
     handles = []
+    phase = "setup"
+    missing_marker = None
     with tempfile.TemporaryDirectory(prefix="swiftmitm-lab-") as temporary:
         directory = Path(temporary)
         try:
@@ -87,16 +89,20 @@ def run(binary):
             ], stdout=log, stderr=subprocess.STDOUT, env=environment)
             processes.append(serve)
             wait_for(lambda: "listening http://127.0.0.1:8080" in serve_log.read_text(), serve)
+            phase = "sse"
             events = get(ready["http"]["port"], "/events", certificate)
             assert events.decode() == "data: €-first\n\ndata: second\n\n", events
+            phase = "paused-header-edit"
             debug = get(ready["http"]["port"], "/debug", certificate, {"X-Lab": "original"})
             assert json.loads(debug) == {"X-Lab": "reviewed"}, debug
+            phase = "websocket"
             websocket = subprocess.run([
                 sys.executable, str(scripts / "lab_peer.py"), "websocket",
                 "--target", f"localhost:{ready['http']['port']}",
                 "--proxy", "http://127.0.0.1:8080", "--root", str(certificate)
             ], env=environment, capture_output=True, text=True, timeout=20, check=True)
             assert json.loads(websocket.stdout) == {"websocket": "passed", "fragmented": True, "trusted": True}
+            phase = "grpc"
             grpc_environment = environment | {
                 "grpc_proxy": "http://127.0.0.1:8080", "https_proxy": "http://127.0.0.1:8080",
                 "no_proxy": "", "NO_PROXY": "", "no_grpc_proxy": ""
@@ -111,14 +117,20 @@ def run(binary):
             )
             grpc.check_returncode()
             assert json.loads(grpc.stdout)["trusted"] is True
+            phase = "serve-stop"
             serve.send_signal(signal.SIGINT)
             assert serve.wait(timeout=15) == 0
             observed = serve_log.read_text()
+            phase = "serve-markers"
             for marker in ("sse dataBytes=", "grpc event", "webSocketMessage bytes=", "paused GET /debug",
                            "inspectionComplete=true", '"type":"stopped"'):
-                assert marker in observed, (marker, observed)
+                present = marker in observed
+                missing_marker = None if present else marker
+                assert present, {"missingMarker": missing_marker}
+            phase = "delivery-integrity"
             assert "deliveryLoss" not in observed
             assert "lossDetected=true" not in observed
+            phase = "replay"
             har = directory / "replay.har"
             replay = subprocess.run([
                 str(binary), "replay", str(certificate), str(key),
@@ -126,6 +138,7 @@ def run(binary):
                 str(har), "--allow-internal", "--origin-ca", str(upstream_roots)
             ], env=environment, capture_output=True, text=True, timeout=30, check=True)
             assert "replay complete status=200" in replay.stdout
+            phase = "redacted-har"
             document = json.loads(har.read_text())
             assert document["log"]["version"] == "1.2"
             assert len(document["log"]["entries"]) == 1
@@ -136,13 +149,15 @@ def run(binary):
             assert {"name": "token", "value": "[REDACTED]"} in entry["request"]["queryString"]
             assert "text" not in entry["response"]["content"]
             assert entry["response"]["content"]["size"] == len(b"SwiftMITM local replay resource\n")
-            for phase in ("send", "wait", "receive"):
-                assert entry["timings"][phase] >= 0
+            for timing_phase in ("send", "wait", "receive"):
+                assert entry["timings"][timing_phase] >= 0
             print(json.dumps({"sse": True, "grpc": True, "websocket": True, "pausedEdit": True,
                               "replay": True, "redactedHAR": True, "gracefulStop": True}))
-        except Exception:
+        except Exception as error:
             for path in directory.glob("*.log"):
                 print(f"{path.name}:\n{path.read_text(errors='replace')[-2048:]}", file=sys.stderr)
+            print(json.dumps({"labFailurePhase": phase, "exceptionType": type(error).__name__[:128],
+                              "missingMarker": missing_marker}), file=sys.stderr, flush=True)
             raise
         finally:
             for process in reversed(processes):

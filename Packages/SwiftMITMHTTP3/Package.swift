@@ -23,11 +23,11 @@ let package = Package(
         ),
         .package(
             url: "https://github.com/ul0gic/swift-nio-quic.git",
-            revision: "99e31641938eef1ac81066813c91f19be844f146"
+            revision: "18f93c19722d6b836af9ad5b456dc82cb6f9ccc8"
         ),
         .package(
             url: "https://github.com/ul0gic/swift-nio-http3.git",
-            revision: "3caec7ece47c320a1ed81a0fb7a65079cde1f318"
+            revision: "0d3139552e09b2a855c0fede6ecb432466c5d97d"
         )
     ],
     targets: [

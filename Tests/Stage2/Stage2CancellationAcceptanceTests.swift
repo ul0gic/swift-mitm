@@ -95,13 +95,22 @@ final class Stage2CancellationAcceptanceTests: XCTestCase {
         defer { blocked.release() }
         try await stage2WithHTTPOrigin(runtime: runtime, controlSink: blocked, admission: admission) { peer in
             do {
-                try await prepareStoppedCallback(peer: peer, runtime: runtime, blocked: blocked, diagnostics: diagnostics)
+                try await prepareStoppedCallback(
+                    peer: peer,
+                    runtime: runtime,
+                    blocked: blocked,
+                    diagnostics: diagnostics
+                )
             } catch {
                 diagnostics.report(peer: peer, blocked: blocked, admission: admission)
                 throw error
             }
             try await verifyStoppedCallback(
-                peer: peer, runtime: runtime, blocked: blocked, admission: admission, diagnostics: diagnostics
+                peer: peer,
+                runtime: runtime,
+                blocked: blocked,
+                admission: admission,
+                diagnostics: diagnostics
             )
         }
         let usage = await runtime.resourceUsage()
@@ -117,7 +126,9 @@ final class Stage2CancellationAcceptanceTests: XCTestCase {
     ) async throws {
         diagnostics.begin("first-connect")
         let client = try release022WireClient(
-            group: peer.group, port: peer.proxyPort, observation: diagnostics.firstWire
+            group: peer.group,
+            port: peer.proxyPort,
+            observation: diagnostics.firstWire
         )
         diagnostics.begin("first-write")
         try phase4BoundedWait(client.writeAndFlush(ByteBuffer(string:

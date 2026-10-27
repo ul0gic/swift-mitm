@@ -10,15 +10,17 @@ struct BenchmarkOptions: Sendable {
     let workload: String
     let identityDirectory: String
     let output: String
+    let diagnosticCPU: Bool
 
     init(_ arguments: [String]) throws {
-        guard arguments.count == 5,
+        guard arguments.count == 5 || (arguments.count == 6 && arguments[5] == "--diagnostic-cpu"),
               ["h2", "http/1.1"].contains(arguments[1]),
               ["latency", "throughput"].contains(arguments[2]) else { throw MeasurementError.arguments }
         protocolName = arguments[1]
         workload = arguments[2]
         identityDirectory = arguments[3]
         output = arguments[4]
+        diagnosticCPU = arguments.count == 6
     }
 }
 
@@ -87,27 +89,38 @@ struct PerformanceMain {
                 originPort: originPort,
                 protocolName: options.protocolName,
                 workload: options.workload,
-                rootPEM: authority.caCertificatePEM
+                rootPEM: authority.caCertificatePEM,
+                diagnosticCPU: options.diagnosticCPU
             )
             let exchanges = try await runClient(group: clientGroup, input: input)
             try await proxy.stop()
             try await closeOrigin(origin, state: state)
-            let snapshot = state.snapshot()
-            let result = BenchmarkResult(
-                protocolName: options.protocolName,
-                workload: options.workload,
-                downstreamALPN: options.protocolName,
-                upstreamALPN: snapshot.protocols,
-                originPaths: snapshot.paths,
-                exchanges: exchanges,
-                captures: try sink.snapshot()
-            )
-            try JSONEncoder().encode(result).write(to: URL(fileURLWithPath: options.output), options: .atomic)
+            try writeResult(options, state: state, sink: sink, measurements: exchanges)
         } catch {
             try await proxy.stop()
             try await closeOrigin(origin, state: state)
             throw error
         }
+    }
+
+    private static func writeResult(
+        _ options: BenchmarkOptions,
+        state: OriginState,
+        sink: MeasurementSink,
+        measurements: ClientMeasurements
+    ) throws {
+        let snapshot = state.snapshot()
+        let result = BenchmarkResult(
+            protocolName: options.protocolName,
+            workload: options.workload,
+            downstreamALPN: options.protocolName,
+            upstreamALPN: snapshot.protocols,
+            originPaths: snapshot.paths,
+            exchanges: measurements.exchanges,
+            captures: try sink.snapshot(),
+            processObservations: measurements.processObservations
+        )
+        try JSONEncoder().encode(result).write(to: URL(fileURLWithPath: options.output), options: .atomic)
     }
 
     private static func loadAuthority(_ path: String) throws -> CertificateAuthority {
@@ -117,7 +130,7 @@ struct PerformanceMain {
         )
     }
 
-    private static func runClient(group: EventLoopGroup, input: ClientInput) async throws -> [ExchangeMeasurement] {
+    private static func runClient(group: EventLoopGroup, input: ClientInput) async throws -> ClientMeasurements {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {

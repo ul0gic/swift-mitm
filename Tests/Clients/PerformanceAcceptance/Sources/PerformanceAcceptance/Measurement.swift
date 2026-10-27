@@ -113,4 +113,5 @@ struct BenchmarkResult: Codable, Sendable {
     let originPaths: [String]
     let exchanges: [ExchangeMeasurement]
     let captures: [CaptureRecord]
+    let processObservations: ProcessObservations?
 }

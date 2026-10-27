@@ -1,8 +1,5 @@
 import Foundation
-import Network
 import NIOPosix
-import NIOSSL
-import Security
 import XCTest
 
 import SwiftMITM
@@ -58,7 +55,15 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         try await urlSession(protocolName: "h2", version: .http2)
     }
 
-    private func urlSession(protocolName: String, version: HTTPProtocolVersion) async throws {
+    func testURLSessionHTTP2WithSessionProxyDictionaryDiagnostic() async throws {
+        try await urlSession(protocolName: "h2", version: .http2, routing: .sessionDictionary)
+    }
+
+    private func urlSession(
+        protocolName: String,
+        version: HTTPProtocolVersion,
+        routing: Release022ProxyRouting = .native
+    ) async throws {
         let originHost = try release022RunnerIPv4()
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 2)
         let origin = try TLSOriginServer(
@@ -81,19 +86,18 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         do {
             try origin.start(bindAddress: originHost)
             let port = try await proxy.start(port: 0)
-            let client = try trustedURLSession(port: port, authority: authority, originHost: originHost)
-            session = client
-            let url = try XCTUnwrap(URL(string: "https://\(originHost):\(origin.localPort)/"))
-            reportURLSessionConfiguration(
-                client,
-                proxyPort: port,
+            let client = try release022TrustedURLSession(
+                port: port,
+                authority: authority,
                 originHost: originHost,
-                originPort: origin.localPort
+                originPort: origin.localPort,
+                protocolName: protocolName,
+                routing: routing
             )
-            let (data, response) = try await client.data(from: url)
-            XCTAssertEqual(data, Data(repeating: 0x41, count: 32))
-            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+            session = client
+            try await release022AssertURLSessionBody(client, host: originHost, port: origin.localPort)
             try assertURLSessionCapture(sink, protocolName: protocolName, version: version)
+            try release022AssertURLSessionRouting(client)
             client.invalidateAndCancel()
             try await proxy.stop()
             origin.stop()
@@ -118,26 +122,6 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         XCTFail(
             "URLSession path diagnostics: captureEvents=\(sink.events.count), failures=\(Array(failures.prefix(4)))"
         )
-    }
-
-    private func reportURLSessionConfiguration(
-        _ session: URLSession,
-        proxyPort: Int,
-        originHost: String,
-        originPort: Int
-    ) {
-        let proxies = session.configuration.proxyConfigurations
-        let endpoints = "expectedProxy=127.0.0.1:\(proxyPort), expectedOrigin=\(originHost):\(originPort)"
-        let configuration = "URLSession copied configuration: \(endpoints), proxies=\(proxies.count)\n"
-        FileHandle.standardError.write(Data(configuration.utf8))
-        for (index, proxy) in proxies.prefix(4).enumerated() {
-            let matches = proxy.matchDomains.prefix(4).map { String($0.prefix(128)) }
-            let exclusions = proxy.excludedDomains.prefix(4).map { String($0.prefix(128)) }
-            let facts = "proxy=\(index), failover=\(proxy.allowFailover), "
-                + "matchCount=\(proxy.matchDomains.count), matches=\(matches), "
-                + "excludedCount=\(proxy.excludedDomains.count), exclusions=\(exclusions)"
-            FileHandle.standardError.write(Data("URLSession copied proxy: \(facts)\n".utf8))
-        }
     }
 
     private func assertCurlCapture(_ sink: Release022Events) throws {
@@ -213,51 +197,6 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         }
     }
 
-    private func trustedURLSession(
-        port: Int,
-        authority: CertificateAuthority,
-        originHost: String
-    ) throws -> URLSession {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 10
-        let proxyPort = try XCTUnwrap(UInt16(exactly: port))
-        let endpointPort = try XCTUnwrap(NWEndpoint.Port(rawValue: proxyPort))
-        let proxyConfiguration = ProxyConfiguration(httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: endpointPort))
-        let native = proxyConfiguration._nw
-        nw_proxy_config_clear_match_domains(native)
-        nw_proxy_config_clear_excluded_domains(native)
-        originHost.withCString { nw_proxy_config_add_match_domain(native, $0) }
-        nw_proxy_config_set_failover_allowed(native, false)
-        assertNativeProxyConfiguration(proxyConfiguration, originHost: originHost, phase: "prepared")
-        configuration.proxyConfigurations = [proxyConfiguration]
-        let der = try NIOSSLCertificate(bytes: Array(authority.caCertificatePEM.utf8), format: .pem).toDERBytes()
-        let root = try XCTUnwrap(SecCertificateCreateWithData(nil, Data(der) as CFData))
-        let delegate = Release022URLSessionTrust(root: root)
-        let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
-        let copied = session.configuration.proxyConfigurations
-        XCTAssertEqual(copied.count, 1)
-        for proxy in copied.prefix(4) {
-            assertNativeProxyConfiguration(proxy, originHost: originHost, phase: "copied")
-        }
-        return session
-    }
-
-    private func assertNativeProxyConfiguration(_ proxy: ProxyConfiguration, originHost: String, phase: String) {
-        var matches: [String?] = []
-        var exclusions: [String?] = []
-        nw_proxy_config_enumerate_match_domains(proxy._nw) { matches.append(String(validatingCString: $0)) }
-        nw_proxy_config_enumerate_excluded_domains(proxy._nw) { exclusions.append(String(validatingCString: $0)) }
-        let failover = nw_proxy_config_get_failover_allowed(proxy._nw)
-        XCTAssertEqual(matches, [Optional(originHost)])
-        XCTAssertEqual(exclusions, [])
-        XCTAssertFalse(failover)
-        let shownMatches = matches.prefix(4).map { $0?.prefix(128) }
-        let shownExclusions = exclusions.prefix(4).map { $0?.prefix(128) }
-        let facts = "phase=\(phase), failover=\(failover), matchCount=\(matches.count), matches=\(shownMatches), "
-            + "excludedCount=\(exclusions.count), exclusions=\(shownExclusions)"
-        FileHandle.standardError.write(Data("URLSession native proxy: \(facts)\n".utf8))
-    }
-
     private struct CurlResult {
         let status: Int32
         let output: String
@@ -279,56 +218,5 @@ final class Release022ClientCompatibilityTests: XCTestCase {
             output: try XCTUnwrap(String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)),
             error: try XCTUnwrap(String(data: error.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8))
         )
-    }
-}
-
-private final class Release022URLSessionTrust: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-    let root: SecCertificate
-
-    init(root: SecCertificate) { self.root = root }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
-        for (index, transaction) in metrics.transactionMetrics.prefix(4).enumerated() {
-            let facts = "transaction=\(index), proxy=\(transaction.isProxyConnection), "
-                + "reused=\(transaction.isReusedConnection), "
-                + "protocol=\(String(describing: transaction.networkProtocolName?.prefix(32))), "
-                + "localAddress=\(String(describing: transaction.localAddress?.prefix(128))), "
-                + "localPort=\(String(describing: transaction.localPort)), "
-                + "remoteAddress=\(String(describing: transaction.remoteAddress?.prefix(128))), "
-                + "remotePort=\(String(describing: transaction.remotePort))"
-            FileHandle.standardError.write(Data("URLSession route metrics: \(facts)\n".utf8))
-        }
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        didReceive challenge: URLAuthenticationChallenge,
-        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
-    ) {
-        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust else {
-            XCTFail("URLSession unexpected authentication method: \(challenge.protectionSpace.authenticationMethod)")
-            completionHandler(.cancelAuthenticationChallenge, nil)
-            return
-        }
-        guard let trust = challenge.protectionSpace.serverTrust else {
-            XCTFail("URLSession server-trust challenge omitted trust")
-            completionHandler(.cancelAuthenticationChallenge, nil)
-            return
-        }
-        let anchorStatus = SecTrustSetAnchorCertificates(trust, [root] as CFArray)
-        let exclusiveStatus = SecTrustSetAnchorCertificatesOnly(trust, true)
-        guard anchorStatus == errSecSuccess, exclusiveStatus == errSecSuccess else {
-            XCTFail("URLSession custom-root setup failed: anchor=\(anchorStatus), exclusive=\(exclusiveStatus)")
-            completionHandler(.cancelAuthenticationChallenge, nil)
-            return
-        }
-        var failure: CFError?
-        guard SecTrustEvaluateWithError(trust, &failure) else {
-            let facts = release022TrustDiagnostic(trust: trust, expectedRoot: root, failure: failure)
-            XCTFail("URLSession trust denied: \(facts); host=\(challenge.protectionSpace.host)")
-            completionHandler(.cancelAuthenticationChallenge, nil)
-            return
-        }
-        completionHandler(.useCredential, URLCredential(trust: trust))
     }
 }

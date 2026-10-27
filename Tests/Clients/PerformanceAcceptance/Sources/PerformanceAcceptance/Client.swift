@@ -11,46 +11,52 @@ struct ClientInput: Sendable {
     let protocolName: String
     let workload: String
     let rootPEM: String
+    let diagnosticCPU: Bool
 }
 
-func measureClient(group: EventLoopGroup, input: ClientInput) throws -> [ExchangeMeasurement] {
+func measureClient(group: EventLoopGroup, input: ClientInput) throws -> ClientMeasurements {
     let channel = try openTunnel(group: group, input: input)
     do {
         let multiplexer = try configureClient(channel, input: input)
         let count = input.workload == "latency" ? 100 : 16
         let shared = input.protocolName == "http/1.1" ? try addCollector(channel) : nil
         var result: [ExchangeMeasurement] = []
+        var observations = input.diagnosticCPU ? ProcessObservations(workload: input.workload, count: count) : nil
         for index in 0 ... count {
-            let stream: Channel
-            if let multiplexer {
-                stream = try multiplexer.createStreamChannel { stream in
-                    stream.eventLoop.makeCompletedFuture {
-                        try stream.pipeline.syncOperations.addHandler(
-                            HTTP2FramePayloadToHTTP1ClientCodec(httpProtocol: .https)
-                        )
-                    }
-                }
-                .wait()
-            } else {
-                stream = channel
-            }
+            let stream = try measurementStream(channel, multiplexer: multiplexer)
             let collector = try shared ?? addCollector(stream)
+            let before = observations?.snapshotBeforeRequest(index: index)
             let measurement = try request(
                 channel: stream,
                 collector: collector,
                 path: "/\(input.workload)/\(index)",
                 authority: "localhost:\(input.originPort)"
             )
+            let after = observations?.snapshotAfterRequest(index: index)
+            observations?.record(index: index, path: measurement.path, before: before, after: after)
             result.append(measurement)
         }
         try channel.close().wait()
-        return result
+        return ClientMeasurements(exchanges: result, processObservations: observations)
     } catch {
         if channel.isActive {
             try channel.close().wait()
         }
         throw error
     }
+}
+
+private func measurementStream(
+    _ channel: Channel,
+    multiplexer: NIOHTTP2Handler.StreamMultiplexer?
+) throws -> Channel {
+    guard let multiplexer else { return channel }
+    let future = multiplexer.createStreamChannel { stream in
+        stream.eventLoop.makeCompletedFuture {
+            try stream.pipeline.syncOperations.addHandler(HTTP2FramePayloadToHTTP1ClientCodec(httpProtocol: .https))
+        }
+    }
+    return try future.wait()
 }
 
 private func openTunnel(group: EventLoopGroup, input: ClientInput) throws -> Channel {
