@@ -79,14 +79,6 @@ public final class ResourceAdmissionController: Sendable {
         ResourceRetainedByteAccount(controller: self)
     }
 
-    public func acquireConnection(destination: String? = nil) throws -> ResourceReservation {
-        try acquire(.connection(destination: destination))
-    }
-
-    public func acquireStream() throws -> ResourceReservation {
-        try acquire(.stream)
-    }
-
     fileprivate func reserveRetainedBytes(_ bytes: Int) -> Bool {
         state.withLockedValue { state in
             Self.reserveRetainedBytes(

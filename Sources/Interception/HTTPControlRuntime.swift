@@ -97,7 +97,6 @@ public actor HTTPControlRuntime {
     private var activeOwner: UUID?
     private var hasAdmissionBinding = false
     private var admissionController: ResourceAdmissionController?
-    private var transportAdmissionController: ResourceAdmissionController?
 
     public init(configuration: HTTPControlConfiguration) {
         self.configuration = configuration
@@ -106,11 +105,10 @@ public actor HTTPControlRuntime {
 
     func beginServing(
         owner: UUID,
-        admission: ResourceAdmissionController?,
-        transportAdmission: ResourceAdmissionController? = nil
+        admission: ResourceAdmissionController?
     ) throws {
         guard activeOwner == nil || activeOwner == owner else { throw HTTPControlError.invalidConfiguration }
-        let sameAdmission = admissionController === admission && transportAdmissionController === transportAdmission
+        let sameAdmission = admissionController === admission
         let hasActorWork = !holds.isEmpty || !callbacks.isEmpty || !byteReservations.isEmpty
         try budget.state.withLockedValue { state in
             let hasWork = state.bytes > 0 || hasActorWork
@@ -119,7 +117,6 @@ public actor HTTPControlRuntime {
                 throw HTTPControlError.invalidConfiguration
             }
             admissionController = admission
-            transportAdmissionController = transportAdmission
             hasAdmissionBinding = true
             activeOwner = owner
             stopped = false
@@ -209,8 +206,7 @@ public actor HTTPControlRuntime {
         do {
             let reservations = try HTTPControlWorkLifetime.reserveAdmission(
                 bytes,
-                admission: admissionController,
-                transportAdmission: transportAdmissionController
+                admission: admissionController
             )
             committed = true
             return reservations

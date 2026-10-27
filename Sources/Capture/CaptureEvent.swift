@@ -3,39 +3,15 @@ import Foundation
 public enum HTTPProtocolVersion: String, Sendable {
     case http11 = "HTTP/1.1"
     case http2 = "HTTP/2"
-    case http3 = "HTTP/3"
 }
 
 public struct HTTPHeaderField: Sendable, Hashable {
     public let name: String
     public let value: String
-    private let hasRawValueBytes: Bool
 
     public init(name: String, value: String) {
         self.name = name
         self.value = value
-        hasRawValueBytes = false
-    }
-
-    /// Raw octets use a reversible scalar projection; equality still compares only name and value.
-    public init(name: String, rawValueBytes: [UInt8]) {
-        self.name = name
-        value = Self.octetText(rawValueBytes)
-        hasRawValueBytes = true
-    }
-
-    public var rawValueBytes: [UInt8]? {
-        guard hasRawValueBytes else { return nil }
-        return value.unicodeScalars.map { UInt8($0.value) }
-    }
-
-    public static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.name == rhs.name && lhs.value == rhs.value
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(name)
-        hasher.combine(value)
     }
 
     static func octetText<Bytes: Collection>(_ bytes: Bytes) -> String where Bytes.Element == UInt8 {
@@ -57,7 +33,6 @@ public enum CapturedIngressProvenance: String, Sendable {
     case explicitConnect
     case explicitHTTP
     case priorKnowledgeHTTP2
-    case fixedRouteHTTP3
     case trustedProxyV2
 }
 

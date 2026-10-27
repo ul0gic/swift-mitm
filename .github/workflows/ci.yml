@@ -297,7 +297,7 @@ jobs:
       - name: Check formatting
         id: formatting
         run: |
-          for source_path in Sources Tests Examples Inspection Packages Package.swift; do
+          for source_path in Sources Tests Examples Inspection Package.swift; do
             "$RUNNER_TEMP/swiftformat/swiftformat" "$source_path" --lint
           done
       - name: Check lint
@@ -306,7 +306,7 @@ jobs:
       - name: Prepare formatting repair patch
         if: ${{ failure() && steps.formatting.outcome == 'failure' }}
         run: |
-          for source_path in Sources Tests Examples Inspection Packages Package.swift; do
+          for source_path in Sources Tests Examples Inspection Package.swift; do
             "$RUNNER_TEMP/swiftformat/swiftformat" "$source_path"
           done
           git diff --binary > "$RUNNER_TEMP/formatting.patch"
@@ -603,7 +603,7 @@ jobs:
         run: |
           "$PEER_PYTHON" -m venv "$RUNNER_TEMP/performance-peers"
           "$RUNNER_TEMP/performance-peers/bin/python" -m pip install --require-hashes --only-binary=:all: \
-            -r Tests/Clients/Stage2/HTTP3/requirements.txt
+            -r Tests/Clients/PerformanceAcceptance/requirements.txt
           "$RUNNER_TEMP/performance-peers/bin/python" -m pip freeze > evidence/peer-versions.txt
       - name: Build both variants with their own committed pins
         run: |
@@ -661,4 +661,3 @@ jobs:
           printf 'Candidate `%s`: all configured checks passed.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
           printf 'Configured current-runtime clients: curl, URLSession HTTP/1.1 + HTTP/2, WKWebView SSE/WebSocket, pinned stable Chromium and independent gRPC.\n' >> "$GITHUB_STEP_SUMMARY"
           printf 'Runtime evidence covers macOS 27 suites and a macOS 26 public-consumer smoke. Full minimum-runtime acceptance remains incomplete; the smoke does not replace the client/resource matrix.\n' >> "$GITHUB_STEP_SUMMARY"
-          printf 'Stage 2 final acceptance remains incomplete: HTTP/3 production acceptance runs in the separate Stage 2 workflow; full hard-ceiling/RSS and protocol-edge qualification is outstanding. This configured-check result is not release approval.\n' >> "$GITHUB_STEP_SUMMARY"

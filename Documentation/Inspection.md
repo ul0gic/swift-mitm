@@ -50,17 +50,16 @@ The executable does not bundle or start protocol peers. A peer's successful resp
 
 | Capability | Public path | Limit |
 |---|---|---|
-| HTTP/1.1 and HTTP/2 | Explicit CONNECT proxy with negotiated HTTP/1.1 or HTTP/2 | HTTP/3 is outside this listener. |
+| HTTP/1.1 and HTTP/2 | Explicit HTTP, HTTPS CONNECT, and configured prior-knowledge HTTP/2 | HTTP/3 and QUIC are unsupported. |
 | HTTP capture and observation | `ProxyServer` plus `HTTPInspector` | The inspector is opt-in; raw capture retention remains separate. |
 | Content decoding | `gzip`, `deflate`, and Brotli content codings | Malformed or unsupported coding ends that observation with a diagnostic. |
 | SSE | Incremental event-stream parser | Event and line limits are configurable through `InspectionConfiguration`. |
 | gRPC | Native gRPC, binary gRPC-Web, and text gRPC-Web framing | Protobuf field interpretation requires a supplied descriptor schema. |
 | WebSocket messages | Message decoder for supported permessage-deflate negotiation | Frame events and message observations are distinct; unsupported negotiation is reported. |
-| HTTP/3 | No transport product | The companion package currently contains only a dependency probe; it cannot proxy or inspect HTTP/3. |
 
 The console uses these `InspectionConfiguration` defaults: 64 MiB shared retained-storage budget; 4 MiB and 1,024 items queued; 256 active bodies; 64 KiB SSE lines; 1 MiB SSE events; and 4 MiB gRPC/WebSocket messages. The configuration permits larger values up to 256 MiB budget, 256 MiB queue, 65,536 queued items, 1,024 active bodies, 256 KiB lines, 4 MiB events and 16 MiB messages. These are library limits, not measured process-RSS bounds; native decoder workspace is outside the application-owned budget.
 
-The core library targets macOS 26 and Swift 6.4 with Crypto 5. The separate `SwiftMITMHTTP3` companion requires macOS 27 and connects HTTP/3 messages to the same observation interfaces. Core-only consumers do not resolve the companion’s QUIC/HTTP3 dependencies. See [HTTP/3](HTTP3.md) for integration and protocol boundaries.
+The core and inspection libraries target macOS 26 and Swift 6.4 with Crypto 5.
 
 The 0.2.2 candidate and these commands remain unverified until the candidate's GitHub Actions consumer and protocol checks pass.
 

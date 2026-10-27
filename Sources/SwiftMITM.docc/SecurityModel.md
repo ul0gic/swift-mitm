@@ -39,7 +39,7 @@ The embedding application must:
 - Bound, redact, encrypt, retain, and delete capture events according to its policy.
 - Keep payloads, credentials, cookies, authorization headers, CA private keys, and personal data out of logs and diagnostics.
 
-SwiftMITM intentionally provides no UI, Keychain policy, system-proxy modification, redirect-rule installation, privileged-helper lifecycle, persistence, redaction, analytics, or remote control plane.
+SwiftMITM intentionally provides no UI, Keychain policy, system-proxy modification, redirect-rule installation, privileged-helper lifecycle, capture database, analytics, or remote control plane. HAR export can redact configured sensitive fields; the host remains responsible for raw capture and stored exports.
 
 ## Capture is observational
 
@@ -47,11 +47,10 @@ Structured capture and opaque metadata observe forwarded traffic. They are not a
 
 ## Protocol limits
 
-- No UDP, QUIC, HTTP/3, cleartext HTTP/2 prior knowledge, or `h2c` upgrade
+- No UDP, QUIC, HTTP/3, or `h2c` upgrade; prior-knowledge HTTP/2 requires an explicitly authorized destination
 - No ECH decryption or general opaque-protocol decoding
 - HTTP/2 WebSocket capture requires origin-enabled extended `CONNECT`; malformed candidates affect only their paired stream
-- Negotiated WebSocket `permessage-deflate` remains compressed
-- HTTP content encodings such as gzip, deflate, and Brotli are not decoded
+- Raw capture preserves compressed bytes; optional `SwiftMITMInspection` decodes supported WebSocket `permessage-deflate`, gzip, deflate, and Brotli representations under separate observation limits
 - Certificate pinning can prevent interception and is not bypassed
 
 Any broader listener, internal egress, disabled origin verification, expanded capture, or decoded-content path requires its own explicit authorization and resource policy.

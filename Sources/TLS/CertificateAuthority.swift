@@ -15,15 +15,6 @@ public struct GeneratedAuthority: Sendable {
     public let certificatePEM: String
 }
 
-public struct CertificateIdentity: Sendable {
-    public let certificateChain: [Certificate]
-    public let privateKey: Certificate.PrivateKey
-}
-
-public enum CertificateIdentityError: Error, Equatable, Sendable {
-    case invalidHost
-}
-
 public enum CertificateAuthorityRestorationError: Error, Equatable, Sendable {
     case invalidPrivateKey
     case invalidCertificate
@@ -156,14 +147,6 @@ public final class CertificateAuthority: Sendable {
 
     func leaf(forHost host: String) throws -> MintedIdentity {
         try mintIdentity(forHost: host.lowercased())
-    }
-
-    public func mintCertificateIdentity(forHost host: String) throws -> CertificateIdentity {
-        guard let host = ConnectionTarget.normalizedHost(host) else {
-            throw CertificateIdentityError.invalidHost
-        }
-        let (certificate, privateKey) = try makeLeafCertificate(forHost: host)
-        return CertificateIdentity(certificateChain: [certificate, caCertificate], privateKey: privateKey)
     }
 
     func mintIdentity(forHost host: String) throws -> MintedIdentity {
