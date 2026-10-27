@@ -28,6 +28,8 @@ The control runtime uses `HTTPControlLimits` defaults: 256 rules, 256 KiB config
 
 The explicit proxy's outer CONNECT handshake bypasses HTTP control evaluation. Within an intercepted connection, edits, breakpoints and faults on protocol-upgrade handshakes are unsupported; matching unsupported actions fail rather than modifying upgraded traffic. Unmatched WebSocket traffic retains its existing forwarding and observation behavior. A WebSocket message observation is not an HTTP-body edit capability.
 
+`HTTPFault.resetAfterBytes` counts forwarded body payload bytes in the selected direction, after body replacement and before HTTP framing. Headers and trailers do not count; content-encoded bodies remain encoded for this counter.
+
 ## Configuration lifetime
 
 A control runtime belongs to one active proxy server. Stopping and restarting a server does not erase retained callback charges; noncooperative callbacks remain charged until they exit. A concurrent server cannot share the same runtime.

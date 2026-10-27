@@ -115,6 +115,7 @@ jobs:
           "$RUNNER_TEMP/protoc/bin/protoc" --proto_path=Tests/Clients/Stage2 \
             --include_imports --descriptor_set_out="$RUNNER_TEMP/stage2-renamed-descriptor.pb" probe-renamed.proto
           python3 Tests/Clients/Stage2/make_compression_vectors.py "$RUNNER_TEMP/stage2-compression"
+          python3 Tests/Clients/Stage2/semantic_vectors.py "$RUNNER_TEMP/stage2-compression"
           echo "STAGE2_COMPRESSION_VECTORS=$RUNNER_TEMP/stage2-compression" >> "$GITHUB_ENV"
           echo "STAGE2_DESCRIPTOR_PATH=$RUNNER_TEMP/stage2-descriptor.pb" >> "$GITHUB_ENV"
           echo "STAGE2_RENAMED_DESCRIPTOR_PATH=$RUNNER_TEMP/stage2-renamed-descriptor.pb" >> "$GITHUB_ENV"
@@ -138,23 +139,42 @@ jobs:
                        'ProductionProxyBackpressureTests', 'PublicProxyHTTP2WebSocketBackpressureTests',
                        'StreamingBackpressureTests', 'Release022CorrelationResourceTests',
                        'Stage2ControlResourceAcceptanceTests', 'Stage2CancellationAcceptanceTests',
-                       'Stage2SharedBudgetAcceptanceTests'}
+                       'Stage2SharedBudgetAcceptanceTests', 'Stage2CapacityAcceptanceTests',
+                       'Stage2AggregateCapacityAcceptanceTests'}
           compatibility = {'AppleTLSProxyCompatibilityTests', 'Phase4PublicTransparentTLSTests',
                            'PublicProxyHTTP2WebSocketTests',
                            'Release022PublicTrustTests', 'Release022ClientCompatibilityTests',
                            'Release022IndependentGRPCCompatibilityTests',
                            'Release022ConsumerCompatibilityTests', 'Stage2ConsumerCompatibilityTests',
-                           'Stage2PassiveTLSCompatibilityTests', 'Stage2HTTP2FaultCompatibilityTests'}
+                           'Stage2PassiveTLSCompatibilityTests', 'Stage2HTTP2FaultCompatibilityTests',
+                           'Stage2ControlBoundaryAcceptanceTests'}
           browser = {'Release022BrowserCompatibilityTests'}
           required = resources | compatibility | browser | {'Release022PublicHTTP1Tests',
                                                   'Release022PublicHTTP1ForwardingTests',
                                                   'Release022PublicHTTP1OctetTests',
                                                   'Release022PublicHTTP2StreamingTests',
                                                   'Release022PublicHTTP2MalformedTests',
-                                                  'Release022PublicReadOwnershipTests'}
+                                                  'Release022PublicReadOwnershipTests',
+                                                  'Stage2SemanticBoundaryAcceptanceTests',
+                                                  'Stage2ReplayBoundaryAcceptanceTests'}
           classes = {test.split('.', 1)[1].split('/', 1)[0] for test in tests}
           assert required <= classes, f'Missing required classes: {sorted(required - classes)}'
           expected = {
+              'Stage2AggregateCapacityAcceptanceTests': {
+                  'testSharedGiBCeilingRejectsObservationAndKeepsWire'},
+              'Stage2CapacityAcceptanceTests': {
+                  'testThirtyTwoFlowsCancelWithoutRetainedGrowth',
+                  'testTwoHundredFiftySixFlowsCancelWithoutGrowth'},
+              'Stage2ControlBoundaryAcceptanceTests': {
+                  'testTLSHTTP1EditAndExpiredBreakpointPreserveOriginIsolation',
+                  'testResponseResetAtByteOffsetPreservesHealthyFollowup'},
+              'Stage2SemanticBoundaryAcceptanceTests': {
+                  'testBinaryGRPCWebPublishesBeforeItsTrailerWithoutChangingForwardedBytes',
+                  'testMalformedGRPCWebStopsOnlyItsObservationAndNextExchangeStillStreams',
+                  'testCompressedGRPCMessageLimitAppliesToDecodedBytesWithoutTruncatingTransport'},
+              'Stage2ReplayBoundaryAcceptanceTests': {
+                  'testDroppedReplayResponseDoesNotRepeatTheCommittedPOST',
+                  'testReplayRejectsSessionsAndLimitsCredentialOptInToSameOrigin'},
               'Stage2SharedBudgetAcceptanceTests': {
                   'testSharedInspectionBudgetExhaustionPreservesZeroRetentionForwardingAndReleasesCharges'},
               'Stage2PassiveTLSCompatibilityTests': {
@@ -200,6 +220,7 @@ jobs:
                   'testCurlHTTPAndHTTPSWithExplicitTrust',
                   'testURLSessionHTTP11WithExplicitTrustAndProxy',
                   'testURLSessionHTTP2WithExplicitTrustAndProxy',
+                  'testURLSessionHTTP2WithQualifiedHostnameAndExplicitTrustAndProxy',
                   'testURLSessionHTTP2WithSessionProxyDictionaryDiagnostic',
                   'testURLSessionHTTP2WithAlternateLoaderDiagnostic'},
               'Release022BrowserCompatibilityTests': {
@@ -225,6 +246,22 @@ jobs:
           expected_methods = {f'SwiftMITMTests.{cls}/{method}'
                               for cls, methods in expected.items() for method in methods}
           assert expected_methods <= set(tests), f'Missing methods: {sorted(expected_methods - set(tests))}'
+          minimum_classes = {'Stage2SemanticBoundaryAcceptanceTests', 'Stage2ReplayBoundaryAcceptanceTests',
+                             'Stage2ControlBoundaryAcceptanceTests', 'Stage2CancellationAcceptanceTests',
+                             'Stage2SharedBudgetAcceptanceTests', 'Stage2CapacityAcceptanceTests'}
+          minimum = {test for test in tests if test.split('.', 1)[1].split('/', 1)[0] in minimum_classes}
+          minimum.update({
+              'SwiftMITMTests.Release022PublicTrustTests/testSNIIdentityAuthenticatesWithoutChangingCONNECTIPRoute',
+              'SwiftMITMTests.Release022PublicTrustTests/testTrustedRootWithWrongSNIIdentityFailsWithoutOpaqueFallback',
+              'SwiftMITMTests.Stage2InspectionAcceptanceTests/testSSEPublishesFragmentedUTF8BeforeEOFWithZeroRawRetention',
+              'SwiftMITMTests.Stage2ControlResourceAcceptanceTests/testBodyReplacementAcceptsLimitAndRejectsLimitPlusOneBeforeEgress',
+              'SwiftMITMTests.Stage2ControlResourceAcceptanceTests/testAdmissionAtConnectionCeilingRejectsNewWorkWithoutEvictingActiveClient',
+              'SwiftMITMTests.Stage2WorkflowAcceptanceTests/testReplaySendsOneCredentialFreePOSTAndRejectsIncompleteInputBeforeConnect',
+              'SwiftMITMTests.Release022ClientCompatibilityTests/testURLSessionHTTP11WithExplicitTrustAndProxy',
+              'SwiftMITMTests.Release022ClientCompatibilityTests/testURLSessionHTTP2WithExplicitTrustAndProxy',
+              'SwiftMITMTests.Release022BrowserCompatibilityTests/testWKWebViewSSEAndWebSocketThroughPublicProxyWithExplicitTrust'})
+          assert minimum and minimum <= set(tests), 'Minimum-runtime selection is missing from discovery'
+          (root / 'minimum-tests.txt').write_text('\n'.join(sorted(minimum)) + '\n')
           partitions = collections.defaultdict(list)
           for test in sorted(tests):
               cls = test.split('.', 1)[1].split('/', 1)[0]
@@ -240,6 +277,79 @@ jobs:
           (root / 'filter.txt').write_text('^(' + '|'.join(re.escape(test) for test in selected) + ')$')
           print({key: len(value) for key, value in partitions.items()})
           PY
+      - name: Export current XCTest products and generated fixtures
+        if: matrix.partition == 'behavior'
+        run: |
+          export TEST_PRODUCTS="$(swift build --show-bin-path)"
+          python3 - <<'PY'
+          import json, os, pathlib, platform, shutil, subprocess, tarfile
+          products = pathlib.Path(os.environ['TEST_PRODUCTS'])
+          bundles = list(products.glob('*.xctest'))
+          assert len(bundles) == 1, f'Expected one current XCTest bundle, found {len(bundles)}'
+          bundle = bundles[0]
+          executables = [p for p in (bundle / 'Contents/MacOS').iterdir() if p.is_file()]
+          assert len(executables) == 1, 'Expected one XCTest executable'
+          export = pathlib.Path(os.environ['RUNNER_TEMP']) / 'minimum-xctest'
+          payload = export / 'payload'
+          (payload / 'products').mkdir(parents=True)
+          shutil.copytree(bundle, payload / 'products' / bundle.name, symlinks=True)
+          for resource in products.glob('*.bundle'):
+              shutil.copytree(resource, payload / 'products' / resource.name, symlinks=True)
+          pending, copied, linkage = [executables[0]], set(), []
+          while pending:
+              binary = pending.pop()
+              links = subprocess.check_output(['otool', '-L', str(binary)], text=True)
+              linkage.append(links)
+              for line in links.splitlines()[1:]:
+                  dependency = products / pathlib.Path(line.strip().split(' (', 1)[0]).name
+                  if dependency.suffix == '.dylib' and dependency.is_file() and dependency.name not in copied:
+                      assert dependency.resolve().parent == products.resolve(), 'Library is not an adjacent product'
+                      shutil.copy2(dependency, payload / 'products' / dependency.name)
+                      copied.add(dependency.name)
+                      pending.append(dependency)
+          shutil.copytree(pathlib.Path(os.environ['STAGE2_COMPRESSION_VECTORS']), payload / 'compression')
+          for variable in ('STAGE2_DESCRIPTOR_PATH', 'STAGE2_RENAMED_DESCRIPTOR_PATH'):
+              shutil.copy2(os.environ[variable], payload / pathlib.Path(os.environ[variable]).name)
+          for name in ('minimum-tests.txt', 'swift.txt', 'xcode.txt'):
+              shutil.copy2(pathlib.Path('evidence') / name, payload / name)
+          (payload / 'manifest.json').write_text(json.dumps({'candidate': os.environ['GITHUB_SHA'],
+              'checkout': str(pathlib.Path.cwd()), 'architecture': platform.machine(), 'bundle': bundle.name}))
+          (payload / 'linkage.txt').write_text('\n'.join(linkage))
+          for tool, destination in ((['file'], 'architecture.txt'), (['otool', '-l'], 'load-commands.txt')):
+              (payload / destination).write_text(subprocess.check_output(tool + [str(executables[0])], text=True))
+          with tarfile.open(export / 'xctest.tar.gz', 'w:gz') as archive:
+              archive.add(payload, arcname='payload')
+          PY
+      - name: Retain execution-only XCTest artifact before partition execution
+        if: matrix.partition == 'behavior'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: minimum-xctest-${{ github.sha }}
+          path: ${{ runner.temp }}/minimum-xctest/xctest.tar.gz
+          if-no-files-found: error
+      - name: Prepare qualified runner hostname for native HTTP2 comparison
+        if: matrix.partition == 'compatibility'
+        run: |
+          test -x /sbin/ipconfig
+          address="$(/sbin/ipconfig getifaddr en0)"
+          hostname="swiftmitm-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.test"
+          python3 - "$address" "$hostname" "$RUNNER_TEMP/swiftmitm-hosts-line.candidate" <<'PY'
+          import ipaddress, pathlib, sys
+          address = ipaddress.IPv4Address(sys.argv[1])
+          assert address.is_private and not address.is_loopback and not address.is_link_local
+          pathlib.Path(sys.argv[3]).write_text(f'{address} {sys.argv[2]}\n')
+          PY
+          sudo -n "$(command -v python3)" - "$RUNNER_TEMP/swiftmitm-hosts-line" <<'PY'
+          import pathlib, sys
+          hosts = pathlib.Path('/etc/hosts')
+          ledger = pathlib.Path(sys.argv[1])
+          line, existing = pathlib.Path(sys.argv[1] + '.candidate').read_bytes(), hosts.read_bytes()
+          assert not existing or existing.endswith(b'\n'), 'Expected line-terminated runner hosts file'
+          assert line not in existing.splitlines(keepends=True), 'Runner alias already exists'
+          ledger.write_bytes(line)
+          with hosts.open('ab') as stream: stream.write(line)
+          PY
+          echo "SWIFTMITM_TEST_DNS_HOST=$hostname" >> "$GITHUB_ENV"
       - name: Run partition
         env:
           PARTITION: ${{ matrix.partition }}
@@ -264,6 +374,19 @@ jobs:
           assert report.find('.//skipped') is None, 'Skipped test in result artifact'
           assert not re.search(r"Test Case .* skipped", (root / 'tests.log').read_text()), 'XCTest skip is not qualification'
           PY
+      - name: Remove only the qualified runner hostname entry
+        if: always() && matrix.partition == 'compatibility'
+        run: |
+          if [[ -f "$RUNNER_TEMP/swiftmitm-hosts-line" ]]; then
+            sudo -n "$(command -v python3)" - "$RUNNER_TEMP/swiftmitm-hosts-line" <<'PY'
+          import pathlib, sys
+          hosts = pathlib.Path('/etc/hosts')
+          line = pathlib.Path(sys.argv[1]).read_bytes()
+          retained = [entry for entry in hosts.read_bytes().splitlines(keepends=True) if entry != line]
+          hosts.write_bytes(b''.join(retained))
+          assert line not in hosts.read_bytes().splitlines(keepends=True), 'Runner alias cleanup failed'
+          PY
+          fi
       - name: Retain candidate test evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -446,12 +569,13 @@ jobs:
           if-no-files-found: error
 
   minimum-runtime:
-    name: macOS 26 public consumers
-    needs: consumer
+    name: macOS 26 public consumers and native acceptance
+    needs: [consumer, tests]
+    if: ${{ !cancelled() }}
     runs-on: macos-26
     env:
       DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -461,12 +585,14 @@ jobs:
           name: consumer-current-${{ github.sha }}
           path: ${{ runner.temp }}/consumer
       - name: Set up independent peer Python
+        if: ${{ !cancelled() }}
         id: peer-python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: '3.14.9'
           architecture: arm64
       - name: Install pinned public-consumer peers
+        if: ${{ !cancelled() && steps.peer-python.outcome == 'success' }}
         env:
           PEER_PYTHON: ${{ steps.peer-python.outputs.python-path }}
         run: |
@@ -563,6 +689,67 @@ jobs:
             --binary "$RUNNER_TEMP/consumer/InterceptionLab" 2>&1 | tee evidence/lab-acceptance.log
           printf 'Additional public-consumer proof: trusted TLS, SSE, gRPC, WebSocket, paused edit, replay and redacted HAR.\n' >> evidence/scope.txt
           printf 'The full native-client and resource matrix on macOS 26 remains unverified.\n' >> evidence/scope.txt
+      - name: Download candidate native XCTest products
+        if: ${{ !cancelled() }}
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: minimum-xctest-${{ github.sha }}
+          path: ${{ runner.temp }}/minimum-xctest
+      - name: Execute selected Xcode 27.1 tests on macOS 26 without rebuilding
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p evidence
+          tar -xzf "$RUNNER_TEMP/minimum-xctest/xctest.tar.gz" -C "$RUNNER_TEMP/minimum-xctest"
+          export RUNTIME_XCTEST="$(xcrun --find xctest)"
+          python3 - <<'PY'
+          import collections, json, os, pathlib, platform, re, shutil, subprocess
+          payload = pathlib.Path(os.environ['RUNNER_TEMP']) / 'minimum-xctest/payload'
+          metadata = json.loads((payload / 'manifest.json').read_text())
+          assert metadata['candidate'] == os.environ['GITHUB_SHA'], 'XCTest candidate mismatch'
+          assert metadata['checkout'] == str(pathlib.Path.cwd()), 'Producer #filePath checkout differs from runtime checkout'
+          assert metadata['architecture'] == platform.machine(), 'Producer/runtime architectures differ'
+          assert platform.machine() in (payload / 'architecture.txt').read_text(), 'Bundle architecture differs'
+          minimums = re.findall(r'\bminos\s+([\d.]+)', (payload / 'load-commands.txt').read_text())
+          assert minimums and all(int(value.split('.')[0]) <= 26 for value in minimums), 'Bundle requires a newer OS'
+          assert subprocess.check_output(['sw_vers', '-productVersion'], text=True).startswith('26.'), 'Wrong runtime OS'
+          selected = (payload / 'minimum-tests.txt').read_text().splitlines()
+          assert selected and len(selected) == len(set(selected)), 'Empty or duplicate native selection'
+          for name in ('manifest.json', 'architecture.txt', 'linkage.txt', 'load-commands.txt',
+                       'minimum-tests.txt', 'swift.txt', 'xcode.txt'):
+              shutil.copy2(payload / name, pathlib.Path('evidence') / f'native-{name}')
+          developer = pathlib.Path(os.environ['DEVELOPER_DIR'])
+          platform_developer = developer / 'Platforms/MacOSX.platform/Developer'
+          library_paths = [payload / 'products', platform_developer / 'usr/lib']
+          library_paths += sorted((developer / 'Toolchains/XcodeDefault.xctoolchain/usr/lib').glob('swift*/macosx'))
+          environment = {'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'HOME': os.environ['HOME'],
+              'TMPDIR': os.environ.get('TMPDIR', os.environ['RUNNER_TEMP']), 'LANG': 'en_US.UTF-8',
+              'DEVELOPER_DIR': str(developer), 'PYTHONDONTWRITEBYTECODE': '1',
+              'DYLD_FRAMEWORK_PATH': str(platform_developer / 'Library/Frameworks'),
+              'DYLD_LIBRARY_PATH': ':'.join(map(str, library_paths)),
+              'SWIFTMITM_CLIENT_PYTHON': os.environ['SWIFTMITM_CLIENT_PYTHON'],
+              'STAGE2_COMPRESSION_VECTORS': str(payload / 'compression'),
+              'STAGE2_DESCRIPTOR_PATH': str(payload / 'stage2-descriptor.pb'),
+              'STAGE2_RENAMED_DESCRIPTOR_PATH': str(payload / 'stage2-renamed-descriptor.pb')}
+          results = []
+          for identifier in selected:
+              log = pathlib.Path('evidence') / ('native-' + identifier.replace('/', '-') + '.log')
+              with log.open('w') as output:
+                  result = subprocess.run([os.environ['RUNTIME_XCTEST'], '-XCTest', identifier,
+                      str(payload / 'products' / metadata['bundle'])], env=environment,
+                      stdout=output, stderr=subprocess.STDOUT, check=False)
+              transcript = log.read_text(errors='replace')
+              passed = [f'{cls}/{method}' for cls, method in re.findall(
+                  r"Test Case '-\[([^ ]+) ([^]]+)\]' passed", transcript)]
+              valid = result.returncode == 0 and collections.Counter(passed) == collections.Counter([identifier])
+              valid = valid and not re.search(r'Test Case .* (?:failed|skipped)', transcript)
+              results.append({'test': identifier, 'returncode': result.returncode, 'passed': valid})
+              print(json.dumps(results[-1]), flush=True)
+          pathlib.Path('evidence/native-results.json').write_text(json.dumps(results, indent=2))
+          assert all(result['passed'] for result in results), 'Native XCTest failed, could not load, or did not execute its named method; see native logs'
+          with pathlib.Path('evidence/scope.txt').open('a') as scope:
+              scope.write(f'Passed {len(selected)} named native trust, inspection, control, replay, cancellation, budget, capacity, URLSession and WKWebView cases on macOS 26.\n')
+              scope.write('Chromium, the qualified-hostname URLSession comparison, and the remaining full matrix on macOS 26 remain unverified.\n')
+          PY
       - name: Retain minimum-runtime consumer evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

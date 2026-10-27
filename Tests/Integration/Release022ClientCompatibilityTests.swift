@@ -1,4 +1,5 @@
 import Foundation
+import NIOCore
 import NIOPosix
 import XCTest
 
@@ -55,6 +56,18 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         try await urlSession(protocolName: "h2", version: .http2)
     }
 
+    func testURLSessionHTTP2WithQualifiedHostnameAndExplicitTrustAndProxy() async throws {
+        let host = try XCTUnwrap(
+            ProcessInfo.processInfo.environment["SWIFTMITM_TEST_DNS_HOST"],
+            "Compatibility CI must provide SWIFTMITM_TEST_DNS_HOST and its owned hosts-file mapping"
+        )
+        guard host.hasSuffix(".test"), !host.dropLast(5).isEmpty else {
+            XCTFail("SWIFTMITM_TEST_DNS_HOST must be a qualified fixture hostname under .test")
+            return
+        }
+        try await urlSession(protocolName: "h2", version: .http2, logicalHost: host)
+    }
+
     func testURLSessionHTTP2WithSessionProxyDictionaryDiagnostic() async throws {
         try await urlSession(protocolName: "h2", version: .http2, routing: .sessionDictionary)
     }
@@ -66,9 +79,20 @@ final class Release022ClientCompatibilityTests: XCTestCase {
     private func urlSession(
         protocolName: String,
         version: HTTPProtocolVersion,
-        routing: Release022ProxyRouting = .native
+        routing: Release022ProxyRouting = .native,
+        logicalHost: String? = nil
     ) async throws {
-        let originHost = try release022RunnerIPv4()
+        let bindAddress = try release022RunnerIPv4()
+        let originHost = logicalHost ?? bindAddress
+        if let logicalHost {
+            let resolved = try SocketAddress.makeAddressResolvingHost(logicalHost, port: 0)
+            guard resolved.ipAddress == bindAddress else {
+                XCTFail(
+                    "Fixture hostname resolved to \(String(describing: resolved.ipAddress)); expected \(bindAddress)"
+                )
+                return
+            }
+        }
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 2)
         let origin = try TLSOriginServer(
             group: group,
@@ -88,7 +112,7 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         )
         var session: URLSession?
         do {
-            try origin.start(bindAddress: originHost)
+            try origin.start(bindAddress: bindAddress)
             let port = try await proxy.start(port: 0)
             let client = try release022TrustedURLSession(
                 port: port,
