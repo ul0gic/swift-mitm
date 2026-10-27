@@ -14,7 +14,10 @@ extension HTTP1MessageParser {
             fail(emit: emit)
             return
         }
-        let headerFields = Self.parseHeaderFields(Array(lines.dropFirst()))
+        guard let headerFields = Self.parseHeaderFields(Array(lines.dropFirst())) else {
+            fail(emit: emit)
+            return
+        }
 
         switch mode {
         case .request:

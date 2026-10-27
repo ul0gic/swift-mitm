@@ -35,7 +35,7 @@
   {
     "repository": "swift-nio-quic",
     "upstreamRevision": "11b231126952b3ef408c4e1ab95d14e16af5d867",
-    "forkRevision": "020792b3e68d4f9e1a37277f9a7d44870fa05871",
+    "forkRevision": "3170f9e03b4d361f2185bafc81edbbc208827060",
     "patches": [
       "swift-nio-quic-bounded-read.patch",
       "swift-nio-quic-bounded-send.patch",
@@ -44,7 +44,8 @@
       "swift-nio-quic-received-sni-policy.patch",
       "swift-nio-quic-connection-storage-release.patch",
       "swift-nio-quic-read-delivery-transaction.patch",
-      "swift-nio-quic-final-drain-before-disposal.patch"
+      "swift-nio-quic-final-drain-before-disposal.patch",
+      "swift-nio-quic-local-read-cancellation.patch"
     ],
     "upstreamURL": "https://github.com/apple/swift-nio-quic",
     "forkURL": "https://github.com/ul0gic/swift-nio-quic",
@@ -52,13 +53,14 @@
       "swift-nio-quic-received-sni-policy.patch": "b82a67556a5d9d3acd9c00348eb17f0817d4627f",
       "swift-nio-quic-connection-storage-release.patch": "c22dfd6e6dd828709cabf5018369976c9557154f",
       "swift-nio-quic-read-delivery-transaction.patch": "6d5657ba20047f5852f7d8b8fa5c0649a8e4b6cb",
-      "swift-nio-quic-final-drain-before-disposal.patch": "0cde51338e44835ba77416d787f2d974f70d6ba5"
+      "swift-nio-quic-final-drain-before-disposal.patch": "0cde51338e44835ba77416d787f2d974f70d6ba5",
+      "swift-nio-quic-local-read-cancellation.patch": "020792b3e68d4f9e1a37277f9a7d44870fa05871"
     }
   },
   {
     "repository": "swift-nio-http3",
     "upstreamRevision": "e2c54cdbf50dc64bf9e80861922f8d9400d2acce",
-    "forkRevision": "5b20c156a8b09ef70daf91ea46b220e2d4a54d80",
+    "forkRevision": "4ac46f387b410b7b51b8e1085af7170044465a84",
     "patches": [
       "swift-nio-http3-bounded-input.patch",
       "swift-nio-http3-typed-decode-error.patch",

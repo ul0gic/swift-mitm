@@ -71,6 +71,7 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
         let sink = Release022Events()
         var proxy: ProxyServer?
         var trust: Release022RunnerTrust?
+        var phase = "origin-start"
         do {
             let ready = try await peer.start(script: "browser_peer.py")
             let authority = try CertificateAuthority.generate().authority
@@ -78,26 +79,24 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
             try Data(authority.caCertificatePEM.utf8).write(to: certificate)
             let runnerTrust = Release022RunnerTrust(certificate: certificate, directory: peer.directory)
             trust = runnerTrust
+            phase = "trust-install"
             try runnerTrust.install()
             let server = try makeProxy(group: group, ready: ready, authority: authority, sink: sink)
             proxy = server
+            phase = "proxy-start"
             let port = try await server.start(port: 0)
-            let result = try release022RunProcess(executable: peer.python, arguments: [
-                Release022ExternalPeer.clientsDirectory.appendingPathComponent("chromium_client.py").path,
-                "--executable",
-                executable,
-                "--proxy",
-                "http://127.0.0.1:\(port)",
-                "--url",
-                "https://localhost:\(ready.port)/"
-            ])
-            FileHandle.standardError.write(Data("CLIENT-MATRIX \(result)".utf8))
-            XCTAssertTrue(result.contains("\"sse\": true"))
+            phase = "chromium-client"
+            try runChromiumClient(python: peer.python, executable: executable, port: port, originPort: ready.port)
+            phase = "capture-assertions"
             try assertBrowserCapture(sink)
+            phase = "proxy-stop"
             try await server.stop()
+            phase = "trust-restore"
             try runnerTrust.restore()
+            phase = "group-shutdown"
             try await group.shutdownGracefully()
         } catch {
+            XCTFail("Chromium phase \(phase) failed: \(error)")
             if let proxy {
                 try? await proxy.stop()
             }
@@ -107,6 +106,20 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
             }
             throw error
         }
+    }
+
+    private func runChromiumClient(python: String, executable: String, port: Int, originPort: Int) throws {
+        let result = try release022RunProcess(executable: python, arguments: [
+            Release022ExternalPeer.clientsDirectory.appendingPathComponent("chromium_client.py").path,
+            "--executable",
+            executable,
+            "--proxy",
+            "http://127.0.0.1:\(port)",
+            "--url",
+            "https://localhost:\(originPort)/"
+        ], phase: "chromium-client")
+        FileHandle.standardError.write(Data("CLIENT-MATRIX \(result)".utf8))
+        XCTAssertTrue(result.contains("\"sse\": true"))
     }
 
     private func makeProxy(

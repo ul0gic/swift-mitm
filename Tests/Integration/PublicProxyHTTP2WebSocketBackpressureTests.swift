@@ -143,7 +143,7 @@ final class PublicProxyHTTP2WebSocketBackpressureTests: XCTestCase {
             writeFailureDiagnostic(exchange: exchange, origin: origin, sink: sink, error: error)
             throw error
         }
-        let finalSnapshot = sink.snapshot
+        let finalSnapshot = try await finishRequestAndWaitForClose(exchange: exchange, sink: sink)
         try assertCompletion(
             clientResult: clientResult,
             originSentBytes: originSentBytes,
@@ -168,16 +168,31 @@ final class PublicProxyHTTP2WebSocketBackpressureTests: XCTestCase {
         do {
             let clientResult = try await exchange.completion.get()
             let originSentBytes = try await runBlocking { try origin.sentBytes.wait() }
+            let finalSnapshot = try await finishRequestAndWaitForClose(exchange: exchange, sink: sink)
             try assertCompletion(
                 clientResult: clientResult,
                 originSentBytes: originSentBytes,
                 payloadSize: payloadSize,
-                snapshot: sink.snapshot
+                snapshot: finalSnapshot
             )
         } catch {
             writeFailureDiagnostic(exchange: exchange, origin: origin, sink: sink, error: error)
             throw error
         }
+    }
+
+    private func finishRequestAndWaitForClose(
+        exchange: Phase3StalledWebSocketExchange,
+        sink: WebSocketRecordingSink
+    ) async throws -> WebSocketRecordingSink.Snapshot {
+        try await exchange.endRequest()
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(3))
+        while sink.snapshot.closes.isEmpty {
+            guard clock.now < deadline else { throw Phase2FixtureError.deadlineExceeded }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        return sink.snapshot
     }
 
     private func assertStall(

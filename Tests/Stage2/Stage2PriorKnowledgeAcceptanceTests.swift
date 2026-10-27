@@ -91,6 +91,7 @@ final class Stage2PriorKnowledgeAcceptanceTests: XCTestCase {
         let raw = Release022Events()
         var proxy: ProxyServer?
         var client: Channel?
+        var phase = "setup"
         do {
             try await origin.start()
             let server = try priorKnowledgeProxy(group: group, originPort: origin.port, raw: raw, inspector: inspector)
@@ -100,29 +101,44 @@ final class Stage2PriorKnowledgeAcceptanceTests: XCTestCase {
             let connection = try await connectPriorKnowledge(group: group, port: port, muxPromise: muxPromise)
             client = connection
             let mux = try phase4BoundedWait(muxPromise.futureResult)
+            phase = "exchange"
             try await assertPriorKnowledgeExchange(mux: mux, origin: origin, events: events, connection: connection)
+            phase = "client-close"
             try await connection.close().get()
+            phase = "proxy-stop"
             try await server.stop()
+            phase = "origin-stop"
             try await origin.stop()
             let shutdown = await inspector.shutdown()
             XCTAssertTrue(shutdown.drained)
+            phase = "group-shutdown"
             try await group.shutdownGracefully()
         } catch {
-            let failure = error
-            do {
-                if let client, client.isActive {
-                    try await client.close().get()
-                }; if let proxy {
-                    try await proxy.stop()
-                }
-            } catch { XCTFail("Prior-knowledge proxy teardown failed: \(error)") }
-            do { try await origin.stop() } catch { XCTFail("Prior-knowledge origin teardown failed: \(error)") }
-            let shutdown = await inspector.shutdown()
-            XCTAssertTrue(shutdown.drained)
-            do { try await group.shutdownGracefully() } catch {
-                XCTFail("Prior-knowledge group teardown failed: \(error)")
+            XCTFail("Prior-knowledge \(phase) failed: \(error)")
+            await teardownAfterFailure(client: client, proxy: proxy, origin: origin, inspector: inspector, group: group)
+            throw error
+        }
+    }
+
+    private func teardownAfterFailure(
+        client: Channel?,
+        proxy: ProxyServer?,
+        origin: Stage2ClearH2Origin,
+        inspector: HTTPInspector,
+        group: MultiThreadedEventLoopGroup
+    ) async {
+        do {
+            if let client, client.isActive {
+                try await client.close().get()
+            }; if let proxy {
+                try await proxy.stop()
             }
-            throw failure
+        } catch { XCTFail("Prior-knowledge proxy teardown failed: \(error)") }
+        do { try await origin.stop() } catch { XCTFail("Prior-knowledge origin teardown failed: \(error)") }
+        let shutdown = await inspector.shutdown()
+        XCTAssertTrue(shutdown.drained)
+        do { try await group.shutdownGracefully() } catch {
+            XCTFail("Prior-knowledge group teardown failed: \(error)")
         }
     }
 

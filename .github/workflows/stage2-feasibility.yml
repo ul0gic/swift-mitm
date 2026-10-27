@@ -33,7 +33,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Record candidate and prepare proposed Crypto 5 graph
+      - name: Record candidate and validate the committed Crypto5 requirement
         run: |
           mkdir -p evidence
           git rev-parse HEAD > evidence/candidate-sha.txt
@@ -44,14 +44,10 @@ jobs:
           grep -Fx 'Build version 27A9275' evidence/xcode.txt
           python3 - <<'PY'
           from pathlib import Path
-          manifest = Path('Package.swift')
-          before = manifest.read_text()
-          old = '.package(url: "https://github.com/apple/swift-crypto.git", from: "4.0.0")'
-          new = '.package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.0")'
-          assert before.count(old) == 1, 'Probe requires the reviewed Crypto4 baseline'
-          manifest.write_text(before.replace(old, new))
+          source = Path('Package.swift').read_text()
+          requirement = '.package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.0")'
+          assert source.count(requirement) == 1, 'Probe requires the committed Crypto5 baseline'
           PY
-          git diff -- Package.swift > evidence/proposed-graph.patch
       - name: Resolve and build combined graph
         working-directory: Packages/SwiftMITMHTTP3
         run: |
@@ -121,7 +117,7 @@ jobs:
           if-no-files-found: error
 
   core-compatibility:
-    name: Standalone Crypto5 core with unchanged non-Crypto pins
+    name: Standalone Crypto5 core with committed pins
     needs: combined-graph
     runs-on: xcode-27
     timeout-minutes: 30
@@ -133,7 +129,7 @@ jobs:
         with:
           name: stage2-feasibility-${{ github.sha }}
           path: graph-evidence/
-      - name: Resolve standalone Crypto5 and prove trust and octet compatibility
+      - name: Prove standalone trust and octet compatibility with committed pins
         run: |
           mkdir -p evidence
           test "$(cat graph-evidence/candidate-sha.txt)" = "$GITHUB_SHA"
@@ -141,14 +137,11 @@ jobs:
           cp Package.resolved evidence/baseline-Package.resolved
           python3 - <<'PY_MANIFEST'
           from pathlib import Path
-          manifest = Path('Package.swift')
-          source = manifest.read_text()
-          old = '.package(url: "https://github.com/apple/swift-crypto.git", from: "4.0.0")'
-          new = '.package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.0")'
-          assert source.count(old) == 1
-          manifest.write_text(source.replace(old, new))
+          source = Path('Package.swift').read_text()
+          requirement = '.package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.0")'
+          assert source.count(requirement) == 1, 'Core requires the committed Crypto5 baseline'
           PY_MANIFEST
-          swift package resolve 2>&1 | tee evidence/core-resolve.log
+          swift build --build-tests --force-resolved-versions -Xswiftc -warnings-as-errors 2>&1 | tee evidence/core-build.log
           cp Package.resolved evidence/core-Package.resolved
           python3 - <<'PY_PINS'
           import json
@@ -160,12 +153,11 @@ jobs:
           assert resolved['swift-crypto']['state']['version'].startswith('5.')
           changed = sorted(
               identity for identity in baseline.keys() | resolved.keys()
-              if identity != 'swift-crypto' and baseline.get(identity) != resolved.get(identity)
+              if baseline.get(identity) != resolved.get(identity)
           )
-          assert not changed, f'Standalone non-Crypto dependency drift: {changed}'
+          assert not changed, f'Standalone dependency drift: {changed}'
           PY_PINS
-          swift build --build-tests --force-resolved-versions -Xswiftc -warnings-as-errors 2>&1 | tee evidence/core-build.log
-          swift test --skip-build --parallel --num-workers 1 \
+          swift test --skip-build --force-resolved-versions --parallel --num-workers 1 \
             --filter 'Release022PublicTrustTests|Release022PublicHTTP1OctetTests' \
             --xunit-output evidence/core-results.xml 2>&1 | tee evidence/core-tests.log
           python3 - <<'PY_RESULTS'

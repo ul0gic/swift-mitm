@@ -11,13 +11,16 @@ extension HTTP1MessageParser {
         case invalid
     }
 
-    static func parseHeaderFields(_ lines: [String]) -> [HTTPHeaderField] {
-        lines.compactMap { line in
+    static func parseHeaderFields(_ lines: [String]) -> [HTTPHeaderField]? {
+        var fields: [HTTPHeaderField] = []
+        for line in lines {
             guard let separator = line.firstIndex(of: ":") else { return nil }
             let name = line[line.startIndex..<separator].trimmingASCIIWhitespace()
+            guard !name.isEmpty else { return nil }
             let value = line[line.index(after: separator)...].trimmingASCIIWhitespace()
-            return name.isEmpty ? nil : HTTPHeaderField(name: name, value: value)
+            fields.append(HTTPHeaderField(name: name, value: value))
         }
+        return fields
     }
 
     static func isWebSocketUpgrade(_ headers: [HTTPHeaderField]) -> Bool {

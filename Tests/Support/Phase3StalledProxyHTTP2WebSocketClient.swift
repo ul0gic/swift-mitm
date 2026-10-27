@@ -41,6 +41,13 @@ final class Phase3StalledWebSocketExchange: @unchecked Sendable {
         try await connection.setOption(ChannelOptions.autoRead, value: true).map { self.connection.read() }.get()
     }
 
+    func endRequest() async throws {
+        try await stream.writeAndFlush(HTTP2Frame.FramePayload.data(.init(
+            data: .byteBuffer(ByteBuffer()),
+            endStream: true
+        ))).get()
+    }
+
     func shutdown() async {
         if stream.isActive {
             try? await stream.close().get()

@@ -247,7 +247,9 @@ final class PublicProxyWebSocketTests: XCTestCase {
         XCTAssertEqual(snapshot.closes.first?.reason, "done")
         XCTAssertEqual(snapshot.eventKinds, [
             .requestHead,
+            .requestEnd,
             .responseHead,
+            .responseEnd,
             .webSocketOpen,
             .webSocketFrame(direction: "clientToServer", opcode: 0x1),
             .webSocketFrame(direction: "serverToClient", opcode: 0x2),

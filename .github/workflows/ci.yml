@@ -30,7 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        partition: [behavior, compatibility, resources]
+        partition: [behavior, compatibility, resources, browser]
         os: [xcode-27]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -47,25 +47,34 @@ jobs:
           grep -Fx 'Build version 27A9275' evidence/xcode.txt
           grep -Eq 'Swift version 6\.4([ .]|$)' evidence/swift.txt
       - name: Set up independent peer Python
-        if: matrix.partition == 'compatibility'
+        if: matrix.partition == 'compatibility' || matrix.partition == 'browser'
         id: peer-python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: '3.14.9'
           architecture: arm64
       - name: Install pinned independent clients
-        if: matrix.partition == 'compatibility'
+        if: matrix.partition == 'compatibility' || matrix.partition == 'browser'
         env:
           PEER_PYTHON: ${{ steps.peer-python.outputs.python-path }}
+          PARTITION: ${{ matrix.partition }}
         run: |
           client_python="$PEER_PYTHON"
           "$client_python" --version | grep -E '^Python 3\.14\.'
           "$client_python" -m venv "$RUNNER_TEMP/clients"
-          "$RUNNER_TEMP/clients/bin/python" -m pip install --only-binary=:all: \
-            grpcio==1.85.0 cryptography==50.0.2 playwright==1.64.1 \
-            typing-extensions==4.16.0 cffi==2.1.1 pycparser==3.12 pyee==14.0.0 greenlet==3.5.6
+          packages=(cryptography==50.0.2 typing-extensions==4.16.0 cffi==2.1.1 pycparser==3.12)
+          if [[ "$PARTITION" == browser ]]; then
+            packages+=(playwright==1.64.1 pyee==14.0.0 greenlet==3.5.6)
+          else
+            packages+=(grpcio==1.85.0)
+          fi
+          "$RUNNER_TEMP/clients/bin/python" -m pip install --only-binary=:all: "${packages[@]}"
           "$RUNNER_TEMP/clients/bin/python" --version > evidence/python.txt
           "$RUNNER_TEMP/clients/bin/python" -m pip freeze > evidence/python-packages.txt
+          echo "SWIFTMITM_CLIENT_PYTHON=$RUNNER_TEMP/clients/bin/python" >> "$GITHUB_ENV"
+      - name: Install pinned browser
+        if: matrix.partition == 'browser'
+        run: |
           case "$(uname -m)" in
             arm64) platform=mac-arm64 ;;
             x86_64) platform=mac-x64 ;;
@@ -77,7 +86,6 @@ jobs:
           chromium="$RUNNER_TEMP/chromium/chrome-$platform/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
           "$chromium" --version > evidence/chromium.txt
           echo "SWIFTMITM_CHROMIUM_PATH=$chromium" >> "$GITHUB_ENV"
-          echo "SWIFTMITM_CLIENT_PYTHON=$RUNNER_TEMP/clients/bin/python" >> "$GITHUB_ENV"
       - name: Download independently built public consumer
         if: matrix.partition == 'compatibility'
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
@@ -134,10 +142,11 @@ jobs:
           compatibility = {'AppleTLSProxyCompatibilityTests', 'Phase4PublicTransparentTLSTests',
                            'ProxyDiagnosticTests', 'PublicProxyHTTP2WebSocketTests',
                            'Release022PublicTrustTests', 'Release022ClientCompatibilityTests',
-                           'Release022BrowserCompatibilityTests', 'Release022IndependentGRPCCompatibilityTests',
+                           'Release022IndependentGRPCCompatibilityTests',
                            'Release022ConsumerCompatibilityTests', 'Stage2ConsumerCompatibilityTests',
                            'Stage2PassiveTLSCompatibilityTests', 'Stage2HTTP2FaultCompatibilityTests'}
-          required = resources | compatibility | {'Release022PublicHTTP1Tests',
+          browser = {'Release022BrowserCompatibilityTests'}
+          required = resources | compatibility | browser | {'Release022PublicHTTP1Tests',
                                                   'Release022PublicHTTP1ForwardingTests',
                                                   'Release022PublicHTTP1OctetTests',
                                                   'Release022PublicHTTP2StreamingTests',
@@ -217,11 +226,12 @@ jobs:
           partitions = collections.defaultdict(list)
           for test in sorted(tests):
               cls = test.split('.', 1)[1].split('/', 1)[0]
-              partition = 'resources' if cls in resources else 'compatibility' if cls in compatibility else 'behavior'
+              partition = ('resources' if cls in resources else 'compatibility' if cls in compatibility
+                           else 'browser' if cls in browser else 'behavior')
               partitions[partition].append(test)
           assigned = [test for methods in partitions.values() for test in methods]
           assert collections.Counter(assigned) == collections.Counter(tests), 'Partition omissions or duplicates'
-          for partition in ('behavior', 'compatibility', 'resources'):
+          for partition in ('behavior', 'compatibility', 'resources', 'browser'):
               assert partitions[partition], f'Empty required partition: {partition}'
               (root / f'{partition}-tests.txt').write_text('\n'.join(partitions[partition]) + '\n')
           selected = partitions[os.environ['PARTITION']]

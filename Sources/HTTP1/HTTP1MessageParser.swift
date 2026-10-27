@@ -262,7 +262,10 @@ final class HTTP1MessageParser {
                 }
                 lineBytes.removeAll(keepingCapacity: true)
                 if isBlankLine {
-                    let trailers = Self.parseHeaderFields(trailerLines)
+                    guard let trailers = Self.parseHeaderFields(trailerLines) else {
+                        fail(emit: emit)
+                        return end
+                    }
                     if !trailers.isEmpty {
                         emit(.trailers(trailers))
                     }

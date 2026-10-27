@@ -119,6 +119,15 @@ extension HTTPControlConfiguration {
         length: Int,
         encoding: String?
     ) -> [HTTPHeaderField] {
+        var result = removingReplacedBodyFields(headers)
+        result.append(HTTPHeaderField(name: "content-length", value: String(length)))
+        if let encoding {
+            result.append(HTTPHeaderField(name: "content-encoding", value: encoding))
+        }
+        return result
+    }
+
+    static func removingReplacedBodyFields(_ headers: [HTTPHeaderField]) -> [HTTPHeaderField] {
         let stale: Set = [
             "content-length",
             "transfer-encoding",
@@ -133,11 +142,6 @@ extension HTTPControlConfiguration {
             "accept-ranges",
             "trailer"
         ]
-        var result = headers.filter { !stale.contains($0.name.lowercased()) }
-        result.append(HTTPHeaderField(name: "content-length", value: String(length)))
-        if let encoding {
-            result.append(HTTPHeaderField(name: "content-encoding", value: encoding))
-        }
-        return result
+        return headers.filter { !stale.contains($0.name.lowercased()) }
     }
 }

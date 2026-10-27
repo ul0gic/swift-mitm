@@ -61,7 +61,6 @@ extension ExplicitHTTPProxyHandler {
             body: exchange.responseControlBody
         )
         do {
-            guard trailers?.isEmpty ?? true else { throw HTTPControlError.unsupportedEdit }
             let decision = try exchange.pendingResponseBodyDecision ?? snapshot.evaluate(message)
             exchange.pendingResponseBodyDecision = nil
             applyControlledResponse(decision, exchange: exchange, head: head, message: message)
@@ -118,10 +117,17 @@ extension ExplicitHTTPProxyHandler {
         case .abort, .breakpoint, .route:
             controlFailed(exchange, error: HTTPControlError.unsupportedEdit)
             return
-        case let .replaceBody(body, _, _, _): replacement = body
+        case let .replaceBody(body, _, _, _):
+            replacement = body
+            exchange.responseControlTrailers = exchange.responseControlTrailers.map {
+                HTTPHeaders(HTTPControlConfiguration.removingReplacedBodyFields(Self.fields($0)).map {
+                    ($0.name, $0.value)
+                })
+            }
         case let .respond(status, _, body):
             effective.status = HTTPResponseStatus(statusCode: status)
             replacement = body
+            exchange.responseControlTrailers = nil
             markOriginalResponseReplaced(exchange)
         case .forward, .editHeaders, .fault: break
         }
@@ -194,6 +200,13 @@ extension ExplicitHTTPProxyHandler {
         context: ChannelHandlerContext
     ) {
         exchange.responseControlHead = nil
+        let trailers = exchange.responseControlTrailers.map {
+            Self.hopHeaders($0, upgrading: false, appendVia: false, excluding: exchange.responseConnectionTokens)
+        }
+        var effective = effective
+        if !typedHTTP2, let trailers, !trailers.isEmpty {
+            effective.headers.remove(name: "content-length")
+        }
         forwardResponseHead(effective, exchange: exchange, context: context)
         let body = replacement ?? exchange.responseControlBody
         if !body.isEmpty {
@@ -211,11 +224,17 @@ extension ExplicitHTTPProxyHandler {
         exchange.responseControlBody.removeAll(keepingCapacity: false)
         if exchange.responseControlEnded {
             let complete = {
+                if let trailers, !trailers.isEmpty {
+                    (self.sink as? ObservationCaptureSink)?.receiveEffective(.responseTrailers(
+                        requestID: exchange.id,
+                        headers: Self.fields(trailers)
+                    ))
+                }
                 (self.sink as? ObservationCaptureSink)?.receiveEffective(.responseEnd(
                     requestID: exchange.id,
                     truncated: false
                 ))
-                context.writeAndFlush(self.wrapOutboundOut(.end(exchange.responseControlTrailers)))
+                context.writeAndFlush(self.wrapOutboundOut(.end(trailers)))
                     .assumeIsolated()
                     .whenComplete { _ in self.finish(exchange) }
             }

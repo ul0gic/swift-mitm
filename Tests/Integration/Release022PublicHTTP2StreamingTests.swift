@@ -114,7 +114,7 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
             try upstream.write(.data(.init(data: .byteBuffer(ByteBuffer(string: "done")), endStream: true)))
             try client.wait { $0.contains(where: release022IsTerminalData) }
             _ = try sink.wait { $0.contains(where: release022IsResponseEnd) }
-            try client.write(.windowUpdate(windowSizeIncrement: 1024))
+            try client.writeLateWindowUpdate()
             try client.write(.data(.init(data: .byteBuffer(ByteBuffer(string: "still-open")), endStream: true)))
             try upstream.wait { self.dataBytes($0) == Array("still-open".utf8) }
             let events = try sink.wait { $0.contains(where: release022IsRequestEnd) }
@@ -132,6 +132,12 @@ final class Release022PublicHTTP2StreamingTests: XCTestCase {
                     false
                 }
             })
+            let sibling = try self.newStream(multiplexer)
+            try sibling.write(.headers(.init(headers: self.requestHeaders(port: origin.port), endStream: true)))
+            let siblingOrigin = try origin.stream(1)
+            try siblingOrigin.wait { !$0.isEmpty }
+            try siblingOrigin.write(.headers(.init(headers: HPACKHeaders([(":status", "204")]), endStream: true)))
+            try sibling.wait { $0.contains(where: release022IsTerminalHeader) }
         }
     }
 

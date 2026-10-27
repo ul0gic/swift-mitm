@@ -95,14 +95,7 @@ final class HTTP2PairedStreamTerminationTests: XCTestCase {
         let finalData = data([0x82, 0x00], endStream: true)
 
         channels.response.pipeline.fireChannelRead(finalData)
-        channels.response.pipeline.fireErrorCaught(NIOHTTP2Errors.badStreamStateTransition(
-            from: .halfClosedRemoteLocalActive
-        ))
         channels.response.pipeline.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
-        channels.response.pipeline.fireErrorCaught(NIOHTTP2Errors.streamClosed(
-            streamID: 1,
-            errorCode: .cancel
-        ))
 
         XCTAssertTrue(channels.request.isActive)
         XCTAssertTrue(channels.response.isActive)
@@ -117,6 +110,37 @@ final class HTTP2PairedStreamTerminationTests: XCTestCase {
         XCTAssertEqual(Array(buffer.readableBytesView), [0x82, 0x00])
         XCTAssertTrue(frame.endStream)
         XCTAssertTrue(channels.request.isActive)
+    }
+
+    func testErrorsAfterFinalDataTerminatePairAndPreserveSibling() throws {
+        let errors: [Error] = [
+            NIOHTTP2Errors.badStreamStateTransition(from: .halfClosedRemoteLocalActive),
+            NIOHTTP2Errors.streamClosed(streamID: 1, errorCode: .cancel)
+        ]
+        for error in errors {
+            let failed = try makeGluedChannels()
+            let sibling = try makeGluedChannels()
+            defer {
+                finish(failed)
+                finish(sibling)
+            }
+            try failed.request.writeInbound(extendedConnectHeaders())
+            try failed.response.writeInbound(responseHeaders(status: 200))
+            _ = try failed.response.readOutbound(as: HTTP2Frame.FramePayload.self)
+            _ = try failed.request.readOutbound(as: HTTP2Frame.FramePayload.self)
+            failed.response.pipeline.fireChannelRead(data([0x82, 0x00], endStream: true))
+            failed.response.pipeline.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
+            failed.response.pipeline.fireErrorCaught(error)
+
+            XCTAssertFalse(failed.request.isActive)
+            XCTAssertFalse(failed.response.isActive)
+            XCTAssertTrue(sibling.request.isActive)
+            XCTAssertTrue(sibling.response.isActive)
+            try sibling.request.writeInbound(ordinaryRequestHeaders())
+            try sibling.response.writeInbound(responseHeaders(status: 200))
+            XCTAssertNotNil(try sibling.response.readOutbound(as: HTTP2Frame.FramePayload.self))
+            XCTAssertNotNil(try sibling.request.readOutbound(as: HTTP2Frame.FramePayload.self))
+        }
     }
 
     func testEndStreamInsideWebSocketFrameClosesBothPairedChildren() throws {

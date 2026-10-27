@@ -1,6 +1,6 @@
 # Native dependency patch candidates
 
-These source patches are experimental. Candidate `0bfc2cb` compiled remotely and passed thirteen of sixteen transport scenarios, including field-octet fidelity. Follow-on cancellation cleanup and Initial-rejection repairs await the next remote run. They do not establish a production memory bound. Apply each patch with strip level 1 to the exact upstream revision below; publish the resulting reviewed trees as immutable dependency revisions. Preserve each repository's license, notices, contributors file and existing source headers.
+These source patches are experimental. Candidate `2c88366` compiled remotely and passed fifteen of sixteen transport scenarios, including field-octet fidelity, SNI rejection and storage-refusal recovery. A follow-on local cancellation repair awaits remote proof. They do not establish a production memory bound. Apply each patch with strip level 1 to the exact upstream revision below; publish the resulting reviewed trees as immutable dependency revisions. Preserve each repository's license, notices, contributors file and existing source headers.
 
 | Patch | Upstream repository | Revision |
 |---|---|---|
@@ -74,4 +74,6 @@ QPACK values now retain raw bytes through literal/Huffman coding, static/dynamic
 
 Terminal packet cleanup stops producers, drains pending UDP output, removes handlers, disposes residual coalescers and only then seals the storage barrier. This preserves locally generated rejection packets during ordinary and forced closure without waiting for acknowledgements. Request-initialization failures use the direction-appropriate HTTP3 code.
 
-The Initial-rejection patches credit each received datagram before synchronous TLS processing, retaining the same three-times amplification bound. SwiftTLS exposes its existing alert classification through a read-only SPI byte; SwiftNetwork carries that structured crypto error into QUIC. This lets rejection of the first ClientHello emit the correct peer-visible alert without guessing from errno or error text. These follow-on patches await remote validation.
+The Initial-rejection patches credit each received datagram before synchronous TLS processing, retaining the same three-times amplification bound. SwiftTLS exposes its existing alert classification through a read-only SPI byte; SwiftNetwork carries that structured crypto error into QUIC. This lets rejection of the first ClientHello emit the correct peer-visible alert without guessing from errno or error text. Candidate `2c88366` proved the peer-visible SNI alert and positive SNI cases.
+
+Local receive cancellation now consumes internal terminal state without reporting a clean peer EOF. Real peer FIN and reset handling remain unchanged. This prevents disposal of a partial HTTP3 DATA frame from falsely reporting truncation and closing healthy siblings; the cancellation-churn scenario remains unverified for this revision.

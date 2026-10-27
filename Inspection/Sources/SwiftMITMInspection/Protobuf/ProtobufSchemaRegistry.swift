@@ -27,7 +27,7 @@ public struct ProtobufSchemaLimits: Sendable {
 
 public final class ProtobufSchemaSnapshot: Sendable {
     public let digest: String
-    public var messageNames: [String] { messages.keys.sorted() }
+    public var messageNames: [String] { messages.keys.map { String($0.dropFirst()) }.sorted() }
     private let messages: [String: ProtobufMessageSchema]
     private let enums: [String: [Int32: String]]
     private let methods: [String: (input: String, output: String)]
@@ -55,10 +55,10 @@ public final class ProtobufSchemaSnapshot: Sendable {
     public func messageName(methodPath: String, response: Bool, explicitName: String? = nil) -> String? {
         if let explicitName {
             let name = explicitName.hasPrefix(".") ? explicitName : "." + explicitName
-            return messages[name] == nil ? nil : name
+            return messages[name] == nil ? nil : String(name.dropFirst())
         }
         guard let method = methods[methodPath] else { return nil }
-        return response ? method.output : method.input
+        return String((response ? method.output : method.input).dropFirst())
     }
 
     public func decode(

@@ -107,6 +107,11 @@ final class Release022RunnerTrust {
     }
 
     private func security(_ arguments: [String]) throws -> String {
-        try release022RunProcess(executable: "/usr/bin/security", arguments: arguments)
+        try release022RunProcess(
+            executable: "/usr/bin/security",
+            arguments: arguments,
+            timeout: 30,
+            phase: "security \(arguments[0])"
+        )
     }
 }

@@ -10,7 +10,12 @@ final class Stage2ConsumerCompatibilityTests: XCTestCase {
             throw Release022ClientError.missingEnvironment("SWIFTMITM_CLIENT_PYTHON")
         }
         let script = Release022ExternalPeer.clientsDirectory.appendingPathComponent("Stage2/lab_acceptance.py")
-        let output = try release022RunProcess(executable: python, arguments: [script.path, "--binary", binary])
+        let output = try release022RunProcess(
+            executable: python,
+            arguments: [script.path, "--binary", binary],
+            timeout: 300,
+            phase: "interception-lab"
+        )
         let report = try JSONDecoder().decode([String: Bool].self, from: Data(output.utf8))
         XCTAssertEqual(report, [
             "sse": true,
