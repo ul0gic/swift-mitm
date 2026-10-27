@@ -34,7 +34,11 @@ final class Stage2ReplayBoundaryAcceptanceTests: XCTestCase {
             XCTAssertEqual(peer.origin.acceptedConnections, 1)
             XCTAssertEqual(peer.origin.received.bytes, committed)
             XCTAssertFalse(events.events.contains { event in
-                if case .end = event { true } else { false }
+                if case .end = event {
+                    true
+                } else {
+                    false
+                }
             })
         }
     }
@@ -43,29 +47,7 @@ final class Stage2ReplayBoundaryAcceptanceTests: XCTestCase {
         try await stage2WithHTTPOrigin { peer in
             let destination = try XCTUnwrap(URL(string: "http://127.0.0.1:\(peer.origin.port)/replayed"))
             let source = ReplaySource(requestID: UUID(), representation: .original)
-            let unsupported: [(String, [HTTPHeaderField])] = [
-                ("CONNECT", []),
-                ("GET", [
-                    HTTPHeaderField(name: "Connection", value: "Upgrade"),
-                    HTTPHeaderField(name: "Upgrade", value: "websocket")
-                ])
-            ]
-            for (method, headers) in unsupported {
-                let request = ReplayRequest(
-                    source: source,
-                    destination: destination,
-                    method: method,
-                    headers: headers,
-                    body: [],
-                    bodyIsComplete: true
-                )
-                do {
-                    _ = try await peer.proxy.replay(request, responseSink: Stage2ReplayEvents())
-                    XCTFail("Unsupported session reached replay")
-                } catch ReplayError.unsupportedSession {} catch { throw error }
-            }
-            XCTAssertEqual(peer.origin.acceptedConnections, 0)
-            XCTAssertTrue(peer.origin.requests.isEmpty)
+            try await verifyUnsupportedSessions(peer: peer, source: source, destination: destination)
             let credentials = [
                 HTTPHeaderField(name: "Authorization", value: "Bearer synthetic-same-origin"),
                 HTTPHeaderField(name: "Cookie", value: "session=synthetic-same-origin"),
@@ -109,5 +91,35 @@ final class Stage2ReplayBoundaryAcceptanceTests: XCTestCase {
             XCTAssertEqual(peer.origin.acceptedConnections, 1)
             XCTAssertEqual(peer.origin.requests.count, 1)
         }
+    }
+
+    private func verifyUnsupportedSessions(
+        peer: Stage2HTTPContext,
+        source: ReplaySource,
+        destination: URL
+    ) async throws {
+        let unsupported: [(String, [HTTPHeaderField])] = [
+            ("CONNECT", []),
+            ("GET", [
+                HTTPHeaderField(name: "Connection", value: "Upgrade"),
+                HTTPHeaderField(name: "Upgrade", value: "websocket")
+            ])
+        ]
+        for (method, headers) in unsupported {
+            let request = ReplayRequest(
+                source: source,
+                destination: destination,
+                method: method,
+                headers: headers,
+                body: [],
+                bodyIsComplete: true
+            )
+            do {
+                _ = try await peer.proxy.replay(request, responseSink: Stage2ReplayEvents())
+                XCTFail("Unsupported session reached replay")
+            } catch ReplayError.unsupportedSession {} catch { throw error }
+        }
+        XCTAssertEqual(peer.origin.acceptedConnections, 0)
+        XCTAssertTrue(peer.origin.requests.isEmpty)
     }
 }

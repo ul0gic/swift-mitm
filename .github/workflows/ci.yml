@@ -330,8 +330,11 @@ jobs:
       - name: Prepare qualified runner hostname for native HTTP2 comparison
         if: matrix.partition == 'compatibility'
         run: |
-          test -x /sbin/ipconfig
-          address="$(/sbin/ipconfig getifaddr en0)"
+          cp Tests/Support/Release022RunnerInterface.swift "$RUNNER_TEMP/runner-interface.swift"
+          cat >> "$RUNNER_TEMP/runner-interface.swift" <<'SWIFT'
+          print(try release022RunnerIPv4())
+          SWIFT
+          address="$(swift "$RUNNER_TEMP/runner-interface.swift")"
           hostname="swiftmitm-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.test"
           python3 - "$address" "$hostname" "$RUNNER_TEMP/swiftmitm-hosts-line.candidate" <<'PY'
           import ipaddress, pathlib, sys

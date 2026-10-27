@@ -19,12 +19,16 @@ private final class AggregateInspectionGate: InspectionEventSink {
 
     func receive(_ event: InspectionEvent) {
         let block = state.withLockedValue { state in
-            if case .diagnostic(.capacityExceeded) = event.payload { state.losses += 1 }
+            if case .diagnostic(.capacityExceeded) = event.payload {
+                state.losses += 1
+            }
             guard case .head = event.payload, !state.entered, !state.released else { return false }
             state.entered = true
             return true
         }
-        if block { signal.wait() }
+        if block {
+            signal.wait()
+        }
     }
 
     func release() {
@@ -33,7 +37,9 @@ private final class AggregateInspectionGate: InspectionEventSink {
             state.released = true
             return true
         }
-        if wake { signal.signal() }
+        if wake {
+            signal.signal()
+        }
     }
 }
 
@@ -134,8 +140,12 @@ final class Stage2AggregateCapacityAcceptanceTests: XCTestCase {
             try origin.start()
             let authority = try CertificateAuthority.generate().authority
             for index in 0..<5 {
-                legs.append(try await makeLeg(
-                    index: index, origin: origin, group: group, authority: authority, admission: admission
+                await legs.append(try makeLeg(
+                    index: index,
+                    origin: origin,
+                    group: group,
+                    authority: authority,
+                    admission: admission
                 ))
             }
             try await exerciseBoundary(legs: legs, admission: admission)
@@ -162,19 +172,17 @@ final class Stage2AggregateCapacityAcceptanceTests: XCTestCase {
         authority: CertificateAuthority,
         admission: ResourceAdmissionController
     ) async throws -> Leg {
-        let budget = try InspectionMemoryBudget(maximumBytes: Self.localLimit, admission: admission)
-        let gate = AggregateInspectionGate()
-        let inspector = try HTTPInspector(configuration: InspectionConfiguration(
-            budget: budget,
-            maximumQueuedBytes: Self.localLimit,
-            maximumQueuedItems: 65_536,
-            maximumActiveBodies: 2
-        ), sink: gate)
+        let (budget, gate, inspector) = try makeObservation(admission: admission)
         let capture = CountingSink()
         let proxy = ProxyServer(
-            certificateAuthority: authority, sink: capture, group: group,
-            egressPolicy: .init(allowInternal: true), ingress: .explicitHTTP,
-            captureBodyLimit: 0, observationSink: inspector, admission: admission
+            certificateAuthority: authority,
+            sink: capture,
+            group: group,
+            egressPolicy: .init(allowInternal: true),
+            ingress: .explicitHTTP,
+            captureBodyLimit: 0,
+            observationSink: inspector,
+            admission: admission
         )
         var client: Channel?
         do {
@@ -185,11 +193,21 @@ final class Stage2AggregateCapacityAcceptanceTests: XCTestCase {
             let upstream = try origin.waitForConnection(at: index)
             _ = try upstream.received.wait { $0.suffix(4) == [13, 10, 13, 10] }
             try await stage2Await { gate.entered }
-            try await upstream.channel.writeAndFlush(ByteBuffer(string:
-                "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n"
-                    + "Content-Length: \(Self.bodySize)\r\n\r\n")).get()
-            return Leg(proxy: proxy, inspector: inspector, budget: budget, gate: gate, capture: capture,
-                       client: channel, upstream: upstream.channel, receiver: receiver)
+            try await upstream.channel
+                .writeAndFlush(ByteBuffer(string:
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n"
+                        + "Content-Length: \(Self.bodySize)\r\n\r\n"))
+                .get()
+            return Leg(
+                proxy: proxy,
+                inspector: inspector,
+                budget: budget,
+                gate: gate,
+                capture: capture,
+                client: channel,
+                upstream: upstream.channel,
+                receiver: receiver
+            )
         } catch {
             gate.release()
             if let client, client.isActive {
@@ -202,8 +220,25 @@ final class Stage2AggregateCapacityAcceptanceTests: XCTestCase {
         }
     }
 
+    private func makeObservation(
+        admission: ResourceAdmissionController
+    ) throws -> (InspectionMemoryBudget, AggregateInspectionGate, HTTPInspector) {
+        let budget = try InspectionMemoryBudget(maximumBytes: Self.localLimit, admission: admission)
+        let gate = AggregateInspectionGate()
+        let inspector = try HTTPInspector(configuration: InspectionConfiguration(
+            budget: budget,
+            maximumQueuedBytes: Self.localLimit,
+            maximumQueuedItems: 65_536,
+            maximumActiveBodies: 2
+        ), sink: gate)
+        return (budget, gate, inspector)
+    }
+
     private func connect(
-        port: Int, originPort: Int, group: MultiThreadedEventLoopGroup, receiver: AggregateReceiver
+        port: Int,
+        originPort: Int,
+        group: MultiThreadedEventLoopGroup,
+        receiver: AggregateReceiver
     ) async throws -> Channel {
         try await ClientBootstrap(group: group)
             .connectTimeout(.seconds(2))
@@ -216,7 +251,8 @@ final class Stage2AggregateCapacityAcceptanceTests: XCTestCase {
                     ])
                 }
             }
-            .connect(host: "127.0.0.1", port: port).get()
+            .connect(host: "127.0.0.1", port: port)
+            .get()
     }
 
     private func exerciseBoundary(legs: [Leg], admission: ResourceAdmissionController) async throws {
@@ -241,7 +277,7 @@ final class Stage2AggregateCapacityAcceptanceTests: XCTestCase {
                 if legs[index].inspector.observationLossDetected {
                     var locals = [local]
                     for other in legs.indices where other != index {
-                        locals.append(await legs[other].inspector.drain(timeout: .zero))
+                        await locals.append(legs[other].inspector.drain(timeout: .zero))
                     }
                     try recordBoundary(before: before, locals: locals, sent: sent, baseline: baseline)
                     rejected = index
@@ -260,7 +296,10 @@ final class Stage2AggregateCapacityAcceptanceTests: XCTestCase {
     }
 
     private func recordBoundary(
-        before: Int, locals: [InspectionDrainResult], sent: [Int], baseline: UInt64
+        before: Int,
+        locals: [InspectionDrainResult],
+        sent: [Int],
+        baseline: UInt64
     ) throws {
         // Local byte/item headroom isolates the shared limit; the extra unit is one wire chunk.
         XCTAssertGreaterThan(before, Self.sharedLimit - 1_048_576)
@@ -281,7 +320,10 @@ final class Stage2AggregateCapacityAcceptanceTests: XCTestCase {
     }
 
     private func finishBodies(
-        legs: [Leg], sent: [Int], chunk: ByteBuffer, deadline: ContinuousClock.Instant
+        legs: [Leg],
+        sent: [Int],
+        chunk: ByteBuffer,
+        deadline: ContinuousClock.Instant
     ) async throws {
         var completed = sent
         let clock = ContinuousClock()
@@ -306,20 +348,28 @@ final class Stage2AggregateCapacityAcceptanceTests: XCTestCase {
 
     private func close(_ legs: [Leg]) async throws {
         for leg in legs { leg.gate.release() }
-        var firstFailure: (any Error)?
+        var firstFailure: any Error?
         for leg in legs {
             do {
-                if leg.client.isActive { try await leg.client.close().get() }
+                if leg.client.isActive {
+                    try await leg.client.close().get()
+                }
             } catch {
-                if firstFailure == nil { firstFailure = error }
+                if firstFailure == nil {
+                    firstFailure = error
+                }
             }
             do { try await leg.proxy.stop() } catch {
-                if firstFailure == nil { firstFailure = error }
+                if firstFailure == nil {
+                    firstFailure = error
+                }
             }
             let stopped = await leg.inspector.shutdown()
             XCTAssertTrue(stopped.drained)
             XCTAssertEqual(leg.budget.retainedBytes, 0)
         }
-        if let firstFailure { throw firstFailure }
+        if let firstFailure {
+            throw firstFailure
+        }
     }
 }

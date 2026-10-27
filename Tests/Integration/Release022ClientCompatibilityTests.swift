@@ -84,14 +84,8 @@ final class Release022ClientCompatibilityTests: XCTestCase {
     ) async throws {
         let bindAddress = try release022RunnerIPv4()
         let originHost = logicalHost ?? bindAddress
-        if let logicalHost {
-            let resolved = try SocketAddress.makeAddressResolvingHost(logicalHost, port: 0)
-            guard resolved.ipAddress == bindAddress else {
-                XCTFail(
-                    "Fixture hostname resolved to \(String(describing: resolved.ipAddress)); expected \(bindAddress)"
-                )
-                return
-            }
+        guard try assertURLSessionHost(logicalHost, bindAddress: bindAddress) else {
+            return
         }
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 2)
         let origin = try TLSOriginServer(
@@ -138,6 +132,18 @@ final class Release022ClientCompatibilityTests: XCTestCase {
             try? await group.shutdownGracefully()
             throw error
         }
+    }
+
+    private func assertURLSessionHost(_ logicalHost: String?, bindAddress: String) throws -> Bool {
+        guard let logicalHost else { return true }
+        let resolved = try SocketAddress.makeAddressResolvingHost(logicalHost, port: 0)
+        guard resolved.ipAddress == bindAddress else {
+            XCTFail(
+                "Fixture hostname resolved to \(String(describing: resolved.ipAddress)); expected \(bindAddress)"
+            )
+            return false
+        }
+        return true
     }
 
     private func reportURLSessionPath(_ sink: Release022Events) {

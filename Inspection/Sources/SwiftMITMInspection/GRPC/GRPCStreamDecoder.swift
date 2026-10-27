@@ -25,6 +25,7 @@ public final class GRPCStreamDecoder {
     private var compressedSession: GRPCMessageDecompressionSession?
     private var quartetOutput: [UInt8] = []
     public var hasPendingWork: Bool { compressedSession != nil || !quartetOutput.isEmpty }
+    var isTerminal: Bool { terminal }
 
     public init(
         format: GRPCWireFormat,
@@ -315,6 +316,7 @@ private extension GRPCStreamDecoder {
     }
 
     func fail(_ diagnostic: GRPCDiagnostic) {
+        guard !terminal else { return }
         terminal = true
         header.removeAll()
         payload.removeAll()

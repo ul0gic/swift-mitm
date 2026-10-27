@@ -202,7 +202,7 @@ final class HTTPInspectionBody {
             )
         }
         grpcPosition += progress.consumedBytes
-        if grpcPosition == grpcCarry.count {
+        if grpc.isTerminal || grpcPosition == grpcCarry.count {
             grpcCarry = []
             grpcPosition = 0
             configuration.budget.release(grpcCharge)
@@ -278,7 +278,7 @@ private extension HTTPInspectionBody {
             self.output(.sse(event))
             self.eventStart = self.decodedOffset
         }
-        if let grpc {
+        if let grpc, !grpc.isTerminal {
             if grpc.hasPendingWork || grpcPosition < grpcCarry.count {
                 let carryCharge = bytes.count * 2
                 guard configuration.budget.reserve(carryCharge) else { throw InspectionBudgetError.capacityExceeded }
@@ -288,7 +288,7 @@ private extension HTTPInspectionBody {
             }
             let progress = grpc.feedResumable(bytes, maximumOutputBytes: 65_536)
             unaccountedWork += progress.producedBytes
-            if progress.consumedBytes < bytes.count {
+            if !grpc.isTerminal, progress.consumedBytes < bytes.count {
                 let remainder = UnsafeRawBufferPointer(rebasing: bytes[progress.consumedBytes...])
                 let charge = remainder.count * 2
                 guard configuration.budget.reserve(charge) else { throw InspectionBudgetError.capacityExceeded }

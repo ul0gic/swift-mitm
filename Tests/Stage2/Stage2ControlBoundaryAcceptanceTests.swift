@@ -14,14 +14,18 @@ final class Stage2ControlBoundaryAcceptanceTests: XCTestCase {
         let authority = try CertificateAuthority.generate().authority
         let raw = Release022Events()
         let controls = Stage2ControlEvents()
-        let runtime = HTTPControlRuntime(configuration: try HTTPControlConfiguration(rules: [
-            HTTPRule(
-                id: "tls-edit",
-                match: HTTPRuleMatch(phase: .response, path: "/resource"),
-                action: .editHeaders(remove: [], append: [HTTPHeaderField(name: "X-Boundary", value: "edited")])
-            ),
-            HTTPRule(id: "expire", match: HTTPRuleMatch(phase: .request, path: "/held"), action: .breakpoint)
-        ], limits: HTTPControlLimits(), breakpointDeadlineSeconds: 1))
+        let runtime = HTTPControlRuntime(configuration: try HTTPControlConfiguration(
+            rules: [
+                HTTPRule(
+                    id: "tls-edit",
+                    match: HTTPRuleMatch(phase: .response, path: "/resource"),
+                    action: .editHeaders(remove: [], append: [HTTPHeaderField(name: "X-Boundary", value: "edited")])
+                ),
+                HTTPRule(id: "expire", match: HTTPRuleMatch(phase: .request, path: "/held"), action: .breakpoint)
+            ],
+            limits: HTTPControlLimits(),
+            breakpointDeadlineSeconds: 1
+        ))
         let proxy = ProxyServer(
             certificateAuthority: authority,
             sink: raw,
@@ -33,45 +37,13 @@ final class Stage2ControlBoundaryAcceptanceTests: XCTestCase {
         )
         do {
             let port = try await proxy.start(port: 0)
-            let client = ProxyTestClient(group: group)
-            let channel = try client.openTunnel(proxyPort: port, originHost: "localhost", originPort: ready.port)
-            let tls = try client.installTLS(
-                on: channel,
-                serverHostname: "localhost",
-                mitmCACertificatePEM: authority.caCertificatePEM,
-                applicationProtocols: ["http/1.1"]
+            let channel = try openTLSChannel(
+                client: ProxyTestClient(group: group),
+                proxyPort: port,
+                originPort: ready.port,
+                authorityPEM: authority.caCertificatePEM
             )
-            try phase4BoundedWait(tls.installed)
-            XCTAssertEqual(try phase4BoundedWait(tls.handshake), "http/1.1")
-            let received = Release022WireObservation()
-            try phase4BoundedWait(channel.eventLoop.submit {
-                try channel.pipeline.syncOperations.addHandler(Release022WireHandler(received))
-            })
-            try phase4BoundedWait(channel.writeAndFlush(ByteBuffer(string:
-                "GET /resource HTTP/1.1\r\nHost: localhost:\(ready.port)\r\n\r\n")))
-            let payload = Array("SwiftMITM local replay resource\n".utf8)
-            let firstResponse = try received.wait { $0.suffix(payload.count).elementsEqual(payload) }
-            let firstText = try XCTUnwrap(String(bytes: firstResponse, encoding: .utf8))
-            XCTAssertTrue(firstText.lowercased().contains("x-boundary: edited\r\n"))
-            _ = try raw.wait { release022ResponseEnds($0).count == 1 }
-            let clock = ContinuousClock()
-            let started = clock.now
-            try phase4BoundedWait(channel.writeAndFlush(ByteBuffer(string:
-                "GET /held HTTP/1.1\r\nHost: localhost:\(ready.port)\r\n\r\n")))
-            let handle = try await controls.breakpoint()
-            try received.waitForClose()
-            XCTAssertGreaterThanOrEqual(stage2Milliseconds(started.duration(to: clock.now)), 1000)
-            XCTAssertEqual(received.bytes, firstResponse)
-            let late = await handle.resolve(.forwardOriginal)
-            if case .alreadyCompleted = late {} else {
-                XCTFail("Late resume revived an expired TLS request")
-            }
-            let originCount = try release022RunProcess(executable: "/usr/bin/curl", arguments: [
-                "--silent", "--show-error", "--fail", "--max-time", "10", "--noproxy", "*",
-                "--cacert", ready.root, "https://localhost:\(ready.port)/held-count"
-            ])
-            XCTAssertEqual(originCount, "0")
-            XCTAssertEqual(release022ResponseEnds(raw.events).count, 1)
+            try await verifyEditedResponseAndExpiry(channel: channel, ready: ready, raw: raw, controls: controls)
             try await proxy.stop()
             let usage = await runtime.resourceUsage()
             XCTAssertEqual(usage.pausedExchanges, 0)
@@ -84,6 +56,69 @@ final class Stage2ControlBoundaryAcceptanceTests: XCTestCase {
             do { try await group.shutdownGracefully() } catch { XCTFail("Group teardown failed: \(error)") }
             throw failure
         }
+    }
+
+    private func openTLSChannel(
+        client: ProxyTestClient,
+        proxyPort: Int,
+        originPort: Int,
+        authorityPEM: String
+    ) throws -> Channel {
+        let channel = try client.openTunnel(proxyPort: proxyPort, originHost: "localhost", originPort: originPort)
+        let tls = try client.installTLS(
+            on: channel,
+            serverHostname: "localhost",
+            mitmCACertificatePEM: authorityPEM,
+            applicationProtocols: ["http/1.1"]
+        )
+        try phase4BoundedWait(tls.installed)
+        XCTAssertEqual(try phase4BoundedWait(tls.handshake), "http/1.1")
+        return channel
+    }
+
+    private func verifyEditedResponseAndExpiry(
+        channel: Channel,
+        ready: Release022PeerReady,
+        raw: Release022Events,
+        controls: Stage2ControlEvents
+    ) async throws {
+        let received = Release022WireObservation()
+        try phase4BoundedWait(channel.eventLoop.submit {
+            try channel.pipeline.syncOperations.addHandler(Release022WireHandler(received))
+        })
+        try phase4BoundedWait(channel.writeAndFlush(ByteBuffer(string:
+            "GET /resource HTTP/1.1\r\nHost: localhost:\(ready.port)\r\n\r\n")))
+        let payload = Array("SwiftMITM local replay resource\n".utf8)
+        let firstResponse = try received.wait { $0.suffix(payload.count).elementsEqual(payload) }
+        let firstText = try XCTUnwrap(String(bytes: firstResponse, encoding: .utf8))
+        XCTAssertTrue(firstText.lowercased().contains("x-boundary: edited\r\n"))
+        _ = try raw.wait { release022ResponseEnds($0).count == 1 }
+        let clock = ContinuousClock()
+        let started = clock.now
+        try phase4BoundedWait(channel.writeAndFlush(ByteBuffer(string:
+            "GET /held HTTP/1.1\r\nHost: localhost:\(ready.port)\r\n\r\n")))
+        let handle = try await controls.breakpoint()
+        try received.waitForClose()
+        XCTAssertGreaterThanOrEqual(stage2Milliseconds(started.duration(to: clock.now)), 1000)
+        XCTAssertEqual(received.bytes, firstResponse)
+        let late = await handle.resolve(.forwardOriginal)
+        if case .alreadyCompleted = late {} else {
+            XCTFail("Late resume revived an expired TLS request")
+        }
+        let originCount = try release022RunProcess(executable: "/usr/bin/curl", arguments: [
+            "--silent",
+            "--show-error",
+            "--fail",
+            "--max-time",
+            "10",
+            "--noproxy",
+            "*",
+            "--cacert",
+            ready.root,
+            "https://localhost:\(ready.port)/held-count"
+        ])
+        XCTAssertEqual(originCount, "0")
+        XCTAssertEqual(release022ResponseEnds(raw.events).count, 1)
     }
 
     func testResponseResetAtByteOffsetPreservesHealthyFollowup() async throws {

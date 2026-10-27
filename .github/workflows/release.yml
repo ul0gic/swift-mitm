@@ -10,6 +10,15 @@ on:
         description: Existing release tag to publish
         required: true
         type: string
+      allow_swift_codeql_unavailable:
+        description: Apply the approved unsupported-toolchain exception for 0.2.2
+        required: false
+        default: false
+        type: boolean
+      swift_codeql_job_id:
+        description: Reviewed failed Swift job for the exact 0.2.2 commit
+        required: false
+        type: string
 
 permissions:
   actions: read
@@ -39,6 +48,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          ALLOW_SWIFT_CODEQL_UNAVAILABLE: ${{ inputs.allow_swift_codeql_unavailable || false }}
+          SWIFT_CODEQL_JOB_ID: ${{ inputs.swift_codeql_job_id }}
         run: |
           [[ "$RELEASE_TAG" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           [[ "$(head -n 1 RELEASE_NOTES.md)" == "# SwiftMITM $RELEASE_TAG" ]]
@@ -50,10 +61,63 @@ jobs:
           ci_run="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$commit&status=success" \
             --jq '[.workflow_runs[] | select(.event == "push" or .event == "workflow_dispatch")][0].id // empty')"
           test -n "$ci_run"
-          for workflow in codeql.yml dependency-review.yml; do
-            successful_runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$commit&status=success" --jq '.workflow_runs | length')"
-            test "$successful_runs" -gt 0
-          done
+          dependency_runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/dependency-review.yml/runs?head_sha=$commit&status=success" --jq '.workflow_runs | length')"
+          test "$dependency_runs" -gt 0
+          if [[ "$ALLOW_SWIFT_CODEQL_UNAVAILABLE" == true ]]; then
+            test "$GITHUB_EVENT_NAME" = workflow_dispatch
+            test "$RELEASE_TAG" = 0.2.2
+            [[ "$SWIFT_CODEQL_JOB_ID" =~ ^[0-9]+$ ]]
+            export RELEASE_COMMIT="$commit"
+            python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import subprocess
+
+          repository = os.environ['GITHUB_REPOSITORY']
+          commit = os.environ['RELEASE_COMMIT']
+          job_id = os.environ['SWIFT_CODEQL_JOB_ID']
+
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', f'repos/{repository}/{path}']))
+
+          job = api(f'actions/jobs/{job_id}')
+          run = api(f"actions/runs/{job['run_id']}")
+          assert job['name'] == 'CodeQL (swift)' and job['conclusion'] == 'failure'
+          assert job['status'] == 'completed' and job['head_sha'] == commit
+          assert run['repository']['full_name'] == repository and run['head_sha'] == commit
+          assert run['path'] == '.github/workflows/codeql.yml'
+          assert run['status'] == 'completed' and run['conclusion'] == 'failure'
+          assert run['event'] in ('push', 'workflow_dispatch')
+          steps = job['steps']
+          assert [step['name'] for step in steps if step['conclusion'] == 'failure'] == ['Build Swift package']
+          assert all(step['conclusion'] in ('success', 'failure', 'skipped') for step in steps)
+          analysis = [step for step in steps if step['name'].startswith('Run github/codeql-action/analyze@')]
+          assert len(analysis) == 1 and analysis[0]['conclusion'] == 'skipped'
+          rejection = [step for step in steps if step['name'] == 'Reject security findings']
+          assert len(rejection) == 1 and rejection[0]['conclusion'] == 'skipped'
+          jobs = api(f"actions/runs/{run['id']}/jobs?per_page=100")
+          assert jobs['total_count'] == 2 and len(jobs['jobs']) == 2
+          assert {item['name'] for item in jobs['jobs']} == {'CodeQL (swift)', 'CodeQL (actions)'}
+          assert any(item['id'] == job['id'] for item in jobs['jobs'])
+          actions = next(item for item in jobs['jobs'] if item['name'] == 'CodeQL (actions)')
+          assert actions['conclusion'] == 'success' and actions['head_sha'] == commit
+          log = subprocess.check_output([
+              'gh', 'api', '--allow-escape-sequences', f'repos/{repository}/actions/jobs/{job_id}/logs'
+          ])
+          assert b'posix_spawn error: Bad CPU type in executable (86)' in log
+          assert b'"/usr/bin/sandbox-exec"' in log
+          with pathlib.Path(os.environ['GITHUB_STEP_SUMMARY']).open('a') as summary:
+              summary.write(
+                  f'Approved 0.2.2 exception: Swift CodeQL was unavailable for `{commit}`. '
+                  f'[Failed Swift job]({job["html_url"]}); Actions analysis passed. '
+                  'No Swift analysis result is claimed. All other release checks remain required.\n'
+              )
+          PY
+          else
+            codeql_runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/codeql.yml/runs?head_sha=$commit&status=success" --jq '.workflow_runs | length')"
+            test "$codeql_runs" -gt 0
+          fi
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "sha=$commit" >> "$GITHUB_OUTPUT"
           echo "ci-run=$ci_run" >> "$GITHUB_OUTPUT"
