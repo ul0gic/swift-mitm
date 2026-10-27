@@ -52,29 +52,6 @@ final class Phase3ProxyHTTP2WebSocketClient: Sendable {
         )
     }
 
-    func exchangeDirectly(
-        originHost: String,
-        originPort: Int,
-        originCACertificatePEM: String
-    ) throws -> Phase3ProxyHTTP2WebSocketClientResult {
-        let channel = try ClientBootstrap(group: group)
-            .connect(host: "127.0.0.1", port: originPort)
-            .wait()
-        state.withLockedValue { $0.channel = channel }
-        let setup = try configureTLSAndHTTP2(
-            channel: channel,
-            originHost: originHost,
-            mitmCACertificatePEM: originCACertificatePEM
-        )
-        return try exchange(
-            setup: setup,
-            channel: channel,
-            originHost: originHost,
-            originPort: originPort,
-            sendExtendedConnect: true
-        )
-    }
-
     private func exchange(
         setup: Phase3HTTP2ClientSetup,
         channel: Channel,

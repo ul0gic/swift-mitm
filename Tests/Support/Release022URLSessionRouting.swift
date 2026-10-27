@@ -50,7 +50,12 @@ func release022TrustedURLSession(
     let root = try XCTUnwrap(SecCertificateCreateWithData(nil, Data(der) as CFData))
     let delegate = Release022URLSessionTrust(root: root, protocolName: protocolName, routing: routing.rawValue)
     let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
-    release022AssertURLSessionLoader(configuration, session: session, preparedDefault: preparedDefault, routing: routing)
+    release022AssertURLSessionLoader(
+        configuration,
+        session: session,
+        preparedDefault: preparedDefault,
+        routing: routing
+    )
     let copied = session.configuration.proxyConfigurations
     if routing != .sessionDictionary {
         XCTAssertEqual(copied.count, 1)

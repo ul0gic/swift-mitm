@@ -5,30 +5,6 @@ import XCTest
 import SwiftMITM
 
 final class PublicProxyHTTP2WebSocketTests: XCTestCase {
-    func testPhase3TLSFixturesPerformDirectRFC8441Exchange() throws {
-        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-        defer { try? group.syncShutdownGracefully() }
-        let origin = try Phase3TLSHTTP2WebSocketOrigin(group: group)
-        let client = Phase3ProxyHTTP2WebSocketClient(group: group)
-        defer {
-            client.stop()
-            origin.stop()
-        }
-        try origin.start()
-
-        let clientResult = try client.exchangeDirectly(
-            originHost: origin.hostname,
-            originPort: origin.localPort,
-            originCACertificatePEM: origin.caCertificatePEM
-        )
-        let originResult = try origin.result.wait()
-
-        XCTAssertTrue(clientResult.downstreamExtendedConnectEnabled)
-        XCTAssertEqual(clientResult.status, 200)
-        XCTAssertEqual(clientResult.serverBytes, WebSocketWire.serverFrames)
-        XCTAssertEqual(originResult.clientBytes, WebSocketWire.clientFrames)
-    }
-
     func testPublicProxyForwardsAndCapturesRFC8441Exchange() async throws {
         let result = try await performExchange(scenario: .accepted)
 

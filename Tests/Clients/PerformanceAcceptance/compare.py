@@ -93,14 +93,14 @@ def verdict(samples, workload):
             "relativeSpreadPercent": spread, "meetsFivePercentTarget": result == "passed" and regression <= 5}
 
 
-def run_cell(arguments, identity, protocol, workload, report, deadline, diagnostic=False):
+def run_cell(arguments, identity, protocol, workload, report, deadline):
     cell = {"protocol": protocol, "workload": workload, "samples": [], "status": "unverified"}
     report["cells"].append(cell)
     for pair, order in enumerate(ORDER):
         samples = {}
         cell["samples"].append(samples)
         for variant in order:
-            label = {"baseline": "A", "candidate": "B"}[variant] if diagnostic else variant
+            label = variant
             stem = f"{protocol.replace('/', '-')}-{workload}-{pair + 1}-{label}"
             output = arguments.output.parent / "performance-runs" / f"{stem}.json"
             output.parent.mkdir(parents=True, exist_ok=True)
@@ -112,9 +112,6 @@ def run_cell(arguments, identity, protocol, workload, report, deadline, diagnost
                     raise MeasurementUnavailable(f"{report['measurementBudgetSeconds']}-second measurement budget exhausted")
                 binary = getattr(arguments, variant)
                 command = [str(binary), protocol, workload, str(identity), str(output)]
-                if diagnostic:
-                    command.append("--diagnostic-http1-callbacks" if report.get("diagnostic") == "http1-callbacks"
-                                   else "--diagnostic-cpu")
                 with output.with_suffix(".log").open("wb") as log:
                     result = subprocess.run(command,
                                             stdout=log, stderr=subprocess.STDOUT, timeout=min(150, remaining), check=False)
@@ -131,7 +128,7 @@ def run_cell(arguments, identity, protocol, workload, report, deadline, diagnost
             finally:
                 execution["endedMonotonicNanoseconds"] = time.monotonic_ns()
                 arguments.output.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    cell.update({"status": "captured"} if diagnostic else verdict(cell["samples"], workload))
+    cell.update(verdict(cell["samples"], workload))
 
 
 def git_tree_identity(value):

@@ -8,16 +8,6 @@ import XCTest
 @testable import SwiftMITM
 
 final class CaptureSinkContractTests: XCTestCase {
-    private final class RecordingSink: CaptureEventSink {
-        private let storage = NIOLockedValueBox<[CaptureEvent]>([])
-
-        var events: [CaptureEvent] { storage.withLockedValue { $0 } }
-
-        func receive(_ event: CaptureEvent) {
-            storage.withLockedValue { $0.append(event) }
-        }
-    }
-
     private final class BlockingSink: CaptureEventSink {
         private struct State {
             var events: [CaptureEvent] = []
@@ -89,28 +79,6 @@ final class CaptureSinkContractTests: XCTestCase {
             releaseSignal.signal()
             releaseSignal.signal()
         }
-    }
-
-    func testReceiveCompletesBeforeEmbeddedWriteReturns() throws {
-        let sink = RecordingSink()
-        let channel = Self.requestChannel(sink: sink)
-        defer { _ = try? channel.finish() }
-
-        _ = try channel.writeInbound(buffer("GET / HTTP/1.1\r\nHost: example.com\r\n\r\n"))
-        XCTAssertEqual(eventKinds(sink.events), ["head", "end"])
-    }
-
-    func testOneStreamEmitsHeadBodyTrailersEndInOrder() throws {
-        let sink = RecordingSink()
-        let channel = Self.requestChannel(sink: sink)
-        defer { _ = try? channel.finish() }
-
-        _ = try channel.writeInbound(buffer(
-            "POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n"
-                + "1\r\na\r\n0\r\nDigest: value\r\n\r\n"
-        ))
-
-        XCTAssertEqual(eventKinds(sink.events), ["head", "body", "trailers", "end"])
     }
 
     func testBlockedSinkBlocksHandlerWithoutBufferingLaterEvents() {

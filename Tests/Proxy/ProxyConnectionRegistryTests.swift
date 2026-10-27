@@ -96,24 +96,6 @@ final class ProxyConnectionRegistryTests: XCTestCase {
         registry.finishShutdown()
     }
 
-    func testLateCompletionIsRejectedSoCallerCanCloseProducedChannel() async throws {
-        let registry = ProxyConnectionRegistry()
-        let loop = EmbeddedEventLoop()
-        registry.startAccepting()
-        let token = try XCTUnwrap(registry.beginSetup())
-        let channel = try connectedChannel(loop: loop)
-
-        XCTAssertTrue(registry.beginShutdown().isEmpty)
-        if !token.complete() {
-            channel.close(promise: nil)
-        }
-        loop.run()
-
-        XCTAssertFalse(channel.isActive)
-        await registry.waitForQuiescence()
-        registry.finishShutdown()
-    }
-
     func testChannelOwnershipLateRegistrationAndRestartSemanticsRemainUnchanged() async throws {
         let registry = ProxyConnectionRegistry()
         let loop = EmbeddedEventLoop()

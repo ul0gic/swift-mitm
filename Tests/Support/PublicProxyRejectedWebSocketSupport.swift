@@ -5,11 +5,6 @@ import NIOSSL
 
 @testable import SwiftMITM
 
-struct RejectedWebSocketExchange: Sendable {
-    let originRequestHeads: [[UInt8]]
-    let clientResponseBytes: [UInt8]
-}
-
 final class RejectedWebSocketTLSOriginServer: @unchecked Sendable {
     let caCertificatePEM: String
 

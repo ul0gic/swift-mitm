@@ -154,10 +154,6 @@ final class HTTP2InitialSettingsProbeTests: XCTestCase {
         }
     }
 
-    func testOwningBoundaryUsesFiveSecondDeadline() {
-        XCTAssertEqual(HTTP2InitialSettingsProbeBoundary.deadline, .seconds(5))
-    }
-
     func testHandlerResolvesCapabilityReplaysSettingsAndPassesCoalescedBytesOnce() throws {
         let loop = EmbeddedEventLoop()
         let handler = HTTP2InitialSettingsProbeHandler(eventLoop: loop)

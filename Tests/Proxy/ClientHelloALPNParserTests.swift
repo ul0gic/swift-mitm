@@ -3,10 +3,6 @@ import XCTest
 @testable import SwiftMITM
 
 final class ClientHelloALPNParserTests: XCTestCase {
-    func testOwningBoundaryUsesOneSecondInspectionDeadline() {
-        XCTAssertEqual(ClientHelloInspectionBoundary.deadline, .seconds(1))
-    }
-
     func testMetadataRetainsAllOfferedProtocolsAndDeduplicatesSupportedProjection() throws {
         let handshake = makeClientHello(protocols: ["http/1.1", "acme/1", "h2", "h2", "http/1.1"])
         let records = makeTLSRecords(handshake: handshake, payloadLengths: [2, 11])

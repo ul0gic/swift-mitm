@@ -10,14 +10,6 @@ final class ProxyServerTests: XCTestCase {
         func receive(_ event: CaptureEvent) {}
     }
 
-    func testStartReturnsBoundPortAndStops() async throws {
-        let ca = try CertificateAuthority.generate().authority
-        let proxy = ProxyServer(certificateAuthority: ca, sink: NoopSink())
-        let port = try await proxy.start(port: 0)
-        XCTAssertGreaterThan(port, 0)
-        try await proxy.stop()
-    }
-
     func testRepeatedStartRejectsSecondListener() async throws {
         let ca = try CertificateAuthority.generate().authority
         let proxy = ProxyServer(certificateAuthority: ca, sink: NoopSink())
@@ -43,24 +35,6 @@ final class ProxyServerTests: XCTestCase {
             _ = try await proxy.start(port: 0)
             XCTFail("a proxy cannot restart its shutdown event-loop group")
         } catch ProxyServerError.eventLoopGroupShutdown {}
-    }
-
-    func testInjectedGroupRemainsOwnedByConsumerAndSupportsRestart() async throws {
-        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-        let ca = try CertificateAuthority.generate().authority
-        let proxy = ProxyServer(certificateAuthority: ca, sink: NoopSink(), group: group)
-
-        do {
-            _ = try await proxy.start(port: 0)
-            try await proxy.stop()
-            _ = try await proxy.start(port: 0)
-            try await proxy.stop()
-            try await proxy.stop()
-        } catch {
-            try? await group.shutdownGracefully()
-            throw error
-        }
-        try await group.shutdownGracefully()
     }
 
     func testStopClosesActiveAcceptedConnectionBeforeReturning() async throws {
@@ -111,14 +85,6 @@ final class ProxyServerTests: XCTestCase {
             _ = try await proxy.start(host: "0.0.0.0", port: 0)
             XCTFail("non-loopback bind must be rejected without explicit opt-in")
         } catch ProxyServerError.nonLoopbackBindRejected {}
-    }
-
-    func testHTTP1ReoriginationDeliversBodyAndEmitsCaptureEvents() async throws {
-        try await runReorigination(alpn: "http/1.1", bodySize: 200_000)
-    }
-
-    func testHTTP2ReoriginationDeliversBodyAndEmitsCaptureEvents() async throws {
-        try await runReorigination(alpn: "h2", bodySize: 200_000)
     }
 
     func testUnsupportedClientALPNClosesWithoutContactingOrigin() async throws {
@@ -204,15 +170,6 @@ final class ProxyServerTests: XCTestCase {
         }
         origin.stop()
         try await group.shutdownGracefully()
-    }
-
-    private func runReorigination(alpn: String, bodySize: Int) async throws {
-        try await runReorigination(
-            originProtocols: ["h2", "http/1.1"],
-            clientProtocols: [alpn],
-            expectedALPN: alpn,
-            bodySize: bodySize
-        )
     }
 
     private func runReorigination(

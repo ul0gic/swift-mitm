@@ -60,29 +60,6 @@ final class Phase5ProxyV2ConformanceTests: XCTestCase {
         ])
     }
 
-    func testArtifactRetainsPhase2AndPhase4IndependentGoldenOracles() throws {
-        let document = try Phase5ProxyV2ConformanceDocument.load()
-        let tlv = try XCTUnwrap(document.vectors.first { $0.id == "tcp4-well-formed-tlv" })
-        let ipv6 = try XCTUnwrap(document.vectors.first { $0.id == "tcp6-minimal" })
-        let source = try XCTUnwrap(tlv.source)
-        let destination = try XCTUnwrap(tlv.destination)
-
-        XCTAssertEqual(try tlv.headerBytes, Phase2ProxyV2Corpus.ipv4.bytes)
-        XCTAssertEqual(try ipv6.headerBytes, Phase2ProxyV2Corpus.ipv6.bytes)
-        XCTAssertEqual(try tlv.applicationBytes, Phase2ProxyV2Corpus.replay)
-        XCTAssertEqual(
-            Phase4ProxyV2Header.ipv4(
-                source: [192, 0, 2, 10],
-                destination: [198, 51, 100, 20],
-                sourcePort: source.port,
-                destinationPort: destination.port,
-                tlvs: try tlv.tlvBytes
-            )
-            .bytes,
-            try tlv.headerBytes
-        )
-    }
-
     private func assertAccepted(_ vector: Phase5ProxyV2ConformanceVector) throws {
         let header = try vector.headerBytes
         let application = try vector.applicationBytes

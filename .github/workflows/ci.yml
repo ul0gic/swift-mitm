@@ -5,26 +5,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
-    inputs:
-      performance_diagnostic:
-        description: Run only the identical-binary performance diagnostic
-        required: false
-        type: boolean
-        default: false
-      performance_diagnostic_kind:
-        description: Select the fixed diagnostic experiment
-        required: false
-        type: choice
-        default: matrix
-        options:
-          - matrix
-          - http1-callbacks
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}${{ inputs.performance_diagnostic && '-diagnostic' || '' }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 defaults:
@@ -38,7 +24,7 @@ jobs:
   tests:
     name: Tests (${{ matrix.partition }}, ${{ matrix.os }})
     needs: consumer
-    if: ${{ !cancelled() && !inputs.performance_diagnostic }}
+    if: ${{ !cancelled() }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
@@ -154,7 +140,7 @@ jobs:
                        'Stage2ControlResourceAcceptanceTests', 'Stage2CancellationAcceptanceTests',
                        'Stage2SharedBudgetAcceptanceTests'}
           compatibility = {'AppleTLSProxyCompatibilityTests', 'Phase4PublicTransparentTLSTests',
-                           'ProxyDiagnosticTests', 'PublicProxyHTTP2WebSocketTests',
+                           'PublicProxyHTTP2WebSocketTests',
                            'Release022PublicTrustTests', 'Release022ClientCompatibilityTests',
                            'Release022IndependentGRPCCompatibilityTests',
                            'Release022ConsumerCompatibilityTests', 'Stage2ConsumerCompatibilityTests',
@@ -287,7 +273,6 @@ jobs:
           if-no-files-found: error
 
   quality:
-    if: ${{ !inputs.performance_diagnostic }}
     name: Format and lint
     runs-on: xcode-27
     timeout-minutes: 15
@@ -334,7 +319,6 @@ jobs:
           if-no-files-found: error
 
   distribution:
-    if: ${{ !inputs.performance_diagnostic }}
     name: Candidate distribution
     runs-on: xcode-27
     timeout-minutes: 30
@@ -381,7 +365,6 @@ jobs:
           if-no-files-found: error
 
   consumer:
-    if: ${{ !inputs.performance_diagnostic }}
     name: External consumer (${{ matrix.compiler }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -463,7 +446,6 @@ jobs:
           if-no-files-found: error
 
   minimum-runtime:
-    if: ${{ !inputs.performance_diagnostic }}
     name: macOS 26 public consumer smoke
     needs: consumer
     runs-on: macos-26
@@ -564,7 +546,6 @@ jobs:
           if-no-files-found: error
 
   performance:
-    if: ${{ !inputs.performance_diagnostic }}
     name: Disabled-feature performance regression
     runs-on: xcode-27
     timeout-minutes: 75
@@ -666,82 +647,10 @@ jobs:
           path: evidence/
           if-no-files-found: error
 
-  performance-diagnostic:
-    name: Identical-binary performance diagnostic
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.performance_diagnostic }}
-    runs-on: xcode-27
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - name: Record diagnostic candidate and toolchain
-        run: |
-          mkdir -p evidence
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          git rev-parse HEAD > evidence/candidate-sha.txt
-          swift --version > evidence/swift.txt
-          xcodebuild -version > evidence/xcode.txt
-          sw_vers > evidence/os.txt
-          uname -m > evidence/architecture.txt
-          grep -Fx 'Xcode 27.1' evidence/xcode.txt
-          grep -Fx 'Build version 27A9275' evidence/xcode.txt
-          grep -Eq 'Swift version 6\.4([ .]|$)' evidence/swift.txt
-      - name: Set up independent peer Python
-        id: peer-python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
-        with:
-          python-version: '3.14.9'
-          architecture: arm64
-      - name: Install pinned identity support
-        env:
-          PEER_PYTHON: ${{ steps.peer-python.outputs.python-path }}
-        run: |
-          "$PEER_PYTHON" -m venv "$RUNNER_TEMP/performance-peers"
-          "$RUNNER_TEMP/performance-peers/bin/python" -m pip install --require-hashes --only-binary=:all: \
-            -r Tests/Clients/Stage2/HTTP3/requirements.txt
-          "$RUNNER_TEMP/performance-peers/bin/python" -m pip freeze > evidence/peer-versions.txt
-      - name: Build one instrumentable candidate with committed pins
-        run: |
-          benchmark_package=Tests/Clients/PerformanceAcceptance
-          cp Package.resolved "$benchmark_package/Package.resolved"
-          swift package --package-path "$benchmark_package" resolve
-          cp Package.resolved evidence/root-Package.resolved
-          cp "$benchmark_package/Package.resolved" evidence/benchmark-Package.resolved
-          python3 - <<'PY_PINS'
-          import json
-          def pins(path):
-              with open(path) as source:
-                  return {pin['identity']: pin['state'] for pin in json.load(source)['pins']}
-          assert pins('evidence/root-Package.resolved') == pins('evidence/benchmark-Package.resolved')
-          PY_PINS
-          swift build --package-path "$benchmark_package" --configuration release \
-            --product PerformanceAcceptance --force-resolved-versions -Xswiftc -warnings-as-errors \
-            2>&1 | tee evidence/build.log
-          binary_directory="$(swift build --package-path "$benchmark_package" --configuration release --show-bin-path)"
-          printf 'DIAGNOSTIC_BINARY=%s/PerformanceAcceptance\n' "$binary_directory" >> "$GITHUB_ENV"
-          find "$benchmark_package/Sources" -type f -exec shasum -a 256 {} + > evidence/harness-sha256.txt
-      - name: Capture one identical-binary control
-        timeout-minutes: 12
-        env:
-          DIAGNOSTIC_KIND: ${{ inputs.performance_diagnostic_kind }}
-        run: |
-          "$RUNNER_TEMP/performance-peers/bin/python" Tests/Clients/PerformanceAcceptance/aa_control.py \
-            --binary "$DIAGNOSTIC_BINARY" --product-revision "$GITHUB_SHA" \
-            --benchmark-revision "$GITHUB_SHA" --diagnostic "$DIAGNOSTIC_KIND" \
-            --output evidence/performance-aa-control.json
-      - name: Retain diagnostic evidence
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: performance-diagnostic-${{ github.sha }}
-          path: evidence/
-          if-no-files-found: error
-
   verify:
     name: Verify
     needs: [tests, quality, distribution, consumer, minimum-runtime, performance]
-    if: ${{ always() && !inputs.performance_diagnostic }}
+    if: ${{ always() }}
     runs-on: ubuntu-24.04
     steps:
       - name: Require every configured candidate job

@@ -11,39 +11,33 @@ struct ClientInput: Sendable {
     let protocolName: String
     let workload: String
     let rootPEM: String
-    let diagnosticCPU: Bool
-    let diagnosticCallbacks: Bool
 }
 
-func measureClient(group: EventLoopGroup, input: ClientInput) throws -> ClientMeasurements {
+func measureClient(group: EventLoopGroup, input: ClientInput) throws -> [ExchangeMeasurement] {
     let channel = try openTunnel(group: group, input: input)
     do {
         let multiplexer = try configureClient(channel, input: input)
         let count = input.workload == "latency" ? 100 : 16
         let shared: NIOLoopBound<ResponseCollector>?
         if input.protocolName == "http/1.1" {
-            shared = try addCollector(channel, diagnosticCallbacks: input.diagnosticCallbacks)
+            shared = try addCollector(channel)
         } else {
             shared = nil
         }
         var result: [ExchangeMeasurement] = []
-        var observations = input.diagnosticCPU ? ProcessObservations(workload: input.workload, count: count) : nil
         for index in 0 ... count {
             let stream = try measurementStream(channel, multiplexer: multiplexer)
-            let collector = try shared ?? addCollector(stream, diagnosticCallbacks: input.diagnosticCallbacks)
-            let before = observations?.snapshotBeforeRequest(index: index)
+            let collector = try shared ?? addCollector(stream)
             let measurement = try request(
                 channel: stream,
                 collector: collector,
                 path: "/\(input.workload)/\(index)",
                 authority: "localhost:\(input.originPort)"
             )
-            let after = observations?.snapshotAfterRequest(index: index)
-            observations?.record(index: index, path: measurement.path, before: before, after: after)
             result.append(measurement)
         }
         try channel.close().wait()
-        return ClientMeasurements(exchanges: result, processObservations: observations)
+        return result
     } catch {
         if channel.isActive {
             try channel.close().wait()
@@ -121,10 +115,10 @@ private func configureClient(
     return multiplexer
 }
 
-private func addCollector(_ channel: Channel, diagnosticCallbacks: Bool) throws -> NIOLoopBound<ResponseCollector> {
+private func addCollector(_ channel: Channel) throws -> NIOLoopBound<ResponseCollector> {
     try channel.eventLoop
         .submit {
-            let collector = ResponseCollector(diagnosticCallbacks: diagnosticCallbacks)
+            let collector = ResponseCollector()
             try channel.pipeline.syncOperations.addHandler(collector, name: "measurement")
             return NIOLoopBound(collector, eventLoop: channel.eventLoop)
         }

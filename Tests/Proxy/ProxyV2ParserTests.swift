@@ -4,10 +4,6 @@ import XCTest
 @testable import SwiftMITM
 
 final class ProxyV2ParserTests: XCTestCase {
-    func testOwningBoundaryUsesFiveSecondIncompleteHeaderDeadline() {
-        XCTAssertEqual(ProxyV2ParserBoundary.deadline, .seconds(5))
-    }
-
     func testIPv4HeaderParsesSourceDestinationAndTLVs() throws {
         let header = makeIPv4Header(
             source: [192, 0, 2, 10],

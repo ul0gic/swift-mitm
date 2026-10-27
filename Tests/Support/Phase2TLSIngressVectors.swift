@@ -1,15 +1,6 @@
 enum Phase2TLSIngressVectors {
-    static let maximumVectorBytes = 4_096
-
     static let http11ClientHello = clientHello(hostname: "localhost", protocols: ["http/1.1"])
-    static let http2ClientHello = clientHello(hostname: "localhost", protocols: ["h2", "http/1.1"])
     static let noSNIClientHello = clientHello(hostname: nil, protocols: ["h2"])
-
-    static let malformed: [[UInt8]] = [
-        [0x16, 0x03, 0x03, 0x00],
-        [0x17, 0x03, 0x03, 0x00, 0x00],
-        [0x16, 0x03, 0x03, 0x00, 0x04, 0x01, 0x01, 0x00, 0x00]
-    ]
 
     private static func clientHello(hostname: String?, protocols: [String]) -> [UInt8] {
         var body: [UInt8] = [0x03, 0x03]

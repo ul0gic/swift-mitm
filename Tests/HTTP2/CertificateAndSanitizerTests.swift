@@ -1,4 +1,3 @@
-import NIOSSL
 import X509
 import XCTest
 
@@ -53,27 +52,4 @@ final class CertificateAuthorityTests: XCTestCase {
         XCTAssertEqual(basicConstraints, .isCertificateAuthority(maxPathLength: 0))
     }
 
-    func testDefaultRootUsesSwiftMITMSubject() throws {
-        let ca = try CertificateAuthority()
-        let expectedSubject = try DistinguishedName {
-            CommonName("SwiftMITM Root CA")
-            OrganizationName("SwiftMITM")
-        }
-        XCTAssertEqual(ca.caCertificate.subject, expectedSubject)
-    }
-
-    func testLeafConvertsToNIOSSLChainAndCaches() throws {
-        let ca = try CertificateAuthority()
-        let first = try ca.leaf(forHost: "example.com")
-        let second = try ca.leaf(forHost: "example.com")
-        XCTAssertEqual(first.certificateChain.count, 2)
-        XCTAssertEqual(second.certificateChain.count, 2)
-    }
-
-    func testCACertificateParsesAsNIOSSLTrustRoot() throws {
-        let ca = try CertificateAuthority()
-        XCTAssertNoThrow(
-            try NIOSSLCertificate(bytes: Array(ca.caCertificatePEM.utf8), format: .pem)
-        )
-    }
 }

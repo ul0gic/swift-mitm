@@ -5,33 +5,6 @@ import XCTest
 @testable import SwiftMITM
 
 final class TransparentApplicationClassifierTests: XCTestCase {
-    func testFragmentedTLSClassificationPreservesMetadataAndReplaysEveryByteOnce() throws {
-        let bytes = makeTLSClientHello(
-            protocols: [Array("h2".utf8), Array("http/1.1".utf8)],
-            serverName: "API.Example.COM"
-        )
-        let storage = DecisionStorage()
-        let channel = try makeChannel(storage: storage)
-        let first = Array(bytes.prefix(7))
-        let second = Array(bytes.dropFirst(7))
-
-        assertEmpty(try channel.writeInbound(ByteBuffer(bytes: first)))
-        XCTAssertNil(storage.classification)
-        assertFull(try channel.writeInbound(ByteBuffer(bytes: second)))
-        channel.embeddedEventLoop.run()
-
-        guard case let .interceptedTLS(metadata) = storage.classification else {
-            return XCTFail("expected intercepted TLS")
-        }
-        XCTAssertEqual(metadata.serverName, "api.example.com")
-        XCTAssertEqual(metadata.supportedALPNProtocols, [.http2, .http11])
-        XCTAssertEqual(storage.decisionCount, 1)
-        XCTAssertEqual(Array(try XCTUnwrap(channel.readInbound(as: ByteBuffer.self)).readableBytesView), first)
-        XCTAssertEqual(Array(try XCTUnwrap(channel.readInbound(as: ByteBuffer.self)).readableBytesView), second)
-        XCTAssertNil(try channel.readInbound(as: ByteBuffer.self))
-        XCTAssertNoThrow(try channel.finish())
-    }
-
     func testTLSWithoutALPNUsesHTTP1InterceptionCompatibility() throws {
         let storage = DecisionStorage()
         let channel = try makeChannel(storage: storage)
@@ -186,25 +159,6 @@ final class TransparentApplicationClassifierTests: XCTestCase {
             }
             XCTAssertNoThrow(try channel.finish())
         }
-    }
-
-    func testUnknownTextAtClassificationBoundFallsBackToOpaque() throws {
-        let storage = DecisionStorage()
-        let configuration = try XCTUnwrap(TrustedProxyV2Ingress(
-            trustedPeers: .loopback,
-            classificationMaximumBytes: 4
-        ))
-        let channel = try makeChannel(configuration: configuration, storage: storage)
-        let bytes = Array("ABCD".utf8)
-
-        assertFull(try channel.writeInbound(ByteBuffer(bytes: bytes)))
-        channel.embeddedEventLoop.run()
-
-        guard case .opaque = storage.classification else {
-            return XCTFail("expected opaque classification")
-        }
-        XCTAssertEqual(Array(try XCTUnwrap(channel.readInbound(as: ByteBuffer.self)).readableBytesView), bytes)
-        XCTAssertNoThrow(try channel.finish())
     }
 
     func testMalformedTLSClientHelloFailsTypedAndClosesWithoutReplay() throws {

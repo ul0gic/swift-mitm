@@ -83,15 +83,9 @@ final class ResponseCollector: ChannelDuplexHandler {
         var bytes = 0
         var heads = 0
         var hash = SHA256()
-        var bodyCallbacks: BodyCallbackObservation?
     }
 
     private var pending: Pending?
-    private let diagnosticCallbacks: Bool
-
-    init(diagnosticCallbacks: Bool = false) {
-        self.diagnosticCallbacks = diagnosticCallbacks
-    }
 
     func send(
         path: String,
@@ -109,11 +103,7 @@ final class ResponseCollector: ChannelDuplexHandler {
             uri: path,
             headers: HTTPHeaders([("host", authority)])
         )
-        pending = Pending(
-            path: path,
-            completion: completion,
-            bodyCallbacks: diagnosticCallbacks ? BodyCallbackObservation() : nil
-        )
+        pending = Pending(path: path, completion: completion)
         pending?.start = DispatchTime.now().uptimeNanoseconds
         context.write(wrapOutboundOut(.head(head)), promise: nil)
         context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
@@ -133,7 +123,6 @@ final class ResponseCollector: ChannelDuplexHandler {
             }
             current.heads += 1
         case let .body(buffer):
-            current.bodyCallbacks?.record(bytes: buffer.readableBytes)
             current.bytes += buffer.readableBytes
             current.hash.update(data: Data(buffer.readableBytesView))
         case .end:
@@ -148,8 +137,7 @@ final class ResponseCollector: ChannelDuplexHandler {
                 start: start,
                 end: end,
                 bytes: current.bytes,
-                sha256: current.hash.finalize().map { String(format: "%02x", $0) }.joined(),
-                bodyCallbacks: current.bodyCallbacks
+                sha256: current.hash.finalize().map { String(format: "%02x", $0) }.joined()
             )))
             return
         }

@@ -30,10 +30,6 @@ enum MachMemory {
         return residentBytesResult(result: result, sampledBytes: info.resident_size)
     }
 
-    static func residentBytes(result: kern_return_t, sampledBytes: UInt64) throws(MachMemoryError) -> UInt64 {
-        try residentBytesResult(result: result, sampledBytes: sampledBytes).get()
-    }
-
     private static func residentBytesResult(
         result: kern_return_t,
         sampledBytes: UInt64

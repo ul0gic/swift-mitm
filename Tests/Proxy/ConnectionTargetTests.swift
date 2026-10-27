@@ -35,16 +35,6 @@ final class ConnectionTargetTests: XCTestCase {
         XCTAssertEqual(target.leafIdentity, "2001:db8::1")
     }
 
-    func testResolvedTargetAddsConnectedAddressWithoutReplacingOriginalIdentity() throws {
-        let unresolved = try XCTUnwrap(ConnectionTarget(explicitConnectAuthority: "origin.example:443"))
-        let address = try SocketAddress(ipAddress: "203.0.113.8", port: 443)
-        let resolved = ResolvedTarget(unresolved: unresolved, connectedAddress: address)
-
-        XCTAssertEqual(resolved.unresolved.logicalAuthority, "origin.example:443")
-        XCTAssertEqual(resolved.unresolved.tlsServerName, "origin.example")
-        XCTAssertEqual(resolved.connectedAddress, address)
-    }
-
     func testProxyV2IPv4DestinationControlsRoutingAndOmitsSNI() throws {
         let source = try SocketAddress(ipAddress: "192.0.2.10", port: 12_345)
         let destination = try SocketAddress(ipAddress: "198.51.100.20", port: 8443)

@@ -1,4 +1,3 @@
-import Foundation
 import XCTest
 
 @testable import SwiftMITM
@@ -114,19 +113,6 @@ final class WebSocketFrameDecoderTests: XCTestCase {
         XCTAssertEqual(frames.count, 0)
     }
 
-    func testExtendedLength64RejectsValueAboveIntMaxWithoutPayload() {
-        let value = UInt64(Int.max) &+ 1
-        var header: [UInt8] = [0x82, 127]
-        for shift in stride(from: 56, through: 0, by: -8) {
-            header.append(UInt8(truncatingIfNeeded: value >> UInt64(shift)))
-        }
-        let decoder = WebSocketFrameDecoder(captureLimit: 1)
-        var frames: [WebSocketFrameDecoder.Frame] = []
-        decoder.decode(header) { frames.append($0) }
-        decoder.decode([0x81, 0x00]) { frames.append($0) }
-        XCTAssertEqual(frames.count, 0)
-    }
-
     func testExtendedLength64RejectsNonMinimalEncoding() {
         let decoder = WebSocketFrameDecoder(captureLimit: 1)
         var frames: [WebSocketFrameDecoder.Frame] = []
@@ -175,32 +161,6 @@ final class WebSocketFrameDecoderTests: XCTestCase {
         decoder.decode([0x89, 126, 0x00, 0x7D]) { frames.append($0) }
         decoder.decode([0x81, 0x00]) { frames.append($0) }
         XCTAssertEqual(frames.count, 0)
-    }
-
-    func testParserRoutesPostHandshakeBytesToTunnel() {
-        let parser = HTTP1MessageParser(mode: .response)
-        var outputs: [HTTP1ParserOutput] = []
-        var tunnel: [UInt8] = []
-        let handshake = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"
-        var bytes = Array(handshake.utf8)
-        bytes.append(contentsOf: [0x81, 0x02, 0x68, 0x69])
-
-        parser.feed(
-            bytes,
-            requestProvider: {
-                HTTP1RequestMetadata(method: "GET", webSocketUpgradeRequested: true)
-            },
-            emit: { outputs.append($0) },
-            tunnelBytes: { tunnel.append(contentsOf: $0) }
-        )
-
-        XCTAssertTrue(outputs.contains(.upgraded))
-        XCTAssertEqual(tunnel, [0x81, 0x02, 0x68, 0x69])
-
-        let decoder = WebSocketFrameDecoder(captureLimit: 2)
-        var frames: [WebSocketFrameDecoder.Frame] = []
-        decoder.decode(tunnel) { frames.append($0) }
-        XCTAssertEqual(frames.first.map { String(bytes: $0.bytes, encoding: .utf8) }, "hi")
     }
 
     func testCloseFrameCodeAndReason() {

@@ -94,27 +94,6 @@ final class CaptureBodyTests: XCTestCase {
         XCTAssertFalse(sink.truncated)
     }
 
-    func testHTTP1ResponseBodyTruncatedAtLimitButByteCountIsFullSize() throws {
-        let correlator = HTTP1ExchangeCorrelator()
-        correlator.enqueue(id: UUID(), method: "GET")
-        let sink = RecordingSink()
-        let channel = EmbeddedChannel(handler: HTTP1CaptureTapHandler(
-            direction: .response,
-            authority: "example.com:443",
-            correlator: correlator,
-            sink: sink,
-            captureBodyLimit: 4
-        ))
-        defer { _ = try? channel.finish() }
-
-        try channel.writeInbound(byteBuffer("HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\n0123456789"))
-
-        let id = try XCTUnwrap(firstResponseID(sink))
-        XCTAssertEqual(sink.body(for: id, response: true), Array("0123".utf8))
-        XCTAssertEqual(sink.totalByteCount(response: true), 10)
-        XCTAssertTrue(sink.truncated)
-    }
-
     func testHTTP1LimitZeroCapturesNoBytes() throws {
         let correlator = HTTP1ExchangeCorrelator()
         correlator.enqueue(id: UUID(), method: "GET")

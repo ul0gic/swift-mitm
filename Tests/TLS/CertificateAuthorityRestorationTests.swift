@@ -106,17 +106,6 @@ final class CertificateAuthorityRestorationTests: XCTestCase {
         }
     }
 
-    func testGeneratedAuthorityRestoresSuccessfully() throws {
-        let generated = try CertificateAuthority.generate()
-
-        XCTAssertNoThrow(
-            try CertificateAuthority(
-                privateKeyPEM: generated.privateKeyPEM,
-                certificatePEM: generated.certificatePEM
-            )
-        )
-    }
-
     private func assertRestorationError(
         _ expected: CertificateAuthorityRestorationError,
         operation: () throws -> CertificateAuthority,

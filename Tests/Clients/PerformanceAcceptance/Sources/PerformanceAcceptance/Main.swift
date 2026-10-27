@@ -10,23 +10,15 @@ struct BenchmarkOptions: Sendable {
     let workload: String
     let identityDirectory: String
     let output: String
-    let diagnosticCPU: Bool
-    let diagnosticCallbacks: Bool
 
     init(_ arguments: [String]) throws {
-        let flags = ["--diagnostic-cpu", "--diagnostic-http1-callbacks"]
-        guard arguments.count == 5 || (arguments.count == 6 && flags.contains(arguments[5])),
+        guard arguments.count == 5,
               ["h2", "http/1.1"].contains(arguments[1]),
               ["latency", "throughput"].contains(arguments[2]) else { throw MeasurementError.arguments }
         protocolName = arguments[1]
         workload = arguments[2]
         identityDirectory = arguments[3]
         output = arguments[4]
-        diagnosticCPU = arguments.count == 6
-        diagnosticCallbacks = arguments.count == 6 && arguments[5] == "--diagnostic-http1-callbacks"
-        guard !diagnosticCallbacks || (protocolName == "http/1.1" && workload == "throughput") else {
-            throw MeasurementError.arguments
-        }
     }
 }
 
@@ -67,7 +59,7 @@ struct PerformanceMain {
         clientGroup: EventLoopGroup
     ) async throws {
         let state = OriginState()
-        let sink = MeasurementSink(diagnosticCallbacks: options.diagnosticCallbacks)
+        let sink = MeasurementSink()
         let authority = try loadAuthority(options.identityDirectory + "/proxy")
         let originRoot = try String(
             contentsOfFile: options.identityDirectory + "/origin/origin-ca.pem",
@@ -95,9 +87,7 @@ struct PerformanceMain {
                 originPort: originPort,
                 protocolName: options.protocolName,
                 workload: options.workload,
-                rootPEM: authority.caCertificatePEM,
-                diagnosticCPU: options.diagnosticCPU,
-                diagnosticCallbacks: options.diagnosticCallbacks
+                rootPEM: authority.caCertificatePEM
             )
             let exchanges = try await runClient(group: clientGroup, input: input)
             try await proxy.stop()
@@ -114,7 +104,7 @@ struct PerformanceMain {
         _ options: BenchmarkOptions,
         state: OriginState,
         sink: MeasurementSink,
-        measurements: ClientMeasurements
+        measurements: [ExchangeMeasurement]
     ) throws {
         let snapshot = state.snapshot()
         let result = BenchmarkResult(
@@ -123,9 +113,8 @@ struct PerformanceMain {
             downstreamALPN: options.protocolName,
             upstreamALPN: snapshot.protocols,
             originPaths: snapshot.paths,
-            exchanges: measurements.exchanges,
-            captures: try sink.snapshot(),
-            processObservations: measurements.processObservations
+            exchanges: measurements,
+            captures: try sink.snapshot()
         )
         try JSONEncoder().encode(result).write(to: URL(fileURLWithPath: options.output), options: .atomic)
     }
@@ -137,7 +126,7 @@ struct PerformanceMain {
         )
     }
 
-    private static func runClient(group: EventLoopGroup, input: ClientInput) async throws -> ClientMeasurements {
+    private static func runClient(group: EventLoopGroup, input: ClientInput) async throws -> [ExchangeMeasurement] {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {

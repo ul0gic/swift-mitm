@@ -54,16 +54,6 @@ final class TrustedPeerPolicyTests: XCTestCase {
         XCTAssertNil(TrustedProxyV2Ingress(trustedPeers: .loopback, classificationDeadline: .zero))
     }
 
-    func testIngressSelectionCarriesImmutableConfiguration() throws {
-        let configuration = try XCTUnwrap(TrustedProxyV2Ingress(trustedPeers: .loopback))
-        let ingress = ProxyIngress.trustedProxyV2(configuration)
-
-        guard case let .trustedProxyV2(selected) = ingress else {
-            return XCTFail("expected trusted PROXY v2 ingress")
-        }
-        XCTAssertEqual(selected.proxyHeaderMaximumBytes, 4_096)
-    }
-
     func testTimeoutPolicyExposesFrozenDefaultsAndRejectsInvalidDeadlines() throws {
         let policy = try XCTUnwrap(ProxyTimeoutPolicy())
 
@@ -73,6 +63,10 @@ final class TrustedPeerPolicyTests: XCTestCase {
         XCTAssertNil(ProxyTimeoutPolicy(upstreamConnectDeadline: .zero))
         XCTAssertNil(ProxyTimeoutPolicy(tlsHandshakeDeadline: .zero))
         XCTAssertNil(ProxyTimeoutPolicy(http2InitialSettingsDeadline: .zero))
+        XCTAssertNil(ProxyTimeoutPolicy(tlsHandshakeDeadline: .seconds(-1)))
+        XCTAssertNil(ProxyTimeoutPolicy(
+            http2InitialSettingsDeadline: Duration(secondsComponent: Int64.max, attosecondsComponent: 0)
+        ))
     }
 
     private func address(_ ipAddress: String) throws -> SocketAddress {
