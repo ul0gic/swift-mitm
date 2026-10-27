@@ -102,16 +102,40 @@ async def production_goaway(ready, authority, certificate, peer, client_type, co
             while read_resources(path)["receivedGoaways"] < before + 3:
                 await asyncio.sleep(0.12)
         assert read_resources(path)["receivedGoaways"] == before + 3
-        _, rejected = client.request(authority, "/must-not-follow-goaway")
-        await asyncio.wait_for(rejected.done.wait(), timeout=10)
-        assert rejected.error == "stream reset: 268", rejected.error
-        assert not rejected.headers and not rejected.body and client.connection_error is None
+        draining = read_resources(path)
+        assert await complete(client.request(authority, "/fresh-after-goaway")[1]) == b"origin"
+        assert not response.done.is_set() and client.connection_error is None
+        async with asyncio.timeout(8):
+            while True:
+                replacement = read_resources(path)
+                if (replacement["local"]["connections"] == draining["local"]["connections"] + 1
+                        and replacement["activeConnectionStorageLifetimes"]
+                        == draining["activeConnectionStorageLifetimes"] + 1):
+                    break
+                await asyncio.sleep(0.12)
         stats = json.loads(Path(peer["stats"]).read_text())
-        assert stats["requests"] == 1 and stats["goawayIDs"] == [8, 4, 4], stats
+        records = stats["goawayRequests"]
+        assert stats["requests"] == 2 and stats["goawayIDs"] == [8, 4, 4], stats
+        assert stats["paths"] == ["/goaway-drain", "/fresh-after-goaway"], stats
+        assert [record["path"] for record in records] == stats["paths"], records
+        assert len({record["connection"] for record in records}) == 2, records
+        assert all(record["stream"] >= 0 and record["stream"] % 4 == 0 for record in records), records
+        assert stats["handshakes"] == 2 and stats["alpn"] == ["h3", "h3"], stats
         client.body(stream, b"finish-after-goaway", end=True)
         assert await complete(response) == b"early:finish-after-goaway"
     async with connect("127.0.0.1", ready["port"], configuration=configuration(certificate, "localhost"),
                        create_protocol=client_type) as client:
         assert await complete(client.request(authority, "/after-goaway-drain")[1]) == b"origin"
+    stats = json.loads(Path(peer["stats"]).read_text())
+    records = stats["goawayRequests"]
+    assert stats["requests"] == 3 and stats["handshakes"] == 3 and stats["alpn"] == ["h3"] * 3, stats
+    assert stats["paths"] == ["/goaway-drain", "/fresh-after-goaway", "/after-goaway-drain"], stats
+    assert [record["path"] for record in records] == stats["paths"], records
+    assert len({record["connection"] for record in records}) == 3, records
+    assert all(record["stream"] >= 0 and record["stream"] % 4 == 0 for record in records), records
+    assert stats["uploadBytes"] == len(b"finish-after-goaway") and stats["goawayIDs"] == [8, 4, 4], stats
     return {"acceptedGOAWAYIDs": [8, 4, 4], "receivedGoaways": 3,
-            "admittedExchangeCompleted": True, "freshConnectionProgress": True, "automaticRetry": False}
+            "admittedExchangeCompleted": True, "freshConnectionProgress": True, "automaticRetry": False,
+            "originRequestRecords": records, "originHandshakes": stats["handshakes"],
+            "drainingLocalConnections": draining["local"]["connections"],
+            "replacementLocalConnections": replacement["local"]["connections"]}

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from aioquic.asyncio.client import connect
+from aioquic.h3.connection import FrameType, encode_frame
 
 from fidelity import field_hex, octet_headers
 from production_origin import ORIGINAL_FIELDS
@@ -45,7 +46,7 @@ def request(client, authority, path, fields, body=None):
                (b":authority", authority.encode("ascii")), (b":path", path.encode("ascii"))] + fields
     client._quic.send_stream_data(stream, octet_headers(headers), end_stream=body is None)
     if body is not None:
-        client.http.send_data(stream, body, end_stream=True)
+        client._quic.send_stream_data(stream, encode_frame(FrameType.DATA, body), end_stream=True)
     client.transmit()
     return stream, response
 

@@ -143,7 +143,7 @@ final class HTTP3Exchange {
         if error is HTTPControlError {
             return "HTTP/3 control rejected or cancelled the exchange"
         }
-        if error is HTTP3ProxyError {
+        if HTTP3ProxyError.fromTransport(error) != nil {
             return "HTTP/3 transport could not complete the exchange"
         }
         return "HTTP/3 stream failed"

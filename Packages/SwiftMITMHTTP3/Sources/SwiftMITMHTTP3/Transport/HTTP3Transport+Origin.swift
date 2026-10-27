@@ -35,7 +35,7 @@ extension HTTP3Transport {
                 resolve(authority, setup: setup, ownership: ownership)
             }
         } catch {
-            let failure = error as? HTTP3ProxyError ?? .upstreamConnectionFailed
+            let failure = HTTP3ProxyError.fromTransport(error) ?? .upstreamConnectionFailed
             emitFailure(id: requestID, target: exchange.downstream.target, error: failure)
             setup.fail(failure)
         }
@@ -198,7 +198,7 @@ extension HTTP3Transport {
             connect(session)
         } catch {
             ownership.release()
-            let failure = error as? HTTP3ProxyError ?? .destinationUnavailable
+            let failure = HTTP3ProxyError.fromTransport(error) ?? .destinationUnavailable
             emitFailure(id: setup.requestID, target: exchange.downstream.target, error: failure)
             setup.fail(failure)
         }

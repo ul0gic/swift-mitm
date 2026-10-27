@@ -1,0 +1,73 @@
+diff --git a/Sources/NIOQUIC/SwiftNetwork/QUICChannelNewFlowHandler.swift b/Sources/NIOQUIC/SwiftNetwork/QUICChannelNewFlowHandler.swift
+index a69660a..1ecabc0 100644
+--- a/Sources/NIOQUIC/SwiftNetwork/QUICChannelNewFlowHandler.swift
++++ b/Sources/NIOQUIC/SwiftNetwork/QUICChannelNewFlowHandler.swift
+@@ -272,7 +272,12 @@ final class QUICChannelNewFlowHandler<Consumer: QUICStreamConsumer & ~Copyable>:
+                 do {
+                     try streamHandler.acquireStorageReservation(factory: self.streamStorageReservationFactory)
+                 } catch {
+-                    streamHandler.stop(detachFromLowerProtocol: true)
++                    // Refuse before start/publication, preserving the application's reset code
++                    // through the native disconnect before detaching this flow.
++                    let refusal = (error as? QUICStreamStorageAdmissionError).flatMap {
++                        NetworkError(quicApplicationError: $0.code.rawValue)
++                    }
++                    streamHandler.stop(detachFromLowerProtocol: true, error: refusal)
+                     streamHandler.closeIfNeeded()
+                     self.log("Rejected stream storage admission: \(error)")
+                     return
+diff --git a/Sources/NIOQUIC/SwiftNetwork/QUICChannelStreamHandler.swift b/Sources/NIOQUIC/SwiftNetwork/QUICChannelStreamHandler.swift
+index 052daed..ad79b05 100644
+--- a/Sources/NIOQUIC/SwiftNetwork/QUICChannelStreamHandler.swift
++++ b/Sources/NIOQUIC/SwiftNetwork/QUICChannelStreamHandler.swift
+@@ -753,7 +753,7 @@ final class QUICChannelStreamHandler: ProtocolInstanceContainer, InboundStreamHa
+     }
+ 
+     // Stop and disconnect the stream handler
+-    func stop(detachFromLowerProtocol: Bool = false) {
++    func stop(detachFromLowerProtocol: Bool = false, error: NetworkError? = nil) {
+         log("stop")
+         self.eventLoop.preconditionInEventLoop()
+         if self.readTransactionActive, !self.deliveringRead { self.discardReadBatch = true }
+@@ -768,7 +768,7 @@ final class QUICChannelStreamHandler: ProtocolInstanceContainer, InboundStreamHa
+ 
+         switch self.swiftNetworkStreamHandle.invokeDisconnect() {
+         case .proceed(let linkage):
+-            linkage.invokeDisconnect(self.reference, error: nil)
++            linkage.invokeDisconnect(self.reference, error: error)
+         case .ignore:
+             break
+         }
+diff --git a/Sources/NIOQUIC/SwiftNetwork/QUICConfiguration.swift b/Sources/NIOQUIC/SwiftNetwork/QUICConfiguration.swift
+index 4c80a2c..661a81f 100644
+--- a/Sources/NIOQUIC/SwiftNetwork/QUICConfiguration.swift
++++ b/Sources/NIOQUIC/SwiftNetwork/QUICConfiguration.swift
+@@ -13,6 +13,7 @@
+ //===----------------------------------------------------------------------===//
+ 
+ import NIOCore
++import NIOQUICHelpers
+ @_spi(SwiftTLSOptions) import SwiftTLS
+ 
+ public enum Role: Sendable, CustomStringConvertible {
+@@ -130,8 +131,18 @@ public struct QLogConfiguration: Sendable {
+ }
+ 
+ @available(anyAppleOS 26, *)
+-/// Reserves raw/output payload storage synchronously on the child event loop.
+-/// The callback must not reenter the channel or block. Throwing rejects that child before start.
++/// Throw from the storage factory to refuse an inbound stream before initialization with this application code.
++public struct QUICStreamStorageAdmissionError: Error, Sendable {
++    public let code: QUICApplicationErrorCode
++
++    public init(code: QUICApplicationErrorCode) {
++        self.code = code
++    }
++}
++
++@available(anyAppleOS 26, *)
++/// Reserves raw/output storage synchronously without blocking or reentry. Throwing rejects the child before start.
++/// Typed admission errors send their code to inbound peers; outbound failures return to the caller.
+ public typealias QUICStreamStorageReservationFactory = @Sendable (Int) throws -> (any AnyObject & Sendable)
+ 
+ @available(anyAppleOS 26, *)

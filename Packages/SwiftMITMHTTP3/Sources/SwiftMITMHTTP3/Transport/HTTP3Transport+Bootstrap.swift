@@ -2,6 +2,7 @@ import NIOCore
 import NIOHTTP3
 import NIOPosix
 import NIOQUIC
+import NIOQUICHelpers
 import SwiftMITM
 
 extension HTTP3Transport {
@@ -39,7 +40,17 @@ extension HTTP3Transport {
         native.maximumBytesPerRead = 16_384
         native.maximumPendingWriteBytes = 65_536
         let resources = resources
-        native.streamStorageReservationFactory = { try resources.reserve($0, kind: .nativeStream) }
+        native.streamStorageReservationFactory = { bytes in
+            do {
+                return try resources.reserve(bytes, kind: .nativeStream)
+            } catch HTTP3ProxyError.resourceLimit {
+                // RFC 9114 §8.1: H3_EXCESSIVE_LOAD refuses unadmitted work without closing sibling streams.
+                guard let code = QUICApplicationErrorCode(0x10B) else {
+                    throw HTTP3ProxyError.invalidConfiguration
+                }
+                throw QUICStreamStorageAdmissionError(code: code)
+            }
+        }
         return native
     }
 

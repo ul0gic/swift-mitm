@@ -86,7 +86,7 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
             phase = "proxy-start"
             let port = try await server.start(port: 0)
             phase = "chromium-client"
-            try runChromiumClient(python: peer.python, executable: executable, port: port, originPort: ready.port)
+            try runChromiumClient(peer: peer, executable: executable, port: port, originPort: ready.port)
             phase = "capture-assertions"
             try assertBrowserCapture(sink)
             phase = "proxy-stop"
@@ -97,6 +97,7 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
             try await group.shutdownGracefully()
         } catch {
             XCTFail("Chromium phase \(phase) failed: \(error)")
+            reportChromiumPath(sink)
             if let proxy {
                 try? await proxy.stop()
             }
@@ -108,15 +109,22 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
         }
     }
 
-    private func runChromiumClient(python: String, executable: String, port: Int, originPort: Int) throws {
+    private func runChromiumClient(
+        peer: Release022ExternalPeer,
+        executable: String,
+        port: Int,
+        originPort: Int
+    ) throws {
         let result = try release022RunProcess(
-            executable: python,
+            executable: peer.python,
             arguments: [
                 Release022ExternalPeer.clientsDirectory.appendingPathComponent("chromium_client.py").path,
                 "--executable",
                 executable,
                 "--proxy",
                 "http://127.0.0.1:\(port)",
+                "--expected-ca",
+                peer.directory.appendingPathComponent("proxy-ca.pem").path,
                 "--url",
                 "https://localhost:\(originPort)/"
             ],
@@ -124,6 +132,18 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
         )
         FileHandle.standardError.write(Data("CLIENT-MATRIX \(result)".utf8))
         XCTAssertTrue(result.contains("\"sse\": true"))
+    }
+
+    private func reportChromiumPath(_ sink: Release022Events) {
+        let failures = sink.events.compactMap { event -> String? in
+            if case let .connectionFailure(failure) = event {
+                return "\(failure.reason):\(String(describing: failure.code))"
+            }
+            return nil
+        }
+        FileHandle.standardError.write(
+            Data("Chromium path: captureEvents=\(sink.events.count), failures=\(Array(failures.prefix(4)))\n".utf8)
+        )
     }
 
     private func makeProxy(
@@ -181,9 +201,10 @@ final class Release022BrowserCompatibilityTests: XCTestCase {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         let endpointPort = try XCTUnwrap(NWEndpoint.Port(rawValue: try XCTUnwrap(UInt16(exactly: port))))
-        configuration.websiteDataStore.proxyConfigurations = [
-            ProxyConfiguration(httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: endpointPort))
-        ]
+        var proxyConfiguration = ProxyConfiguration(httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: endpointPort))
+        // Explicitly select loopback: the default selection reached the origin directly in client acceptance.
+        proxyConfiguration.matchDomains = ["localhost"]
+        configuration.websiteDataStore.proxyConfigurations = [proxyConfiguration]
         let der = try NIOSSLCertificate(bytes: Array(authority.caCertificatePEM.utf8), format: .pem).toDERBytes()
         let root = try XCTUnwrap(SecCertificateCreateWithData(nil, Data(der) as CFData))
         return (configuration, root)

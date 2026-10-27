@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import AsyncExitStack, asynccontextmanager
+from functools import partial
 import json
 import os
 from pathlib import Path
@@ -154,36 +155,81 @@ async def connection_ceiling(ready, authority, certificate, maximum, byte_limit,
     initial = read_resources(path, byte_limit=byte_limit)
     observed_refusal = None
     admitted = []
-    async with client_group() as (stack, clients):
-        for attempt in range(maximum + 1):
-            context = connect("127.0.0.1", ready["port"], configuration=configuration(certificate, "localhost"),
-                              create_protocol=Client, wait_connected=False)
-            client = await stack.enter_async_context(context)
-            clients.append(client)
-            client.transmit()
+    evidence.parent.mkdir(parents=True, exist_ok=True)
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    peer_states = []
+    with evidence.with_name("connection-progress.jsonl").open("w", encoding="utf-8") as progress:
+        def record(phase, **fields):
+            progress.write(json.dumps({"phase": phase, "elapsedSeconds": loop.time() - started,
+                                       "completedHandshakes": len(admitted), **fields}) + "\n")
+            progress.flush()
+
+        class CeilingClient(Client):
+            def __init__(self, *args, peer_index, **kwargs):
+                super().__init__(*args, diagnostics={}, **kwargs)
+                self.peer_index = peer_index
+                self.termination_recorded = False
+
+            def quic_event_received(self, event):
+                super().quic_event_received(event)
+                if "termination" in self.diagnostics and not self.termination_recorded:
+                    self.termination_recorded = True
+                    record("peer-terminated", peerIndex=self.peer_index,
+                           peerState=peer_states[self.peer_index], **self.diagnostics)
+
+        async def ping(index, client):
+            await client.ping()
+            peer_states[index]["lastSuccessfulPingSeconds"] = loop.time() - started
+            record("peer-ping-completed", peerIndex=index, peerState=peer_states[index])
+
+        record("initial", resources=initial)
+        async with client_group() as (stack, clients):
             try:
-                await asyncio.wait_for(client.wait_connected(), timeout=2)
-                admitted.append(client)
-            except (TimeoutError, ConnectionError):
-                usage = await wait_usage(path, lambda value: (
-                    refusals(value, "nativeListener", "connections") > refusals(initial, "nativeListener", "connections")
-                    or refusals(value, "local", "connections") > refusals(initial, "local", "connections")
-                    or refusals(value, "local", "retainedBytes") > refusals(initial, "local", "retainedBytes")
-                ), byte_limit=byte_limit)
-                observed_refusal = usage
-                break
-            if len(admitted) % 16 == 0:
-                await asyncio.wait_for(asyncio.gather(*(item.ping() for item in admitted)), timeout=5)
-            usage = read_resources(path, byte_limit=byte_limit)
-            assert usage["local"]["connections"] <= maximum, usage
-            samples.append(usage)
-        assert observed_refusal is not None and admitted, "no typed admission refusal at configured ceiling"
-        for client in admitted[:3]:
-            await asyncio.wait_for(client.ping(), timeout=3)
-        actual = len(admitted)
-        byte_refused = refusals(observed_refusal, "local", "retainedBytes") > refusals(
-            initial, "local", "retainedBytes")
-        assert byte_refused or actual == maximum, (actual, maximum, observed_refusal)
+                for attempt in range(maximum + 1):
+                    peer_states.append({"handshakeCompletedSeconds": None, "lastSuccessfulPingSeconds": None})
+                    record("attempt-started", peerIndex=attempt,
+                           resources=read_resources(path, byte_limit=byte_limit))
+                    context = connect("127.0.0.1", ready["port"], configuration=configuration(certificate, "localhost"),
+                                      create_protocol=partial(CeilingClient, peer_index=attempt), wait_connected=False)
+                    client = await stack.enter_async_context(context)
+                    clients.append(client)
+                    client.transmit()
+                    try:
+                        await asyncio.wait_for(client.wait_connected(), timeout=2)
+                        admitted.append(client)
+                        peer_states[attempt]["handshakeCompletedSeconds"] = loop.time() - started
+                    except (TimeoutError, ConnectionError) as error:
+                        record("handshake-failed", peerIndex=attempt, errorType=type(error).__name__,
+                               diagnostics=client.diagnostics)
+                        usage = await wait_usage(path, lambda value: (
+                            refusals(value, "nativeListener", "connections") > refusals(initial, "nativeListener", "connections")
+                            or refusals(value, "local", "connections") > refusals(initial, "local", "connections")
+                            or refusals(value, "local", "retainedBytes") > refusals(initial, "local", "retainedBytes")
+                        ), byte_limit=byte_limit)
+                        observed_refusal = usage
+                        record("typed-refusal", peerIndex=attempt, resources=usage)
+                        break
+                    record("handshake-completed", peerIndex=attempt, peerState=peer_states[attempt],
+                           resources=read_resources(path, byte_limit=byte_limit))
+                    if len(admitted) % 16 == 0:
+                        record("ping-batch-started", peerIndex=attempt)
+                        await asyncio.wait_for(asyncio.gather(*(ping(index, item) for index, item in enumerate(admitted))),
+                                               timeout=5)
+                        record("ping-batch-completed", peerIndex=attempt)
+                    usage = read_resources(path, byte_limit=byte_limit)
+                    assert usage["local"]["connections"] <= maximum, usage
+                    samples.append(usage)
+                assert observed_refusal is not None and admitted, "no typed admission refusal at configured ceiling"
+                for index, client in enumerate(admitted[:3]):
+                    await asyncio.wait_for(ping(index, client), timeout=3)
+                actual = len(admitted)
+                byte_refused = refusals(observed_refusal, "local", "retainedBytes") > refusals(
+                    initial, "local", "retainedBytes")
+                assert byte_refused or actual == maximum, (actual, maximum, observed_refusal)
+            finally:
+                record("admission-scope-ended", peerStates=peer_states,
+                       peerDiagnostics=[client.diagnostics for client in clients])
     await wait_usage(path, lambda value: value["local"]["connections"] == 0, byte_limit=byte_limit)
     async with connect("127.0.0.1", ready["port"], configuration=configuration(certificate, "localhost"),
                        create_protocol=Client) as client:

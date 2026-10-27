@@ -35,7 +35,7 @@
   {
     "repository": "swift-nio-quic",
     "upstreamRevision": "11b231126952b3ef408c4e1ab95d14e16af5d867",
-    "forkRevision": "bd4353105fdabc55ddd11faeaafe9e669effba49",
+    "forkRevision": "99e31641938eef1ac81066813c91f19be844f146",
     "patches": [
       "swift-nio-quic-bounded-read.patch",
       "swift-nio-quic-bounded-send.patch",
@@ -48,7 +48,8 @@
       "swift-nio-quic-local-read-cancellation.patch",
       "swift-nio-quic-admission-snapshot.patch",
       "swift-nio-quic-storage-sizing.patch",
-      "swift-nio-quic-ip-literal-sni.patch"
+      "swift-nio-quic-ip-literal-sni.patch",
+      "swift-nio-quic-storage-admission-error.patch"
     ],
     "upstreamURL": "https://github.com/apple/swift-nio-quic",
     "forkURL": "https://github.com/ul0gic/swift-nio-quic",
@@ -60,13 +61,14 @@
       "swift-nio-quic-local-read-cancellation.patch": "020792b3e68d4f9e1a37277f9a7d44870fa05871",
       "swift-nio-quic-admission-snapshot.patch": "3170f9e03b4d361f2185bafc81edbbc208827060",
       "swift-nio-quic-storage-sizing.patch": "e63aa26bbc710dc0c67bc953c57ccb656c621b9d",
-      "swift-nio-quic-ip-literal-sni.patch": "fc6da19b2fc028cbba360d1c795a65bf1a8d2f50"
+      "swift-nio-quic-ip-literal-sni.patch": "fc6da19b2fc028cbba360d1c795a65bf1a8d2f50",
+      "swift-nio-quic-storage-admission-error.patch": "bd4353105fdabc55ddd11faeaafe9e669effba49"
     }
   },
   {
     "repository": "swift-nio-http3",
     "upstreamRevision": "e2c54cdbf50dc64bf9e80861922f8d9400d2acce",
-    "forkRevision": "1c3c5c7c627e9c116b0901c6ad7d8cbe80e158bb",
+    "forkRevision": "a4473a9490131069a720145f777a36fb0aebff67",
     "patches": [
       "swift-nio-http3-bounded-input.patch",
       "swift-nio-http3-typed-decode-error.patch",

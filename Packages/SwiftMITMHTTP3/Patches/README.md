@@ -83,3 +83,5 @@ The admission snapshot reports current native connection/handshake occupancy and
 Read-only sizing queries expose the same checked calculations used by native stream and HTTP3 parser reservations. They allocate no live transport/parser ownership and are not estimates of process memory. Production configuration can reject budgets smaller than a required reservation without duplicating private layout formulas.
 
 Client IP identities are omitted from wire SNI while still reaching IP SAN verification. HTTP3 TE validation accepts ASCII case variants and SP/HTAB edge whitespace without rewriting field bytes; other values remain rejected. These production compatibility repairs await independent wire proof.
+
+The storage-admission-error patch lets an inbound reservation refusal send its explicit application code before child initialization. The companion uses H3_EXCESSIVE_LOAD and normalizes the same local error back to resourceLimit for outbound callers. It preserves admission bounds and unrelated error mapping. This adds one public error type and a native disconnect parameter; maximum-storage reset, sibling survival and recovery await remote verification.

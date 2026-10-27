@@ -22,6 +22,9 @@ struct HostEvent: Encodable, Sendable {
     var authority: String?
     var destinationAddress: String?
     var destinationPort: Int?
+    var tlsServerName: String?
+    var originalClientAddress: String?
+    var originalClientPort: Int?
     var provenance: String?
     var headers: [HostField]?
     var byteCount: Int?
@@ -70,6 +73,9 @@ final class HostCapture: CaptureEventSink {
             result.authority = head.authority
             result.destinationAddress = head.target?.destination.address
             result.destinationPort = head.target?.destination.port
+            result.tlsServerName = head.target?.tlsServerName
+            result.originalClientAddress = head.target?.originalClient?.address
+            result.originalClientPort = head.target?.originalClient?.port
             result.provenance = head.target?.ingressProvenance.rawValue
             result.headers = head.headers.map(HostField.init)
             return result

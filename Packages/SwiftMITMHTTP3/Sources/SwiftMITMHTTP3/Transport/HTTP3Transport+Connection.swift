@@ -59,7 +59,7 @@ extension HTTP3Transport {
                 session.promise.succeed(channel)
             }
         case let .failure(error):
-            let failure = session.ownership.failure ?? error as? HTTP3ProxyError ?? .upstreamConnectionFailed
+            let failure = session.ownership.failure ?? HTTP3ProxyError.fromTransport(error) ?? .upstreamConnectionFailed
             connectionFailed(session, error: failure)
         }
     }

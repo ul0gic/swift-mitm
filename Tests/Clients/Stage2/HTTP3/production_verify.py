@@ -26,6 +26,8 @@ from production_lifecycle import CASES as LIFECYCLE_CASES, run_case as run_lifec
 from production_security import SECURITY_CASES, run_security_case
 from production_memory import CASES as MEMORY_CASES, run_case as run_memory_case
 from production_ownership import CASES as OWNERSHIP_CASES, run_case as run_ownership_case
+from production_migration import CASES as MIGRATION_CASES, run_case as run_migration_case
+from production_upload import CASES as UPLOAD_CASES, run_case as run_upload_case
 from production_resources import production_goaway, read_resources, stream_limit
 
 
@@ -34,7 +36,7 @@ CASES = (
     "denied-route", "separated-fin", "oversized-request-headers", "oversized-response-headers",
     "fragmented-headers", "sni-policy", "goaway-drain", "octet-fidelity", "request-stream-limit",
     "slow-receiver", "cancelled-credit-churn", "storage-refusal", "maximum-storage-refusal",
-) + CONTROL_CASES + LIFECYCLE_CASES + SECURITY_CASES + MEMORY_CASES + OWNERSHIP_CASES
+) + CONTROL_CASES + LIFECYCLE_CASES + SECURITY_CASES + MEMORY_CASES + OWNERSHIP_CASES + MIGRATION_CASES + UPLOAD_CASES
 
 
 async def exercise(name, ready, authority, certificate, peer, artifacts):
@@ -45,7 +47,7 @@ async def exercise(name, ready, authority, certificate, peer, artifacts):
     if name in ("storage-refusal", "maximum-storage-refusal"):
         return await exercise_storage(name, ready, authority, certificate, artifacts)
     if name == "streaming":
-        return await positive(ready["port"], authority, certificate)
+        return await positive(ready["port"], authority, certificate, diagnostics_directory=artifacts)
     if name == "separated-fin":
         return await separated_fin(ready["port"], authority, certificate, peer)
     if name in ("oversized-request-headers", "oversized-response-headers"):
@@ -221,7 +223,7 @@ async def run_case(binary, name, artifacts):
                         assert stats["splitRequestTrailers"] == list(range(129)), stats
                         assert stats["splitResponseFin"] == list(range(129)), stats
                     expected = {"ip-san": 1, "oversized-request-headers": 1, "oversized-response-headers": 2,
-                                "fragmented-headers": 2, "sni-policy": 3, "goaway-drain": 2,
+                                "fragmented-headers": 2, "sni-policy": 3, "goaway-drain": 3,
                                 "octet-fidelity": 2, "request-stream-limit": 4, "separated-fin": 130,
                                 "slow-receiver": 5, "cancelled-credit-churn": 65}
                     if name in expected:
@@ -262,6 +264,10 @@ async def main(arguments):
                     observation = await run_memory_case(arguments.binary, name, artifacts / name)
                 elif name in OWNERSHIP_CASES:
                     observation = await run_ownership_case(arguments.binary, name, artifacts / name)
+                elif name in MIGRATION_CASES:
+                    observation = await run_migration_case(arguments.binary, name, artifacts / name)
+                elif name in UPLOAD_CASES:
+                    observation = await run_upload_case(arguments.binary, name, artifacts / name)
                 else:
                     observation = await run_case(arguments.binary, name, artifacts)
             results["checks"][name] = {"result": "passed", "observation": observation}

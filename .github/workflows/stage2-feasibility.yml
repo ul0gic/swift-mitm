@@ -97,7 +97,8 @@ jobs:
           swift build --package-path "$host_package" --product HTTP3ProductionHost \
             --force-resolved-versions -Xswiftc -warnings-as-errors 2>&1 | tee evidence/production-build.log
           binary_directory="$(swift build --package-path "$host_package" --show-bin-path)"
-          files=(HTTP3ProductionHost)
+          xcrun dsymutil "$binary_directory/HTTP3ProductionHost"
+          files=(HTTP3ProductionHost HTTP3ProductionHost.dSYM)
           for bundle in "$binary_directory"/*.bundle; do
             if [[ -d "$bundle" ]]; then files+=("${bundle##*/}"); fi
           done
@@ -356,7 +357,7 @@ jobs:
               denied-route separated-fin oversized-request-headers oversized-response-headers
               fragmented-headers sni-policy goaway-drain octet-fidelity request-stream-limit)
           elif [[ "$PARTITION" == resources ]]; then
-            cases=(slow-receiver cancelled-credit-churn storage-refusal maximum-storage-refusal)
+            cases=(slow-receiver cancelled-credit-churn storage-refusal maximum-storage-refusal upstream-credit-stall)
           elif [[ "$PARTITION" == controls ]]; then
             cases=(control-headers control-body control-synthetic control-breakpoint control-delay)
           elif [[ "$PARTITION" == lifecycle ]]; then
@@ -365,7 +366,7 @@ jobs:
           elif [[ "$PARTITION" == security ]]; then
             cases=(cross-client-pooling mapped-route-isolation mapped-route-trust
               upstream-invalid-goaway upstream-increasing-goaway downstream-increasing-goaway
-              downstream-goaway-drain unsupported-connect unsupported-webtransport)
+              downstream-goaway-drain unsupported-connect unsupported-webtransport validated-address-migration)
           elif [[ "$PARTITION" == ownership ]]; then
             cases=(shared-byte-refusal orphan-stop-restart)
           else
@@ -381,6 +382,62 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: stage2-http3-production-${{ matrix.partition }}-${{ github.sha }}
+          path: evidence/
+          if-no-files-found: error
+
+  http3-native-allocations:
+    name: Public HTTP3 native allocation diagnostic
+    needs: combined-graph
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: stage2-http3-production-host-${{ github.sha }}
+          path: ${{ runner.temp }}/production-host
+      - name: Validate the public consumer candidate and toolchain
+        run: |
+          mkdir -p evidence
+          test "$(cat "$RUNNER_TEMP/production-host/candidate-sha.txt")" = "$GITHUB_SHA"
+          cp "$RUNNER_TEMP/production-host/"{candidate-sha,swift,xcode}.txt evidence/
+          xcodebuild -version > evidence/runtime-xcode.txt
+          swift --version > evidence/runtime-swift.txt
+          sw_vers > evidence/os.txt
+          cmp evidence/runtime-xcode.txt evidence/xcode.txt
+          cmp evidence/runtime-swift.txt evidence/swift.txt
+          cp "$RUNNER_TEMP/production-host/Package.resolved" evidence/
+          tar -xzf "$RUNNER_TEMP/production-host/HTTP3ProductionHost.tar.gz" -C "$RUNNER_TEMP/production-host"
+          test -x "$RUNNER_TEMP/production-host/HTTP3ProductionHost"
+      - name: Set up independent peer Python
+        id: peer-python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.14.9'
+          architecture: arm64
+      - name: Install isolated independent peers
+        env:
+          PEER_PYTHON: ${{ steps.peer-python.outputs.python-path }}
+        run: |
+          "$PEER_PYTHON" -m venv "$RUNNER_TEMP/http3-production-peers"
+          "$RUNNER_TEMP/http3-production-peers/bin/python" -m pip install --require-hashes --only-binary=:all: \
+            -r Tests/Clients/Stage2/HTTP3/requirements.txt
+          "$RUNNER_TEMP/http3-production-peers/bin/python" -m pip freeze > evidence/peer-versions.txt
+      - name: Capture native allocation lifetimes
+        timeout-minutes: 5
+        run: |
+          "$RUNNER_TEMP/http3-production-peers/bin/python" Tests/Clients/Stage2/HTTP3/production_allocations.py \
+            --binary "$RUNNER_TEMP/production-host/HTTP3ProductionHost" \
+            --malloc-history "$(xcrun --find malloc_history)" \
+            --candidate "$GITHUB_SHA" \
+            --output evidence/native-allocations.json
+      - name: Retain native allocation evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: stage2-http3-native-allocations-${{ github.sha }}
           path: evidence/
           if-no-files-found: error
 

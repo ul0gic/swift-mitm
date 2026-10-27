@@ -27,6 +27,9 @@ class Origin(QuicConnectionProtocol):
         super().__init__(*args, **kwargs)
         self.http = H3Connection(self._quic)
         self.stats = stats
+        self.origin_connection_id = self.stats.setdefault("originConnections", 0)
+        self.stats["originConnections"] += 1
+        self.stats.setdefault("goawayRequests", [])
         self.publish = publish
         self.paths = {}
         self.release_file = release_file
@@ -93,6 +96,12 @@ class Origin(QuicConnectionProtocol):
         self.paths[event.stream_id] = path
         self.stats["requests"] += 1
         self.stats["paths"].append(path.decode("ascii"))
+        if path in (b"/goaway-drain", b"/fresh-after-goaway", b"/after-goaway-drain"):
+            assert len(self.stats["goawayRequests"]) < 64
+            self.stats["goawayRequests"].append({
+                "connection": self.origin_connection_id, "stream": event.stream_id,
+                "path": path.decode("ascii"),
+            })
         if path == b"/octet-fidelity":
             self.stats["octetHeaders"] = field_hex([(name, value) for name, value in event.headers
                                                     if not name.startswith(b":")])

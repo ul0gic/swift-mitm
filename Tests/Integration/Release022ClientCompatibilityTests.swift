@@ -186,9 +186,10 @@ final class Release022ClientCompatibilityTests: XCTestCase {
         configuration.timeoutIntervalForRequest = 10
         let proxyPort = try XCTUnwrap(UInt16(exactly: port))
         let endpointPort = try XCTUnwrap(NWEndpoint.Port(rawValue: proxyPort))
-        configuration.proxyConfigurations = [
-            ProxyConfiguration(httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: endpointPort))
-        ]
+        var proxyConfiguration = ProxyConfiguration(httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: endpointPort))
+        // Explicitly select loopback: the default selection reached the origin directly in client acceptance.
+        proxyConfiguration.matchDomains = ["localhost"]
+        configuration.proxyConfigurations = [proxyConfiguration]
         let der = try NIOSSLCertificate(bytes: Array(authority.caCertificatePEM.utf8), format: .pem).toDERBytes()
         let root = try XCTUnwrap(SecCertificateCreateWithData(nil, Data(der) as CFData))
         let delegate = Release022URLSessionTrust(root: root)

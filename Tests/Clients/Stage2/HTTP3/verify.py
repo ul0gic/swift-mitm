@@ -2,6 +2,7 @@ import argparse
 import asyncio
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
+from functools import partial
 import hashlib
 import json
 import os
@@ -47,18 +48,25 @@ class Response:
 
 
 class Client(QuicConnectionProtocol):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, diagnostics=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.http = H3Connection(self._quic)
         self.responses = {}
         self.alpn = None
         self.connection_error = None
+        self.diagnostics = diagnostics
 
     def quic_event_received(self, event):
         if isinstance(event, HandshakeCompleted):
             self.alpn = event.alpn_protocol
             assert not event.early_data_accepted
         elif isinstance(event, ConnectionTerminated):
+            if self.diagnostics is not None:
+                self.diagnostics["termination"] = {
+                    "error_code": event.error_code, "frame_type": event.frame_type,
+                    "reason_phrase": event.reason_phrase[:512],
+                    "reason_truncated": len(event.reason_phrase) > 512,
+                }
             self.connection_error = event.error_code
             for response in self.responses.values():
                 if not response.done.is_set():
@@ -176,35 +184,46 @@ def configuration(certificate, hostname):
     return value
 
 
-async def positive(port, authority, certificate):
-    async with connect("127.0.0.1", port, configuration=configuration(certificate, "localhost"),
-                       create_protocol=Client) as client:
-        assert client.alpn == "h3"
-        stream, duplex = client.request(authority, "/duplex", end=False)
-        await asyncio.wait_for(duplex.first_data.wait(), timeout=10)
-        assert bytes(duplex.body) == b"early:" and not duplex.done.is_set()
-        client.body(stream, b"upload-before-eof", end=False)
-        async with asyncio.timeout(10):
-            while bytes(duplex.body) != b"early:upload-before-eof":
-                if duplex.error or duplex.done.is_set():
-                    raise AssertionError("duplex response ended before upload EOF")
-                await asyncio.sleep(0.01)
-        client.body(stream, b":tail", end=True)
-        assert await response_complete(duplex) == b"early:upload-before-eof:tail"
-        assert [v for k, v in duplex.headers if k == b"x-duplicate"] == [b"first", b"second"]
-        assert [v for k, v in duplex.trailers if k == b"x-trailer"] == [b"first", b"second"]
-        siblings = [client.request(authority, f"/sibling-{index}")[1] for index in range(32)]
-        assert await asyncio.gather(*(response_complete(item) for item in siblings)) == [b"origin"] * 32
-        held_stream, held = client.request(authority, "/hold", end=False)
-        await asyncio.wait_for(held.first_data.wait(), timeout=10)
-        assert bytes(held.body) == b"held"
-        client.cancel(held_stream)
-        assert await response_complete(client.request(authority, "/after-cancel")[1]) == b"origin"
-        assert await response_complete(client.request(authority, "/large")[1]) == bytes(range(256)) * 1024
-        settings = client.http.received_settings
-        assert settings is not None
-        assert settings.get(Setting.QPACK_MAX_TABLE_CAPACITY, 0) == 0
-        assert settings.get(Setting.QPACK_BLOCKED_STREAMS, 0) == 0
+async def positive(port, authority, certificate, diagnostics_directory=None):
+    config = configuration(certificate, "localhost")
+    logger = FlowLogger() if diagnostics_directory is not None else None
+    diagnostics = {} if diagnostics_directory is not None else None
+    if logger is not None:
+        config.quic_logger = logger
+    try:
+        async with connect("127.0.0.1", port, configuration=config,
+                           create_protocol=partial(Client, diagnostics=diagnostics)) as client:
+            assert client.alpn == "h3"
+            stream, duplex = client.request(authority, "/duplex", end=False)
+            await asyncio.wait_for(duplex.first_data.wait(), timeout=10)
+            assert bytes(duplex.body) == b"early:" and not duplex.done.is_set()
+            client.body(stream, b"upload-before-eof", end=False)
+            async with asyncio.timeout(10):
+                while bytes(duplex.body) != b"early:upload-before-eof":
+                    if duplex.error or duplex.done.is_set():
+                        raise AssertionError("duplex response ended before upload EOF")
+                    await asyncio.sleep(0.01)
+            client.body(stream, b":tail", end=True)
+            assert await response_complete(duplex) == b"early:upload-before-eof:tail"
+            assert [v for k, v in duplex.headers if k == b"x-duplicate"] == [b"first", b"second"]
+            assert [v for k, v in duplex.trailers if k == b"x-trailer"] == [b"first", b"second"]
+            siblings = [client.request(authority, f"/sibling-{index}")[1] for index in range(32)]
+            assert await asyncio.gather(*(response_complete(item) for item in siblings)) == [b"origin"] * 32
+            held_stream, held = client.request(authority, "/hold", end=False)
+            await asyncio.wait_for(held.first_data.wait(), timeout=10)
+            assert bytes(held.body) == b"held"
+            client.cancel(held_stream)
+            assert await response_complete(client.request(authority, "/after-cancel")[1]) == b"origin"
+            assert await response_complete(client.request(authority, "/large")[1]) == bytes(range(256)) * 1024
+            settings = client.http.received_settings
+            assert settings is not None
+            assert settings.get(Setting.QPACK_MAX_TABLE_CAPACITY, 0) == 0
+            assert settings.get(Setting.QPACK_BLOCKED_STREAMS, 0) == 0
+    finally:
+        if logger is not None:
+            logger.write(diagnostics_directory / "client.qlog")
+            (diagnostics_directory / "client-termination.json").write_text(
+                json.dumps(diagnostics), encoding="utf-8")
     return {"downstreamALPN": "h3", "earlyDuplex": True, "parallelStreams": 32,
             "orderedFieldsAndTrailers": True, "cancelSibling": True, "largeBodyBytes": 262144}
 

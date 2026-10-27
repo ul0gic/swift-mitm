@@ -32,11 +32,11 @@ extension HTTP3Transport {
                     if error is CancellationError {
                         setup.fail(error)
                     } else {
-                        setup.fail(error as? HTTP3ProxyError ?? .upstreamConnectionFailed)
+                        setup.fail(HTTP3ProxyError.fromTransport(error) ?? .upstreamConnectionFailed)
                     }
                 }
             }
-        } catch { setup.fail(error as? HTTP3ProxyError ?? .upstreamConnectionFailed) }
+        } catch { setup.fail(HTTP3ProxyError.fromTransport(error) ?? .upstreamConnectionFailed) }
     }
 
     private func initializeOriginStream(

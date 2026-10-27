@@ -1,4 +1,5 @@
 import Foundation
+import NIOQUIC
 import SwiftMITM
 
 extension HTTP3Transport {
@@ -36,5 +37,14 @@ extension HTTP3Transport {
             stage: stage,
             code: code
         )))
+    }
+}
+
+extension HTTP3ProxyError {
+    static func fromTransport(_ error: any Error) -> Self? {
+        if error is QUICStreamStorageAdmissionError {
+            return .resourceLimit
+        }
+        return error as? Self
     }
 }
