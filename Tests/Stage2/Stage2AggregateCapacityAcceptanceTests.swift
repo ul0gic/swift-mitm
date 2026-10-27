@@ -257,21 +257,36 @@ final class Stage2AggregateCapacityAcceptanceTests: XCTestCase {
 
     private func exerciseBoundary(legs: [Leg], admission: ResourceAdmissionController) async throws {
         let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(150))
+        let started = clock.now
+        let deadline = started.advanced(by: .seconds(150))
         let chunk = ByteBuffer(bytes: [UInt8](repeating: 97, count: Self.chunkSize))
         let baseline = try MachMemory.residentBytes()
         var sent = [Int](repeating: 0, count: legs.count)
         var rejected: Int?
+        var phase = "fill"
+        var queuedItems = 0
+        defer {
+            let line = "aggregate phase=\(phase) elapsed=\(started.duration(to: clock.now)) sent=\(sent) "
+                + "received=\(legs.map { $0.receiver.received }) sharedBytes=\(admission.usage.retainedBytes) "
+                + "localBytes=\(legs.map { $0.budget.retainedBytes }) lastQueueItems=\(queuedItems) "
+                + "blocked=\(legs.map { $0.gate.entered }) "
+                + "losses=\(legs.map { $0.inspector.observationLossDetected })\n"
+            FileHandle.standardError.write(Data(line.utf8))
+        }
         while rejected == nil {
             for index in legs.indices {
+                phase = "fill-check-\(index)"
                 guard clock.now < deadline, sent[index] < Self.bodySize else {
                     throw Phase2FixtureError.deadlineExceeded
                 }
                 let before = admission.usage.retainedBytes
                 let local = await legs[index].inspector.drain(timeout: .zero)
+                queuedItems = local.queuedItems
+                phase = "fill-write-\(index)"
                 try await legs[index].upstream.writeAndFlush(chunk).get()
                 sent[index] += Self.chunkSize
                 let expected = sent[index]
+                phase = "fill-receive-\(index)"
                 try await stage2Await { legs[index].receiver.received == expected }
                 XCTAssertLessThanOrEqual(admission.usage.retainedBytes, Self.sharedLimit)
                 if legs[index].inspector.observationLossDetected {
@@ -285,14 +300,11 @@ final class Stage2AggregateCapacityAcceptanceTests: XCTestCase {
                 }
             }
         }
+        phase = "post-refusal"
         let failed = try XCTUnwrap(rejected)
         for leg in legs { leg.gate.release() }
         try await stage2Await { legs[failed].gate.losses == 1 }
         try await finishBodies(legs: legs, sent: sent, chunk: chunk, deadline: deadline)
-        for leg in legs {
-            let drained = await leg.inspector.drain()
-            XCTAssertTrue(drained.drained)
-        }
     }
 
     private func recordBoundary(
@@ -343,6 +355,10 @@ final class Stage2AggregateCapacityAcceptanceTests: XCTestCase {
             XCTAssertEqual(received.digest, expectedDigest)
             XCTAssertEqual(leg.capture.capturedResponseBytes, Self.bodySize)
             XCTAssertEqual(leg.capture.capturedErrors, 0)
+        }
+        for leg in legs {
+            let drained = await leg.inspector.drain()
+            XCTAssertTrue(drained.drained)
         }
     }
 

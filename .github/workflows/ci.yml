@@ -723,7 +723,6 @@ jobs:
           developer = pathlib.Path(os.environ['DEVELOPER_DIR'])
           platform_developer = developer / 'Platforms/MacOSX.platform/Developer'
           library_paths = [payload / 'products', platform_developer / 'usr/lib']
-          library_paths += sorted((developer / 'Toolchains/XcodeDefault.xctoolchain/usr/lib').glob('swift*/macosx'))
           environment = {'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'HOME': os.environ['HOME'],
               'TMPDIR': os.environ.get('TMPDIR', os.environ['RUNNER_TEMP']), 'LANG': 'en_US.UTF-8',
               'DEVELOPER_DIR': str(developer), 'PYTHONDONTWRITEBYTECODE': '1',

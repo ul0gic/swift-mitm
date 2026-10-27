@@ -2,7 +2,7 @@
 
 All notable SwiftMITM changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
-## 0.2.2 - candidate preparation (unreleased)
+## 0.2.2 - 2026-10-27
 
 ### Added
 
@@ -23,6 +23,7 @@ All notable SwiftMITM changes are recorded here. The project follows [Keep a Cha
 - Bind CONNECT/TLS identity to the authorized route and preserve independent request/response flow-control lifetimes.
 - Preserve terminal capture outcomes and read ownership across protocol handoffs, early responses, cancellation, and shutdown.
 - Execute HTTPS replay's buffered-read release on its owning event loop.
+- Release terminal gRPC observation buffers so malformed input cannot stall later inspection.
 
 ## 0.2.1 - 2026-08-21
 

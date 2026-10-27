@@ -6,8 +6,6 @@ SwiftMITM is an embeddable MITM engine for macOS developer tools and authorized 
 
 [Quick start](#quick-start) · [Local lab](Documentation/LocalLab.md) · [Integration guide](Sources/SwiftMITM.docc/GettingStarted.md) · [Security model](Sources/SwiftMITM.docc/SecurityModel.md)
 
-This README describes the **0.2.2 development candidate**. For the published package, see [0.2.1](https://github.com/ul0gic/swift-mitm/tree/0.2.1).
-
 ## Features
 
 - HTTP/1.1 and HTTP/2 interception, ordinary HTTP proxying, HTTPS CONNECT, configured prior-knowledge HTTP/2, and trusted PROXY v2 ingress.

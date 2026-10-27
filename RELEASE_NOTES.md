@@ -1,7 +1,5 @@
 # SwiftMITM 0.2.2
 
-Unreleased candidate.
-
 ## Added
 
 - Optional `SwiftMITMInspection`: incremental SSE, native gRPC, binary/text gRPC-Web, descriptor-backed protobuf, gzip/deflate/Brotli decoding, and fragmented WebSocket messages with supported permessage-deflate negotiation.
@@ -17,8 +15,14 @@ Requires macOS 26+ and Swift tools 6.4; builds use Xcode 27.1. The package uses 
 
 Existing CONNECT-only ingress remains the default. Inspection, active controls, shared admission, and connection reuse are opt-in. Host applications still own client routing/trust, authorization, CA persistence, and stored traffic.
 
+## Fixed
+
+HTTPS replay releases buffered TLS reads on the owning event loop. Terminal gRPC errors release observation buffers and allow subsequent inspection to continue without changing forwarded bytes.
+
 ## Migration and boundaries
 
 The deployment minimum increases to macOS 26. Review exhaustive switches over public ingress/capture enums and the [capture migration guide](Sources/SwiftMITM.docc/CaptureEvents.md#migrate-to-the-0-2-2-candidate). Add the `SwiftMITMInspection` product only when semantic inspection is needed.
 
 HTTP/3 and QUIC are not included. There is no h2c upgrade, ECH decryption, or certificate-pinning bypass. HTTP controls do not edit CONNECT or upgrade handshakes. See [inspection](Documentation/Inspection.md), [active debugging](Documentation/ActiveDebugging.md), and the [security model](Sources/SwiftMITM.docc/SecurityModel.md).
+
+Swift CodeQL analysis could not run on the required Xcode 27.1 toolchain. Release 0.2.2 uses an approved exception for [GitHub's documented tracing limitation](https://github.com/github/codeql-cli-binaries/releases/tag/v2.27.3); no successful Swift scan is claimed.
