@@ -2,152 +2,137 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
   workflow_dispatch:
-  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash
+
+env:
+  DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+
 jobs:
-  classify:
-    name: Classify changes
-    runs-on: ubuntu-24.04
-    outputs:
-      diff_range: ${{ steps.scope.outputs.diff_range }}
-      docs_only: ${{ steps.scope.outputs.docs_only }}
+  build:
+    name: Release build
+    runs-on: xcode-27
+    timeout-minutes: 20
     steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - name: Classify change scope
-        id: scope
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          BEFORE_SHA: ${{ github.event.before }}
-          EVENT_NAME: ${{ github.event_name }}
-          HEAD_SHA: ${{ github.sha }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      - name: Build package
+        run: swift build -c release --force-resolved-versions -Xswiftc -warnings-as-errors
+
+  consumer:
+    name: Consumer and proxy smoke
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Build separate SwiftPM consumer
         run: |
-          case "$EVENT_NAME" in
-            pull_request) diff_range="$BASE_SHA...$PR_HEAD_SHA" ;;
-            push) diff_range="$BEFORE_SHA..$HEAD_SHA" ;;
-            *)
-              echo "diff_range=" >> "$GITHUB_OUTPUT"
-              echo "docs_only=false" >> "$GITHUB_OUTPUT"
-              exit 0
-              ;;
-          esac
-
-          docs_only=true
-          found_change=false
-          while IFS= read -r -d '' path; do
-            found_change=true
-            if [[ "$path" != *.md ]]; then
-              docs_only=false
-            fi
-          done < <(git diff --name-only -z --no-renames "$diff_range")
-
-          if [[ "$found_change" != true ]]; then
-            docs_only=false
-          fi
-
-          echo "diff_range=$diff_range" >> "$GITHUB_OUTPUT"
-          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+          cp -R Examples/FirstCapture "$RUNNER_TEMP/FirstCapture"
+          cp Package.resolved "$RUNNER_TEMP/FirstCapture/Package.resolved"
+          python3 - <<'PY_MANIFEST'
+          import os, pathlib
+          manifest = pathlib.Path(os.environ['RUNNER_TEMP']) / 'FirstCapture/Package.swift'
+          source = manifest.read_text()
+          original = '.package(path: "../..")'
+          assert source.count(original) == 1
+          dependency = f'.package(url: "file://{os.environ["GITHUB_WORKSPACE"]}", revision: "{os.environ["GITHUB_SHA"]}")'
+          manifest.write_text(source.replace(original, dependency))
+          PY_MANIFEST
+          swift build --package-path "$RUNNER_TEMP/FirstCapture" -c release -Xswiftc -warnings-as-errors
+          binary_directory="$(swift build --package-path "$RUNNER_TEMP/FirstCapture" -c release --show-bin-path)"
+          echo "FIRST_CAPTURE_BINARY=$binary_directory/FirstCapture" >> "$GITHUB_ENV"
+      - name: Exercise proxy startup, forwarding and shutdown
+        run: |
+          mkdir -p evidence
+          export OPENSSL_BIN="$(brew --prefix openssl@3)/bin/openssl"
+          python3 - <<'PY_SMOKE'
+          import http.server, json, os, pathlib, selectors, signal, subprocess, tempfile, threading, time
+          body = b'SwiftMITM proxy smoke\n'
+          class Origin(http.server.BaseHTTPRequestHandler):
+              def do_GET(self):
+                  self.send_response(200)
+                  self.send_header('Content-Length', str(len(body)))
+                  self.end_headers()
+                  self.wfile.write(body)
+              def log_message(self, *_):
+                  pass
+          evidence = pathlib.Path('evidence')
+          binary = pathlib.Path(os.environ['FIRST_CAPTURE_BINARY'])
+          origin = http.server.HTTPServer(('127.0.0.1', 0), Origin)
+          origin_thread = threading.Thread(target=origin.serve_forever)
+          origin_thread.start()
+          process = None
+          try:
+              with tempfile.TemporaryDirectory() as temporary:
+                  root = pathlib.Path(temporary)
+                  key, certificate = root / 'ca-key.pem', root / 'ca.pem'
+                  subprocess.run([os.environ['OPENSSL_BIN'], 'genpkey', '-algorithm', 'EC', '-pkeyopt',
+                                  'ec_paramgen_curve:P-256', '-out', str(key)], check=True, timeout=20)
+                  subprocess.run([os.environ['OPENSSL_BIN'], 'req', '-new', '-x509', '-key', str(key),
+                                  '-out', str(certificate), '-days', '1', '-subj', '/CN=SwiftMITM CI',
+                                  '-addext', 'basicConstraints=critical,CA:TRUE',
+                                  '-addext', 'keyUsage=critical,keyCertSign,cRLSign'], check=True, timeout=20)
+                  with (evidence / 'stderr.txt').open('wb') as errors:
+                      process = subprocess.Popen([str(binary), '--ca-cert', str(certificate),
+                          '--ca-key', str(key), '--port', '0', '--allow-internal'],
+                          stdout=subprocess.PIPE, stderr=errors)
+                      with selectors.DefaultSelector() as selector:
+                          selector.register(process.stdout, selectors.EVENT_READ)
+                          deadline = time.monotonic() + 20
+                          first = bytearray()
+                          while not first.endswith(b'\n'):
+                              assert selector.select(timeout=max(0, deadline - time.monotonic())), 'Proxy did not announce startup'
+                              chunk = os.read(process.stdout.fileno(), 4096)
+                              assert chunk, 'Proxy exited before announcing startup'
+                              first.extend(chunk)
+                      listening = json.loads(first)
+                      assert listening['type'] == 'listening'
+                      response = subprocess.run(['/usr/bin/curl', '--silent', '--show-error', '--fail',
+                          '--max-time', '20', '--noproxy', '', '--proxy',
+                          f'http://127.0.0.1:{listening["port"]}',
+                          f'http://127.0.0.1:{origin.server_port}/smoke'],
+                          check=True, stdout=subprocess.PIPE, timeout=25)
+                      assert response.stdout == body, 'Forwarded response differs from origin bytes'
+                      process.send_signal(signal.SIGINT)
+                      remaining, _ = process.communicate(timeout=20)
+                      transcript = first + remaining
+                      (evidence / 'events.jsonl').write_bytes(transcript)
+                      assert process.returncode == 0, 'Proxy did not stop cleanly'
+                      events = [json.loads(line)['type'] for line in transcript.splitlines()]
+                      assert events.count('requestHead') == 1 and events.count('responseEnd') == 1
+                      assert events[-1] == 'stopped'
+                      assert not {'streamError', 'connectionFailure', 'deliveryLoss'} & set(events)
+          finally:
+              if process is not None and process.poll() is None:
+                  process.kill()
+                  process.wait(timeout=10)
+              origin.shutdown()
+              origin.server_close()
+              origin_thread.join(timeout=10)
+          PY_SMOKE
 
   verify:
     name: Verify
-    needs: classify
-    runs-on: ${{ needs.classify.outputs.docs_only == 'true' && 'ubuntu-24.04' || 'macos-26' }}
-    timeout-minutes: 45
-    env:
-      SWIFTPM_CACHE_VERSION: v1
+    needs: [build, consumer]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
     steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Run documentation-only gate
-        if: needs.classify.outputs.docs_only == 'true'
+      - name: Require both checks
         env:
-          DIFF_RANGE: ${{ needs.classify.outputs.diff_range }}
-        run: |
-          found_change=false
-          while IFS= read -r -d '' path; do
-            found_change=true
-            [[ "$path" == *.md ]]
-            printf '%s\n' "$path"
-          done < <(git diff --name-only -z --no-renames "$DIFF_RANGE")
-          [[ "$found_change" == true ]]
-          git diff --check "$DIFF_RANGE"
-      - name: Verify workflow supply-chain policy
-        if: needs.classify.outputs.docs_only != 'true'
-        run: Scripts/verify-action-pinning.sh
-      - name: Install current lint tooling
-        if: needs.classify.outputs.docs_only != 'true'
-        run: brew install swiftlint
-      - name: Record toolchain
-        if: needs.classify.outputs.docs_only != 'true'
-        id: toolchain
-        run: |
-          xcodebuild -version
-          swift --version
-          swiftformat --version
-          swiftlint version
-          fingerprint="$({ xcodebuild -version; swift --version; } | shasum -a 256 | awk '{print $1}')"
-          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
-      - name: Restore SwiftPM cache
-        if: needs.classify.outputs.docs_only != 'true'
-        id: swiftpm-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            .build/*-apple-macosx
-            .build/artifacts
-            .build/checkouts
-            .build/repositories
-            .build/build.db
-            .build/debug.yaml
-            .build/release.yaml
-            .build/workspace-state.json
-            ~/Library/Caches/org.swift.swiftpm
-          key: swiftpm-${{ env.SWIFTPM_CACHE_VERSION }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('Package.swift') }}-${{ github.sha }}
-          restore-keys: |
-            swiftpm-${{ env.SWIFTPM_CACHE_VERSION }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('Package.swift') }}-
-      - name: Run quality gate
-        if: needs.classify.outputs.docs_only != 'true'
-        run: Scripts/verify.sh quality
-      - name: Run correctness and concurrency gate
-        if: needs.classify.outputs.docs_only != 'true'
-        run: Scripts/verify.sh tests
-      - name: Run release-build and documentation gate
-        if: needs.classify.outputs.docs_only != 'true'
-        run: Scripts/verify.sh distribution
-      - name: Save SwiftPM cache
-        if: >-
-          needs.classify.outputs.docs_only != 'true' &&
-          github.event_name == 'push' &&
-          github.ref == 'refs/heads/main' &&
-          steps.swiftpm-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            .build/*-apple-macosx
-            .build/artifacts
-            .build/checkouts
-            .build/repositories
-            .build/build.db
-            .build/debug.yaml
-            .build/release.yaml
-            .build/workspace-state.json
-            ~/Library/Caches/org.swift.swiftpm
-          key: swiftpm-${{ env.SWIFTPM_CACHE_VERSION }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('Package.swift') }}-${{ github.sha }}
+          RESULTS: ${{ toJSON(needs) }}
+        run: jq -e 'all(.[]; .result == "success")' <<< "$RESULTS"

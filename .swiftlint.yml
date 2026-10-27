@@ -4,8 +4,10 @@
 excluded:
   - DerivedData
   - .build
+  - Examples/FirstCapture/.build
   - .project
   - .codex
+  - Vendor
 
 opt_in_rules:
   - array_init

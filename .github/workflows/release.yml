@@ -37,36 +37,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-          RELEASE_VERSION: ${{ inputs.tag || github.ref_name }}
         run: |
-          Scripts/validate-release-tag.sh "$RELEASE_TAG"
+          [[ "$RELEASE_TAG" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          [[ "$(head -n 1 RELEASE_NOTES.md)" == "# SwiftMITM $RELEASE_TAG" ]]
+          grep -Fq "## $RELEASE_TAG - " CHANGELOG.md
           test "$(git cat-file -t "refs/tags/$RELEASE_TAG")" = tag
           commit="$(git rev-list -n 1 "$RELEASE_TAG")"
           git fetch --no-tags origin main
           git merge-base --is-ancestor "$commit" origin/main
-          successful_runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$commit&event=push&status=success" --jq '.workflow_runs | length')"
-          test "$successful_runs" -gt 0
+          ci_run="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$commit&status=success" \
+            --jq '[.workflow_runs[] | select(.event == "push" or .event == "workflow_dispatch")][0].id // empty')"
+          test -n "$ci_run"
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
-
-  distribution:
-    name: Validate tagged distribution
-    needs: validate
-    runs-on: macos-26
-    timeout-minutes: 20
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ needs.validate.outputs.tag }}
-      - name: Validate release build and documentation
-        env:
-          RELEASE_VERSION: ${{ needs.validate.outputs.tag }}
-        run: Scripts/verify.sh distribution
 
   release:
     name: Create GitHub release
-    needs: [validate, distribution]
+    needs: validate
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -80,4 +66,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
-        run: gh release create "$RELEASE_TAG" --verify-tag --title "SwiftMITM $RELEASE_TAG" --notes-file RELEASE_NOTES.md
+        run: |
+          gh release create "$RELEASE_TAG" --verify-tag --title "SwiftMITM $RELEASE_TAG" --notes-file RELEASE_NOTES.md

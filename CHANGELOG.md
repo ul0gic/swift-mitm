@@ -2,7 +2,28 @@
 
 All notable SwiftMITM changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.2.2 - 2026-10-27
+
+### Added
+
+- Optional streaming inspection for SSE, native gRPC, gRPC-Web, descriptor-backed protobuf, compressed HTTP bodies, and fragmented/compressed WebSocket messages.
+- HTTP rules, breakpoints, bounded edits, synthetic responses, destination mapping, and directional faults with original/effective capture provenance.
+- Explicit replay, redacted streaming HAR export, shared resource admission, and scoped HTTP/1 connection reuse.
+- Explicit HTTP forwarding alongside CONNECT, configured prior-knowledge HTTP/2, deliberate encrypted pass-through, and typed setup diagnostics.
+- Public FirstCapture and InterceptionLab consumers with bounded output and explicit delivery-loss handling.
+
+### Changed
+
+- Require macOS 26+, Swift tools 6.4, and Crypto 5; use Xcode 27.1 for builds.
+- Preserve permitted HTTP/1 header and trailer octets through a narrow vendored NIO codec while allowing framing/whitespace normalization.
+- Keep HTTP/3 and QUIC outside this release; retain the experimental implementation on its dedicated hold branch.
+
+### Fixed
+
+- Bind CONNECT/TLS identity to the authorized route and preserve independent request/response flow-control lifetimes.
+- Preserve terminal capture outcomes and read ownership across protocol handoffs, early responses, cancellation, and shutdown.
+- Execute HTTPS replay's buffered-read release on its owning event loop.
+- Release terminal gRPC observation buffers so malformed input cannot stall later inspection.
 
 ## 0.2.1 - 2026-08-21
 
