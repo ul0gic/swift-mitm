@@ -46,15 +46,7 @@ actor HTTP3ServerLifecycle {
             )
             let selectedLoop = group.next()
             loop = selectedLoop
-            let identity = try inputs.certificateAuthority
-                .mintCertificateIdentity(forHost: inputs.configuration.route.identity.host)
-            let authenticator: Authenticator
-            do { authenticator = try Authenticator(
-                certificates: identity.certificateChain,
-                privateKey: identity.privateKey
-            ) } catch {
-                throw HTTP3ProxyError.invalidConfiguration
-            }
+            let authenticator = try makeAuthenticator()
             let inputs = inputs
             let resources = resources
             let state = try await selectedLoop.submit {
@@ -82,6 +74,16 @@ actor HTTP3ServerLifecycle {
         } catch {
             try await rollbackStart()
             throw error
+        }
+    }
+
+    private func makeAuthenticator() throws -> Authenticator {
+        let identity = try inputs.certificateAuthority
+            .mintCertificateIdentity(forHost: inputs.configuration.route.identity.host)
+        do {
+            return try Authenticator(certificates: identity.certificateChain, privateKey: identity.privateKey)
+        } catch {
+            throw HTTP3ProxyError.invalidConfiguration
         }
     }
 

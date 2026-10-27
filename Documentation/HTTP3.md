@@ -38,7 +38,7 @@ The bridge streams request and response bodies, informational responses and trai
 
 Counts are ceilings, not guaranteed capacity: byte admission can bind first. Header sections have a 32 KiB bound and at most 1,024 fields. QPACK uses a zero-capacity dynamic table.
 
-`resourceUsage()` reports current admission, native/parser/forwarding reservations, refusal counts and sampled native output peaks. Reservations are accounting values, not process RSS. `nativeOutputSampleComplete` identifies incomplete native sampling; a zero count does not substitute for that flag.
+`resourceUsage()` reports current admission, native/parser/forwarding reservations, refusal counts and sampled native output peaks. Reservations are accounting values, not process RSS. `nativeOutputSampleComplete` means every tracked child was sampled successfully. It does not establish coverage of native children before publication; aggregate storage admission and disposal are separate measurements.
 
 ## Protocol boundary
 

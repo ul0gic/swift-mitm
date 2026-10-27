@@ -24,6 +24,8 @@ from production_flow import cancel_churn, credit_stall, storage_ceiling
 from production_controls import CONTROL_CASES, exercise_control, final_control_oracles, host_configuration
 from production_lifecycle import CASES as LIFECYCLE_CASES, run_case as run_lifecycle_case
 from production_security import SECURITY_CASES, run_security_case
+from production_memory import CASES as MEMORY_CASES, run_case as run_memory_case
+from production_ownership import CASES as OWNERSHIP_CASES, run_case as run_ownership_case
 from production_resources import production_goaway, read_resources, stream_limit
 
 
@@ -32,7 +34,7 @@ CASES = (
     "denied-route", "separated-fin", "oversized-request-headers", "oversized-response-headers",
     "fragmented-headers", "sni-policy", "goaway-drain", "octet-fidelity", "request-stream-limit",
     "slow-receiver", "cancelled-credit-churn", "storage-refusal", "maximum-storage-refusal",
-) + CONTROL_CASES + LIFECYCLE_CASES + SECURITY_CASES
+) + CONTROL_CASES + LIFECYCLE_CASES + SECURITY_CASES + MEMORY_CASES + OWNERSHIP_CASES
 
 
 async def exercise(name, ready, authority, certificate, peer, artifacts):
@@ -250,11 +252,16 @@ async def main(arguments):
     artifacts = arguments.output.parent / "production-http3-peer-logs"
     for name in arguments.case or CASES:
         try:
-            async with asyncio.timeout(90):
+            timeout = 150 if name in ("memory-cancel-cycles", "orphan-stop-restart") else 90
+            async with asyncio.timeout(timeout):
                 if name in LIFECYCLE_CASES:
                     observation = await run_lifecycle_case(arguments.binary, name, artifacts / name)
                 elif name in SECURITY_CASES:
                     observation = await run_security_case(arguments.binary, name, artifacts / name)
+                elif name in MEMORY_CASES:
+                    observation = await run_memory_case(arguments.binary, name, artifacts / name)
+                elif name in OWNERSHIP_CASES:
+                    observation = await run_ownership_case(arguments.binary, name, artifacts / name)
                 else:
                     observation = await run_case(arguments.binary, name, artifacts)
             results["checks"][name] = {"result": "passed", "observation": observation}

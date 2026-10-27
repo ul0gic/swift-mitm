@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 import SwiftMITM
 
@@ -35,7 +36,7 @@ struct HostEmbedding: Sendable {
     }
 
     func write(stopReport: HTTPControlStopReport? = nil) async throws {
-        var value: [String: Any] = [:]
+        var value: [String: Any] = ["sampleStartedNanoseconds": DispatchTime.now().uptimeNanoseconds]
         if let runtime {
             let usage = await runtime.resourceUsage()
             value["control"] = [
@@ -61,6 +62,7 @@ struct HostEmbedding: Sendable {
                 "retainedCallbackBytes": stopReport.retainedCallbackBytes
             ]
         }
+        value["sampleEndedNanoseconds"] = DispatchTime.now().uptimeNanoseconds
         try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
             .write(to: URL(fileURLWithPath: prefix + ".embedding.json"), options: .atomic)
         try controlEvents?.write(to: prefix + ".control-events.json")

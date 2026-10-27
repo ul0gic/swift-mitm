@@ -41,7 +41,11 @@ final class HostControlEvents: HTTPControlEventSink {
         case let .breakpoint(handle):
             record = HostControlRecord(kind: "breakpoint", requestID: handle.requestID)
             state.withLockedValue {
-                if $0.handles.count < 16 { $0.handles.append(handle) } else { $0.overflow = true }
+                if $0.handles.count < 16 {
+                    $0.handles.append(handle)
+                } else {
+                    $0.overflow = true
+                }
                 $0.entered += 1
             }
         case let .failure(id, code):
@@ -60,14 +64,24 @@ final class HostControlEvents: HTTPControlEventSink {
             record = value
         }
         state.withLockedValue {
-            if $0.records.count < 4096 { $0.records.append(record) } else { $0.overflow = true }
+            if $0.records.count < 4096 {
+                $0.records.append(record)
+            } else {
+                $0.overflow = true
+            }
         }
         if case .breakpoint = event, blockCallback {
-            // A real host callback deliberately ignores cancellation; the peer controls its bounded release barrier.
-            let outcome = releaseSignal.wait(timeout: .now() + 45)
-            state.withLockedValue {
-                $0.exited += 1
-                if outcome == .timedOut { $0.barrierExpired = true }
+            waitForCallbackRelease()
+        }
+    }
+
+    private func waitForCallbackRelease() {
+        // A real host callback deliberately ignores cancellation; the peer controls its bounded release barrier.
+        let outcome = releaseSignal.wait(timeout: .now() + 45)
+        state.withLockedValue {
+            $0.exited += 1
+            if outcome == .timedOut {
+                $0.barrierExpired = true
             }
         }
     }
@@ -89,26 +103,28 @@ final class HostControlEvents: HTTPControlEventSink {
             )
             let configuration = try HTTPControlConfiguration(rules: [rule], limits: HTTPControlLimits())
             let decision = try configuration.evaluate(handle.original)
-            outcomes.append(String(describing: await handle.resolve(.decision(decision))))
+            await outcomes.append(String(describing: handle.resolve(.decision(decision))))
         }
         return outcomes
     }
 
     func write(to path: String) throws {
-        let snapshot = try state.withLockedValue { state -> (records: [HostControlRecord], entered: Int, exited: Int) in
-            guard !state.overflow, !state.barrierExpired else { throw HostError.captureOverflow }
-            return (state.records, state.entered, state.exited)
-        }
         struct Snapshot: Encodable {
             let records: [HostControlRecord]
             let callbacksEntered: Int
             let callbacksExited: Int
         }
-        try JSONEncoder().encode(Snapshot(
-            records: snapshot.records,
-            callbacksEntered: snapshot.entered,
-            callbacksExited: snapshot.exited
-        )).write(to: URL(fileURLWithPath: path), options: .atomic)
+        let snapshot = try state.withLockedValue { state in
+            guard !state.overflow, !state.barrierExpired else { throw HostError.captureOverflow }
+            return Snapshot(
+                records: state.records,
+                callbacksEntered: state.entered,
+                callbacksExited: state.exited
+            )
+        }
+        try JSONEncoder()
+            .encode(snapshot)
+            .write(to: URL(fileURLWithPath: path), options: .atomic)
     }
 }
 

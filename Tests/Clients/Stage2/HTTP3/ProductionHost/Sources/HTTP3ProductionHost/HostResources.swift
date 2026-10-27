@@ -6,12 +6,14 @@ enum HostResources {
     static func write(server: HTTP3ProxyServer, phase: String, path: String) async throws {
         let before = DispatchTime.now().uptimeNanoseconds
         let usage = await server.resourceUsage()
+        let residentBytes = try HostMemory.residentBytes()
         let after = DispatchTime.now().uptimeNanoseconds
         let value: [String: Any] = [
             "schema": "SwiftMITMHTTP3.public.resourceUsage.v1",
             "phase": phase,
             "sampleStartedNanoseconds": before,
             "sampleEndedNanoseconds": after,
+            "residentBytes": residentBytes,
             "local": [
                 "connections": usage.local.connections,
                 "streams": usage.local.streams,

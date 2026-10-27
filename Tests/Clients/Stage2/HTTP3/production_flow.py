@@ -12,6 +12,15 @@ async def credit_stall(client, authority, peer, path, complete, evidence):
     parameters = [event["data"] for event in trace.to_dict()["events"]
                   if event["name"] == "transport:parameters_set" and event["data"]["owner"] == "local"]
     assert len(parameters) == 1 and parameters[0]["initial_max_stream_data_bidi_local"] == STREAM_CREDIT
+    initial = read_resources(path)
+    await asyncio.wait_for(client.ping(), timeout=3)
+    async with asyncio.timeout(8):
+        while True:
+            baseline = read_resources(path)
+            if (baseline["sampleStartedNanoseconds"] > initial["sampleEndedNanoseconds"]
+                    and baseline["local"]["connections"] == 1 and baseline["pendingHandshakes"] == 0):
+                break
+            await asyncio.sleep(0.12)
     stream = client._quic.get_next_available_stream_id()
     gate = FrozenStreamCredit(client, stream)
     start = len(trace._events)
@@ -75,9 +84,15 @@ async def credit_stall(client, authority, peer, path, complete, evidence):
                           if frame["frame_type"] == "max_stream_data" and frame["stream_id"] == stream]
         assert resumed_grants and max(resumed_grants) > STREAM_CREDIT, resumed_grants
         assert await complete(client.request(authority, "/after-credit-resume")[1]) == b"origin"
+        await quiescent(path)
+        resumed = read_resources(path)
         return {"frozenStreamCredit": STREAM_CREDIT, "originWireSentPlateau": offset,
                 "stableSamples": stable_samples, "stableSeconds": stalled_seconds, "completedSiblings": siblings,
                 "pingACKProgress": True, "resumedBytes": SLOW_BYTES, "resumedSHA256": expected.hexdigest(),
+                "rssPhases": {"downstreamEstablishedBeforeOrigin": baseline["residentBytes"],
+                              "creditFrozenWithOriginWirePlateau": usage["residentBytes"],
+                              "resumedAndRequestQueuesQuiescent": resumed["residentBytes"]},
+                "baselineResourceSnapshot": baseline, "resumedResourceSnapshot": resumed,
                 "nativeCurrentPendingAndTicketSums": "not exposed by public snapshot"}
     finally:
         gate.release()

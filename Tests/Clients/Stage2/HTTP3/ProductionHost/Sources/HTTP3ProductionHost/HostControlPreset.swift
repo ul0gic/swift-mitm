@@ -9,8 +9,20 @@ enum HostControlPreset {
             rules = headerRules()
         case "body":
             rules = bodyRules()
+        default:
+            rules = [try terminalRule(name, mappedAuthority: mappedAuthority)]
+        }
+        return try HTTPControlConfiguration(
+            rules: rules,
+            limits: HTTPControlLimits(maximumTasks: name == "orphan" ? 1 : 16),
+            breakpointDeadlineSeconds: 30
+        )
+    }
+
+    private static func terminalRule(_ name: String, mappedAuthority: String?) throws -> HTTPRule {
+        switch name {
         case "synthetic":
-            rules = [HTTPRule(
+            return HTTPRule(
                 id: "synthetic",
                 match: HTTPRuleMatch(phase: .request, path: "/production/respond"),
                 action: .respond(
@@ -18,34 +30,29 @@ enum HostControlPreset {
                     headers: [HTTPHeaderField(name: "x-synthetic", value: "yes")],
                     body: Data("synthetic".utf8)
                 )
-            )]
+            )
         case "breakpoint", "orphan":
-            rules = [HTTPRule(
+            return HTTPRule(
                 id: "pause",
                 match: HTTPRuleMatch(phase: .request, path: "/production/paused"),
                 action: .breakpoint
-            )]
+            )
         case "route", "security-route":
             guard let mappedAuthority else { throw HostError.arguments }
             let path = name == "security-route" ? "/production/security-map" : "/production/mapped"
-            rules = [HTTPRule(
+            return HTTPRule(
                 id: "mapped",
                 match: HTTPRuleMatch(phase: .request, path: path),
                 action: .route(authority: mappedAuthority, sensitiveHeaders: ["x-private"])
-            )]
+            )
         case "delay":
-            rules = [HTTPRule(
+            return HTTPRule(
                 id: "delay",
                 match: HTTPRuleMatch(phase: .request, path: "/production/delayed"),
                 action: .fault(try HTTPFault(direction: .request, delayMilliseconds: 1000))
-            )]
+            )
         default: throw HostError.arguments
         }
-        return try HTTPControlConfiguration(
-            rules: rules,
-            limits: HTTPControlLimits(maximumTasks: name == "orphan" ? 1 : 16),
-            breakpointDeadlineSeconds: 30
-        )
     }
 
     private static func headerRules() -> [HTTPRule] {

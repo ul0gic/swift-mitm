@@ -54,7 +54,8 @@ actor HostLifecycleController {
             abandonedCallbacks: lastStopReport?.abandonedCallbacks,
             retainedCallbackBytes: lastStopReport?.retainedCallbackBytes
         )
-        try JSONEncoder().encode(acknowledgement)
+        try JSONEncoder()
+            .encode(acknowledgement)
             .write(to: URL(fileURLWithPath: readyPath + ".ack.json"), options: .atomic)
         lastID = command.id
     }

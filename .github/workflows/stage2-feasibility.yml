@@ -111,6 +111,38 @@ jobs:
           name: stage2-http3-production-host-${{ github.sha }}
           path: production-host/
           if-no-files-found: error
+      - name: Record explicit scope of evidence
+        run: |
+          echo 'Dependency and core compatibility probe only; macOS26 evidence is the separate smoke job, no two-leg HTTP3 transport or final acceptance established.' > evidence/scope.txt
+          cat evidence/scope.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain feasibility evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: stage2-feasibility-${{ github.sha }}
+          path: evidence/
+          if-no-files-found: error
+
+  core-consumer:
+    name: Build Crypto5 core consumer for macOS26
+    needs: combined-graph
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: stage2-feasibility-${{ github.sha }}
+          path: evidence/
+      - name: Validate candidate and consumer compiler
+        run: |
+          test "$(cat evidence/candidate-sha.txt)" = "$GITHUB_SHA"
+          xcodebuild -version > evidence/consumer-xcode.txt
+          swift --version > evidence/consumer-swift.txt
+          cmp evidence/xcode.txt evidence/consumer-xcode.txt
+          cmp evidence/swift.txt evidence/consumer-swift.txt
       - name: Prepare Crypto5 core consumer for macOS26
         run: |
           cp evidence/combined-Package.resolved Examples/FirstCapture/Package.resolved
@@ -136,17 +168,6 @@ jobs:
         with:
           name: stage2-crypto5-consumer-${{ github.sha }}
           path: core-consumer/
-          if-no-files-found: error
-      - name: Record explicit scope of evidence
-        run: |
-          echo 'Dependency and core compatibility probe only; macOS26 evidence is the separate smoke job, no two-leg HTTP3 transport or final acceptance established.' > evidence/scope.txt
-          cat evidence/scope.txt >> "$GITHUB_STEP_SUMMARY"
-      - name: Retain feasibility evidence
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: stage2-feasibility-${{ github.sha }}
-          path: evidence/
           if-no-files-found: error
 
   core-compatibility:
@@ -212,7 +233,7 @@ jobs:
 
   http3-transport:
     name: Independent HTTP3 transport spike
-    needs: [combined-graph, crypto5-minimum-runtime]
+    needs: combined-graph
     runs-on: xcode-27
     timeout-minutes: 45
     steps:
@@ -283,13 +304,13 @@ jobs:
 
   http3-production:
     name: Public HTTP3 acceptance (${{ matrix.partition }})
-    needs: [combined-graph, crypto5-minimum-runtime]
+    needs: combined-graph
     runs-on: xcode-27
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        partition: [transport, resources, controls, lifecycle, security]
+        partition: [transport, resources, controls, lifecycle, security, ownership, memory]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -341,10 +362,14 @@ jobs:
           elif [[ "$PARTITION" == lifecycle ]]; then
             cases=(lifecycle-restart pending-handshake-reset-churn connection-ceiling
               maximum-connection-ceiling maximum-handshake-ceiling)
-          else
+          elif [[ "$PARTITION" == security ]]; then
             cases=(cross-client-pooling mapped-route-isolation mapped-route-trust
               upstream-invalid-goaway upstream-increasing-goaway downstream-increasing-goaway
               downstream-goaway-drain unsupported-connect unsupported-webtransport)
+          elif [[ "$PARTITION" == ownership ]]; then
+            cases=(shared-byte-refusal orphan-stop-restart)
+          else
+            cases=(memory-cancel-cycles memory-maximum-storage)
           fi
           arguments=()
           for scenario in "${cases[@]}"; do arguments+=(--case "$scenario"); done
@@ -361,7 +386,7 @@ jobs:
 
   crypto5-minimum-runtime:
     name: Crypto5 core macOS26 smoke
-    needs: combined-graph
+    needs: core-consumer
     runs-on: macos-26
     env:
       DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
