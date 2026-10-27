@@ -15,12 +15,16 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-http-types.git", from: "1.8.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
         .package(
+            url: "https://github.com/apple/swift-nio-quic-helpers.git",
+            revision: "e456909e3f6b157a0f1d410e77fe8a96da5dab69"
+        ),
+        .package(
             url: "https://github.com/ul0gic/swift-nio-quic.git",
             revision: "b82a67556a5d9d3acd9c00348eb17f0817d4627f"
         ),
         .package(
             url: "https://github.com/ul0gic/swift-nio-http3.git",
-            revision: "e87575e97bf7af8097dfcc2039c42b2f3538a4f3"
+            revision: "1fc55937e2f6ef62ebc156d0b91475766d8ef777"
         )
     ],
     targets: [
@@ -36,6 +40,7 @@ let package = Package(
             name: "HTTP3TransportProbe",
             dependencies: [
                 .product(name: "SwiftMITM", package: "swift-mitm"),
+                .product(name: "NIOQUICHelpers", package: "swift-nio-quic-helpers"),
                 .product(name: "NIOQUIC", package: "swift-nio-quic"),
                 .product(name: "NIOHTTP3", package: "swift-nio-http3"),
                 .product(name: "NIOCore", package: "swift-nio"),

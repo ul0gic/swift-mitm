@@ -1,0 +1,12 @@
+--- a/Sources/HTTP3/HTTP3StreamStateMachine.swift
++++ b/Sources/HTTP3/HTTP3StreamStateMachine.swift
+@@ -747,8 +747,7 @@
+     public mutating func inputClosed() {
+         switch consume self.state {
+         case .finished:
+-            // Why are we getting input closed after already closed?
+-            assertionFailure("Input closed after stream closed")
++            // Native abort may deliver inputClosed after synchronous channelInactive.
+             self = .init(state: .finished)
+         case .previousError(let error):
+             self = .init(state: .previousError(error))

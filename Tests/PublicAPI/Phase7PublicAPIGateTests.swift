@@ -228,7 +228,9 @@ final class Phase7PublicAPIGateTests: XCTestCase {
 
     private func targetProvenance(_ target: CapturedTarget) -> String {
         switch target.ingressProvenance {
+        case .explicitHTTP: "explicitHTTP"
         case .explicitConnect: "explicitConnect"
+        case .priorKnowledgeHTTP2: "priorKnowledgeHTTP2"
         case .trustedProxyV2: "trustedProxyV2"
         @unknown default: "unknown"
         }

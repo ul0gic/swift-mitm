@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import XCTest
 
 struct Release022PeerReady: Decodable {
     let port: Int

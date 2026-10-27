@@ -105,8 +105,8 @@ func release022ResponseEnds(_ events: [CaptureEvent]) -> [UUID] {
 }
 
 func release022ResponseBodyBytes(_ events: [CaptureEvent]) -> [UInt8] {
-    events.flatMap {
-        if case let .responseBodyChunk(_, bytes, _) = $0 {
+    events.flatMap { event -> [UInt8] in
+        if case let .responseBodyChunk(_, bytes, _) = event {
             bytes
         } else {
             []

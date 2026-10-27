@@ -72,9 +72,10 @@ private final class StreamingRSSSampler: @unchecked Sendable {
 
 final class StreamingBackpressureTests: XCTestCase {
     func testBackpressureBoundsMemoryWhileStalledThenDeliversInFull() async throws {
-        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-        defer { try? group.syncShutdownGracefully() }
+        try await withStreamingGroup(exerciseStalledTransfer)
+    }
 
+    private func exerciseStalledTransfer(group: MultiThreadedEventLoopGroup) async throws {
         let bodySize = 256 * 1024 * 1024
         let origin = try TLSOriginServer(group: group, bodySize: bodySize)
         try origin.start()
@@ -125,9 +126,10 @@ final class StreamingBackpressureTests: XCTestCase {
     }
 
     func testFullSpeedTransferStaysBoundedAndRecordsThroughput() async throws {
-        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-        defer { try? group.syncShutdownGracefully() }
+        try await withStreamingGroup(exerciseFullSpeedTransfer)
+    }
 
+    private func exerciseFullSpeedTransfer(group: MultiThreadedEventLoopGroup) async throws {
         let bodySize = 256 * 1024 * 1024
         let origin = try TLSOriginServer(group: group, bodySize: bodySize)
         try origin.start()
@@ -168,6 +170,21 @@ final class StreamingBackpressureTests: XCTestCase {
         let elapsed = Date().timeIntervalSince(start)
         let peakDelta = MachMemory.growth(from: baseline, to: try sampler.stop())
         assertFullSpeedMeasurement(received: received, bodySize: bodySize, elapsed: elapsed, peakDelta: peakDelta)
+    }
+
+    private func withStreamingGroup(_ body: (MultiThreadedEventLoopGroup) async throws -> Void) async throws {
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        do {
+            try await body(group)
+        } catch {
+            do {
+                try await group.shutdownGracefully()
+            } catch {
+                XCTFail("Event-loop shutdown failed during transfer cleanup: \(error)")
+            }
+            throw error
+        }
+        try await group.shutdownGracefully()
     }
 
     private func assertStalledMemory(bodySize: Int) async throws {

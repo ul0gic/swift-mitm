@@ -211,7 +211,8 @@ async def rejected(port, authority, certificate, hostname):
                 if response.error:
                     return
                 status = next((v for k, v in response.headers if k == b":status"), None)
-                assert status is not None and int(status) >= 400, "unauthorized route produced successful HTTP"
+                assert status is not None, "rejected route ended without an explicit stream error or HTTP status"
+                assert int(status) >= 400, "unauthorized route produced successful HTTP"
     except ConnectionError:
         return
 

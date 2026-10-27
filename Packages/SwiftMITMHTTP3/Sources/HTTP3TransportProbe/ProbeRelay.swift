@@ -1,6 +1,7 @@
 import HTTPTypes
 import NIOCore
 import NIOHTTPTypes
+import NIOQUICHelpers
 import SwiftMITM
 
 protocol ProbeMessagePart: Sendable {
@@ -204,7 +205,6 @@ final class ProbeRelay<Part: ProbeMessagePart>: ChannelInboundHandler {
             case .success:
                 if self.sourceInactive, self.pendingWrites == 0 {
                     self.finish()
-                    destination.close(promise: nil)
                 } else {
                     let bound = NIOLoopBound(self, eventLoop: destination.eventLoop)
                     destination.eventLoop.execute { bound.value.readIfReady() }
@@ -245,9 +245,10 @@ final class ProbeRelay<Part: ProbeMessagePart>: ChannelInboundHandler {
 
     func channelInactive(context: ChannelHandlerContext) {
         sourceInactive = true
-        if !inputEnded || pendingWrites == 0 {
+        if !inputEnded {
+            fail()
+        } else if pendingWrites == 0 {
             finish()
-            destination?.close(promise: nil)
         }
         context.fireChannelInactive()
     }
@@ -255,9 +256,19 @@ final class ProbeRelay<Part: ProbeMessagePart>: ChannelInboundHandler {
     func errorCaught(context: ChannelHandlerContext, error: Error) { fail() }
 
     private func fail() {
+        guard !closed else { return }
         finish()
-        context?.close(promise: nil)
-        destination?.close(promise: nil)
+        if let source = context?.channel { Self.abort(source) }
+        if let destination { Self.abort(destination) }
+    }
+
+    private static func abort(_ channel: Channel) {
+        // H3_REQUEST_CANCELLED: failure must not become a graceful empty response.
+        guard let code = QUICApplicationErrorCode(0x10C) else {
+            preconditionFailure("HTTP/3 cancellation code must fit a QUIC variable-length integer")
+        }
+        channel.triggerUserOutboundEvent(QUICResetStreamEvent(code: code), promise: nil)
+        channel.triggerUserOutboundEvent(QUICStopSendingEvent(code: code), promise: nil)
     }
 
     private func finish() {

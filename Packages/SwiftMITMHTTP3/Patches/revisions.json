@@ -26,11 +26,12 @@
   {
     "repository": "swift-nio-http3",
     "upstreamRevision": "e2c54cdbf50dc64bf9e80861922f8d9400d2acce",
-    "forkRevision": "e87575e97bf7af8097dfcc2039c42b2f3538a4f3",
+    "forkRevision": "1fc55937e2f6ef62ebc156d0b91475766d8ef777",
     "patches": [
       "swift-nio-http3-bounded-input.patch",
       "swift-nio-http3-typed-decode-error.patch",
-      "swift-nio-http3-rounded-read-capacity.patch"
+      "swift-nio-http3-rounded-read-capacity.patch",
+      "swift-nio-http3-terminal-input-close.patch"
     ],
     "upstreamURL": "https://github.com/apple/swift-nio-http3",
     "forkURL": "https://github.com/ul0gic/swift-nio-http3"

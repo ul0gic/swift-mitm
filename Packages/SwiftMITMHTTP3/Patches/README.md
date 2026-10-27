@@ -1,6 +1,6 @@
 # Native dependency patch candidates
 
-These source patches are experimental and have not passed remote compilation or behavior checks. They do not establish a production memory bound. Apply each patch with strip level 1 to the exact upstream revision below; publish the resulting reviewed trees as immutable dependency revisions. Preserve each repository's license, notices, contributors file and existing source headers.
+These source patches are experimental. The initial bounded-storage graph compiled remotely and passed six of thirteen transport scenarios on candidate `3a880da`; the terminal-input-close repair awaits its next remote run. They do not establish a production memory bound. Apply each patch with strip level 1 to the exact upstream revision below; publish the resulting reviewed trees as immutable dependency revisions. Preserve each repository's license, notices, contributors file and existing source headers.
 
 | Patch | Upstream repository | Revision |
 |---|---|---|
@@ -57,3 +57,5 @@ No local verification was executed. Patch application, compilation, upstream con
 [revisions.json](revisions.json) records exact upstream/fork revisions and the ordered patch sequence for each repository. These published fork commits are source-reviewed candidates, not completed runtime acceptance. The QUIC fork manifest pins the patched network revision; the HTTP3 fork manifest pins the patched QUIC revision. Those manifest rewrites are intentionally separate from the protocol source patches prepared for upstream review. No upstream pull request has been submitted.
 
 Admission now precedes all real native child starts and retains reservations through raw-buffer disposal and native output release. The256 limit counts submitted storage tickets, not every internally split native Frame. Record charges are a stride-derived logical model; allocator/spare-capacity/native callback workspace still requires independent ceiling measurement. The rounded-capacity patches preserve logical read limits while reserving/checking actual NIO backing capacity.
+
+The terminal-input-close patch preserves the finished state when native read abort synchronously delivers channel inactivity before a late input-closed event. Open-stream FIN handling remains unchanged. The prior runtime reached this assertion in streaming and slow-reader scenarios; the repair still requires those scenarios to pass.
