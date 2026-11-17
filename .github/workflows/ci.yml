@@ -144,7 +144,8 @@ jobs:
       - name: Exercise the package through its acceptance suite
         run: |
           mkdir -p evidence
-          swift test --force-resolved-versions -Xswiftc -warnings-as-errors --xunit-output evidence/acceptance.xml
+          swift test --force-resolved-versions -Xswiftc -warnings-as-errors \
+            --enable-xctest --disable-swift-testing --parallel --num-workers 1 --xunit-output evidence/acceptance.xml
           python3 - <<'PY_ACCEPTANCE'
           import xml.etree.ElementTree as ET
           cases = ET.parse('evidence/acceptance.xml').getroot().findall('.//testcase')
