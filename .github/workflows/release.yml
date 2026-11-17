@@ -13,27 +13,28 @@ on:
 
 permissions:
   actions: read
-  contents: read
+  contents: write
+  pull-requests: read
 
 concurrency:
   group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
-  validate:
-    name: Validate tag
+  release:
+    name: Publish checked release
     runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.candidate.outputs.tag }}
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: bash
     steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ inputs.tag || github.ref_name }}
-      - name: Validate release candidate
-        id: candidate
+      - name: Validate tag and protected PR evidence
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
@@ -43,28 +44,15 @@ jobs:
           grep -Fq "## $RELEASE_TAG - " CHANGELOG.md
           test "$(git cat-file -t "refs/tags/$RELEASE_TAG")" = tag
           commit="$(git rev-list -n 1 "$RELEASE_TAG")"
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor "$commit" origin/main
-          ci_run="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$commit&status=success" \
-            --jq '[.workflow_runs[] | select(.event == "push" or .event == "workflow_dispatch")][0].id // empty')"
-          test -n "$ci_run"
-          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
-
-  release:
-    name: Create GitHub release
-    needs: validate
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ needs.validate.outputs.tag }}
-      - name: Create release
+          head="$(gh api "repos/$GITHUB_REPOSITORY/commits/$commit/pulls" | jq -er --arg commit "$commit" '
+            [.[] | select(.merged_at != null and .base.ref == "main" and .merge_commit_sha == $commit)]
+            | select(length == 1) | .[0].head.sha')"
+          for workflow in ci.yml dependency-review.yml; do
+            gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$head&event=pull_request" \
+              --jq '.workflow_runs | max_by(.run_number) | .conclusion == "success"' | grep -Fx true
+          done
+      - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
-        run: |
-          gh release create "$RELEASE_TAG" --verify-tag --title "SwiftMITM $RELEASE_TAG" --notes-file RELEASE_NOTES.md
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: gh release create "$RELEASE_TAG" --verify-tag --title "SwiftMITM $RELEASE_TAG" --notes-file RELEASE_NOTES.md

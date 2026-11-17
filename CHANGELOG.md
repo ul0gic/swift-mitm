@@ -9,6 +9,7 @@ All notable SwiftMITM changes are recorded here. The project follows [Keep a Cha
 - Update resolved SwiftNIO to 2.105.0, SwiftNIO SSL to 2.37.6, and Swift Crypto to 5.1.1 without raising their manifest minimums.
 - Update the exact SwiftProtobuf requirement to 1.40.0 for descriptor-backed inspection.
 - Refresh integration guidance, documentation navigation, and the local interception lab.
+- Keep compilation and dependency review on protected pull requests; remove repeated post-merge and release builds.
 
 ### Fixed
 

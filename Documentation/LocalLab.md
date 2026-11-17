@@ -134,7 +134,7 @@ curl --fail --max-time 20 --noproxy '' --proxy http://127.0.0.1:8080 \
 cat "$LAB_DIR/inspection.log"
 ```
 
-The client receives `data: first` and `data: second`, then `{"X-Lab": "reviewed"}`. Independently inspect the transcript for two `sse dataBytes=` summaries, `paused GET /debug`, and `original`/`effective` inspection records. The breakpoint resumes automatically with the configured edit. A successful HTTP response alone does not establish semantic inspection.
+The client receives `data: first` and `data: second`, then `{"X-Lab": "reviewed"}`. Independently inspect the transcript for two `sse dataBytes=` summaries per representation (four total), `paused GET /debug`, and `original`/`effective` inspection records. The breakpoint resumes automatically with the configured edit. A successful HTTP response alone does not establish semantic inspection.
 
 ## Replay and export HAR
 
