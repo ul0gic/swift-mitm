@@ -155,6 +155,7 @@ jobs:
           print(f'Passed {len(cases)} acceptance cases with no failures or skips')
           PY_ACCEPTANCE
       - name: Compile the DocC catalog against public symbols
+        if: ${{ !cancelled() }}
         run: |
           swift package --force-resolved-versions -Xswiftc -warnings-as-errors dump-symbol-graph --minimum-access-level public
           symbol_graph_directory="$(find .build -type d -name symbolgraph -print -quit)"
@@ -165,6 +166,7 @@ jobs:
             --additional-symbol-graph-dir "$RUNNER_TEMP/swiftmitm-doc-symbols" \
             --output-path "$RUNNER_TEMP/SwiftMITM.doccarchive" --warnings-as-errors
       - name: Check documentation file links
+        if: ${{ !cancelled() }}
         run: |
           python3 - <<'PY_LINKS'
           import pathlib, re, urllib.parse
@@ -182,6 +184,7 @@ jobs:
           print(f'Checked file links in {len(documents)} documentation pages')
           PY_LINKS
       - name: Run the documented HTTPS lab
+        if: ${{ !cancelled() }}
         run: |
           export PATH="$(brew --prefix openssl@3)/bin:$PATH"
           cp Package.resolved Examples/InterceptionLab/Package.resolved
@@ -223,6 +226,7 @@ jobs:
                   pass
           PY_LAB
       - name: Compile and run the documented embedding example
+        if: ${{ !cancelled() }}
         run: |
           python3 - <<'PY_EMBEDDING'
           import os, pathlib, re
