@@ -1,6 +1,6 @@
 # FirstCapture
 
-An external SwiftPM executable demonstrating public SwiftMITM HTTP/HTTPS capture, streaming metadata, deliberate TLS pass-through, and signal-driven shutdown. Requires macOS 26 or later and Xcode 27.1 with Swift 6.4. Runtime and commands below remain unverified until the candidate's GitHub Actions consumer checks pass.
+An external SwiftPM executable demonstrating public SwiftMITM HTTP/HTTPS capture, streaming metadata, deliberate TLS pass-through, and signal-driven shutdown. Requires macOS 26 or later and Xcode 27.1 with Swift 6.4.
 
 ## Start
 

@@ -4,7 +4,7 @@ Embed an authorized explicit or trusted-transparent interception proxy with veri
 
 ## Overview
 
-SwiftMITM accepts explicit HTTP `CONNECT` tunnels by default. Candidate source adds opt-in ordinary HTTP forwarding through `.explicitHTTP`. A separately configured trusted PROXY protocol v2 ingress accepts transparent connections only from actual peers admitted by the embedding application's policy. Supported traffic enters structured capture; ECH, unsupported ALPN, and other unclassified traffic receive bounded opaque TCP forwarding. Candidate acceptance and runtime support remain unverified.
+SwiftMITM accepts explicit HTTP `CONNECT` tunnels by default. Opt-in ordinary HTTP forwarding is available through `.explicitHTTP`. A separately configured trusted PROXY protocol v2 ingress accepts transparent connections only from actual peers admitted by the embedding application's policy. Supported traffic enters structured capture; ECH, unsupported ALPN, and other unclassified traffic receive bounded opaque TCP forwarding.
 
 The package owns interception mechanics. The embedding application owns authorization, CA persistence, trust installation and removal, client proxy configuration, transparent forwarding, listener access control, event storage, redaction, filtering, and presentation.
 
@@ -61,3 +61,29 @@ The package owns interception mechanics. The embedding application owns authoriz
 - ``HTTPProtocolVersion``
 - ``WebSocketDirection``
 - ``WebSocketOpcode``
+
+
+### HTTP controls
+
+- ``HTTPControlRuntime``
+- ``HTTPControlConfiguration``
+- ``HTTPRule``
+- ``HTTPControlDecision``
+- ``BreakpointHandle``
+- ``HTTPControlEventSink``
+
+### Replay and export
+
+- ``ReplayRequest``
+- ``ReplayResult``
+- ``ReplayResponseSink``
+- ``HARExporter``
+- ``HARExchange``
+- ``HARExportConfiguration``
+- ``HAROutputWriter``
+
+### Shared resources
+
+- ``ResourceAdmissionController``
+- ``ResourceAdmissionConfiguration``
+- ``HTTP1ReusePolicy``

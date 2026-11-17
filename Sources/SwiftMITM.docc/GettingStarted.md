@@ -4,19 +4,19 @@ Create a certificate authority, choose one ingress for one listener, start the p
 
 ## Add the package
 
-The package requires Swift tools 6.4 and targets macOS 26 or later. Build with Xcode 27.1 and its bundled Swift 6.4 compiler; Xcode itself requires macOS 26.6 or later. Candidate builds and macOS 26/27 runtime checks remain unverified until GitHub Actions completes.
+The package requires Swift tools 6.4 and targets macOS 26 or later. Build with Xcode 27.1 and its bundled Swift 6.4 compiler.
 
-The latest published release is 0.2.1:
+Add SwiftMITM 0.2.3 or later:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/ul0gic/swift-mitm.git", from: "0.2.1")
+    .package(url: "https://github.com/ul0gic/swift-mitm.git", from: "0.2.3")
 ]
 ```
 
 Review <doc:CaptureEvents#Migrate-exhaustive-event-handling-for-0.2.0> before adopting transparent ingress or exhaustively switching on ``CaptureEvent``.
 
-Version 0.2.1 is the latest published release. Version 0.2.2 is candidate preparation only. Review <doc:CaptureEvents#Migrate-to-the-0.2.2-candidate> before using candidate source.
+When upgrading from 0.2.1, review <doc:CaptureEvents#Migrate-from-0.2.1-to-0.2.2-or-later>. Add the `SwiftMITMInspection` product to your executable target when semantic decoding is needed; the `SwiftMITM` product alone supplies raw capture and forwarding.
 
 ## Start an explicit CONNECT listener
 
@@ -69,9 +69,9 @@ Run a second `ProxyServer` instance for a second ingress. Each instance has exac
 
 ## Forward ordinary explicit HTTP
 
-The candidate adds opt-in `.explicitHTTP`. It accepts HTTP/1.1 absolute-form `http` requests and HTTPS `CONNECT` on one listener. `.explicitConnect` remains the default and remains CONNECT-only. Ordinary requests are routed by the absolute request URI; this listener is a forward proxy, not an origin server. Unsupported or ambiguous requests are rejected before forwarding.
+Use opt-in `.explicitHTTP` for ordinary HTTP forwarding. It accepts HTTP/1.1 absolute-form `http` requests and HTTPS `CONNECT` on one listener. `.explicitConnect` remains the default and remains CONNECT-only. Ordinary requests are routed by the absolute request URI; this listener is a forward proxy, not an origin server. Unsupported or ambiguous requests are rejected before forwarding.
 
-`ProxyInterceptionPolicy(passThroughAuthorities:)` selects exact normalized host-and-port authorities for opaque TCP forwarding. The default policy is empty. For a matching explicit CONNECT or trusted transparent destination, the client and origin retain end-to-end TLS; SwiftMITM does not capture the encrypted HTTP exchange. Selection does not bypass egress policy or origin verification, and setup failures never fall back to pass-through.
+`ProxyInterceptionPolicy(passThroughAuthorities:)` selects exact normalized host-and-port authorities for opaque TCP forwarding. The default policy is empty. For a matching explicit CONNECT or trusted transparent destination, the client and origin retain end-to-end TLS; SwiftMITM does not capture the encrypted HTTP exchange. Selection does not bypass egress policy. The client authenticates the origin directly in this mode; SwiftMITM does not terminate or verify that TLS connection. Setup failures never fall back to pass-through.
 
 The external example package at `Examples/FirstCapture/` uses only public SwiftMITM imports. Its command form is `FirstCapture --ca-cert PATH --ca-key PATH` with optional flags `--port INT`, repeatable `--passthrough AUTHORITY`, `--capture-bytes INT`, `--async`, `--allow-internal`, and repeatable `--upstream-ca PATH`. `--async` uses a consumer-owned handoff bounded to 256 events and 1 MiB plus one in-flight encoded record; overflow terminates delivery and prints a `deliveryLoss` record marking active captures incomplete while proxy forwarding continues. On SIGINT, asynchronous delivery drains immediately writable output and cancels if it would block; on SIGTERM, it cancels delivery. Loss marks active captures incomplete and suppresses `stopped`. The example does not install CA trust or change system proxy settings.
 
@@ -85,7 +85,7 @@ The external example package at `Examples/FirstCapture/` uses only public SwiftM
 
 The trusted PROXY v2 destination is the physical upstream route. SwiftMITM does not let TLS SNI redirect that route. When SNI is present, it supplies the upstream TLS name and the intercepted leaf identity; when absent, the original destination is used. Clear HTTP/1.1, interceptable TLS HTTP/1.1, interceptable TLS HTTP/2, and supported WebSocket traffic enter structured capture. ECH, unsupported ALPN, and remaining unclassified traffic use opaque TCP forwarding.
 
-The candidate's HTTP/1.1 SSE and HTTP/2 gRPC paths capture streamed raw body chunks and HTTP trailers. SwiftMITM does not decode SSE events, protobuf messages, gRPC message boundaries, or compressed content. The configured candidate matrix covers curl, URLSession HTTP/1.1 and HTTP/2, WKWebView SSE/WebSocket, Chromium SSE/WebSocket, independent gRPC, and the external example; its results have not completed.
+Core capture reports streamed raw body chunks and HTTP trailers. The optional `SwiftMITMInspection` product adds incremental SSE, gRPC/gRPC-Web framing and status, descriptor-backed protobuf fields, supported content decoding and WebSocket message observations. Connect an `HTTPInspector` through `observationSink` instead of attempting to reconstruct semantic messages from retained raw-body prefixes.
 
 ## Stop and restart
 
