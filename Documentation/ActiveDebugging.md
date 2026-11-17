@@ -48,7 +48,7 @@ The command expects an HTTPS origin you control at `localhost:9443`; the flags e
 
 The replay is a new GET with no copied headers or body. Its `ReplaySource` identifies a new source request ID and the `.original` representation; `ReplayResult` returns the attempt's separate request ID. It strips credentials by construction, uses one explicit destination, and does not follow redirects or retry. The sample briefly starts its loopback listener on an automatically selected port because `ProxyServer.replay` uses the server's event loop; it does not print or expose that port. Upstream TLS verification remains enabled.
 
-This is consumer behavior, not acceptance evidence. Replay and export interoperability remain unverified until the final candidate's GitHub Actions checks complete.
+The application owns replay authorization and export storage. A successful origin response does not establish a complete or redacted export; inspect the HAR and handle typed export errors.
 
 ## Admission overload
 

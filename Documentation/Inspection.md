@@ -61,7 +61,7 @@ The console uses these `InspectionConfiguration` defaults: 64 MiB shared retaine
 
 The core and inspection libraries target macOS 26 and Swift 6.4 with Crypto 5.
 
-The 0.2.2 candidate and these commands remain unverified until the candidate's GitHub Actions consumer and protocol checks pass.
+For application integration, descriptor loading and shutdown ordering, use [Embed semantic inspection](Embedding.md).
 
 ## Share admission accounting
 

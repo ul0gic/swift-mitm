@@ -4,7 +4,7 @@
 
 SwiftMITM is an embeddable MITM engine for macOS developer tools and authorized security workflows. Build network inspectors, API debuggers, and traffic-analysis tools on Apple's SwiftNIO transport stack. Your application owns the interface, client trust, and storage.
 
-[Quick start](#quick-start) · [Local lab](Documentation/LocalLab.md) · [Integration guide](Sources/SwiftMITM.docc/GettingStarted.md) · [Security model](Sources/SwiftMITM.docc/SecurityModel.md)
+[Documentation](Documentation/README.md) · [Quick start](#quick-start) · [Local lab](Documentation/LocalLab.md) · [Integration guide](Sources/SwiftMITM.docc/GettingStarted.md) · [Security model](Sources/SwiftMITM.docc/SecurityModel.md)
 
 ## Features
 
@@ -42,7 +42,7 @@ curl --noproxy '' --proxy http://127.0.0.1:8080 \
 
 Look for correlated `requestHead`, `responseHead`, body-chunk metadata, and `responseEnd` records. Payload retention defaults to zero. Control-C stops the proxy; neither example changes system trust or proxy settings.
 
-For SSE, gRPC, WebSocket, paused edits, replay, and redacted HAR demonstrations, run [InterceptionLab](Documentation/LocalLab.md).
+For a runnable HTTPS/SSE observer, paused header edit, replay, and redacted HAR demonstration, run the [local InterceptionLab](Documentation/LocalLab.md).
 
 ## Embed it
 
@@ -50,7 +50,7 @@ Link `SwiftMITM` for transport, capture, controls, replay, and export. Add `Swif
 
 Create a `CertificateAuthority`, supply a `CaptureEventSink`, configure `ProxyServer`, and consume events until shutdown. Capture callbacks are synchronous and can arrive concurrently; use a bounded handoff for slow consumers.
 
-[Capture API](Sources/SwiftMITM.docc/CaptureEvents.md) · [Inspection](Documentation/Inspection.md) · [Active debugging](Documentation/ActiveDebugging.md) · [Lifecycle](Sources/SwiftMITM.docc/LifecycleAndConcurrency.md)
+[Embedding inspection](Documentation/Embedding.md) · [Capture API](Sources/SwiftMITM.docc/CaptureEvents.md) · [Inspection](Documentation/Inspection.md) · [Active debugging](Documentation/ActiveDebugging.md) · [Lifecycle](Sources/SwiftMITM.docc/LifecycleAndConcurrency.md)
 
 ## Security and boundaries
 

@@ -2,6 +2,18 @@
 
 All notable SwiftMITM changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+## 0.2.3 - 2026-11-17
+
+### Changed
+
+- Update resolved SwiftNIO to 2.105.0, SwiftNIO SSL to 2.37.6, and Swift Crypto to 5.1.1 without raising their manifest minimums.
+- Update the exact SwiftProtobuf requirement to 1.40.0 for descriptor-backed inspection.
+- Refresh integration guidance, documentation navigation, and the local interception lab.
+
+### Fixed
+
+- Report the release version in HAR creator metadata.
+
 ## 0.2.2 - 2026-10-27
 
 ### Added

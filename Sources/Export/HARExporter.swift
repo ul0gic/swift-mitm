@@ -6,7 +6,7 @@ public enum HARExporter {
     ) async throws where Entries.Element == HARExchange {
         var output = HARJSONWriter(writer: writer)
         try await output.raw("{\"log\":{\"version\":\"1.2\",\"creator\":{")
-        try await output.raw("\"name\":\"SwiftMITM\",\"version\":\"0.2.2\"},\"entries\":[")
+        try await output.raw("\"name\":\"SwiftMITM\",\"version\":\"0.2.3\"},\"entries\":[")
         var first = true
         for try await entry in entries {
             try Task.checkCancellation()

@@ -4,7 +4,7 @@ Open an issue before proposing a behavior or public-API change. Keep changes sco
 
 ## Verification
 
-GitHub Actions builds the package, builds the FirstCapture consumer, runs a proxy smoke check, and reviews dependency changes. Dependabot monitors dependency advisories and proposes updates. Run SwiftFormat and SwiftLint locally before pushing.
+GitHub Actions builds the package, builds the FirstCapture consumer, runs a proxy smoke check, and reviews dependency changes. Dependabot monitors dependency advisories and proposes updates. Build, test, formatting, lint, and documentation gates belong in GitHub Actions; do not run them locally as an automatic completion step.
 
 Keep `Package.resolved` current when changing dependencies so review covers the versions the package actually builds. New behavior needs focused consumer-facing evidence and documentation for changed lifecycle or security contracts.
 

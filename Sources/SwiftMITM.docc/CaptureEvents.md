@@ -29,7 +29,7 @@ Ordering is guaranteed within one HTTP stream, WebSocket connection, or opaque f
 
 In transparent mode, the physical destination is authoritative for routing. SNI changes TLS identity selection, not the route.
 
-The explicit HTTP forwarding path uses an in-repository codec fork. It maps permitted received header and trailer octets back to equal octets during serialization. It does not preserve original whitespace or complete wire formatting. Compilation, linkage, and runtime fidelity remain unverified. The raw interception path continues forwarding original HTTP octets.
+The explicit HTTP forwarding path uses an in-repository codec fork. It maps permitted received header and trailer octets back to equal octets during serialization. It does not preserve original whitespace or complete wire formatting. The raw interception path continues forwarding original HTTP octets.
 
 ## Interpret retained bytes and counts
 
@@ -49,11 +49,11 @@ After opaque forwarding begins, failures use `opaqueError` for that flow instead
 
 ## Correlate HTTP/1 exchanges
 
-The candidate's `HTTP1CorrelationPolicy` bounds pending exchange count and retained method bytes per connection. Defaults are 128 exchanges and 65,536 method bytes; the accepted ranges are 1–1,024 and 1–1,048,576 respectively. Exceeding either limit closes the affected connection and fails outstanding unfinished captures. It does not produce a successful terminal event for an exchange that did not complete.
+`HTTP1CorrelationPolicy` bounds pending exchange count and retained method bytes per connection. Defaults are 128 exchanges and 65,536 method bytes; the accepted ranges are 1–1,024 and 1–1,048,576 respectively. Exceeding either limit closes the affected connection and fails outstanding unfinished captures. It does not produce a successful terminal event for an exchange that did not complete.
 
 ## Interpret streaming protocols
 
-The candidate's HTTP/1.1 SSE and HTTP/2 gRPC paths capture incremental raw body chunks and HTTP trailers. It does not decode SSE records, protobuf messages, gRPC message boundaries, or compressed payloads, and does not claim gRPC-Web support. Consumer receive timestamps are arrival observations, not packet or kernel timestamps. Configured curl, URLSession, WKWebView, Chromium, gRPC, and external-example jobs have no candidate results yet.
+Raw `CaptureEvent` values describe incremental HTTP body chunks and trailers; they do not carry decoded SSE, protobuf or gRPC messages. The optional `SwiftMITMInspection` product provides those semantic observations, including gRPC-Web and supported content decoding, through a separate `InspectionEventSink`. Capture retention limits do not truncate the full bytes supplied at the observation boundary. Consumer receive timestamps are arrival observations, not packet or kernel timestamps.
 
 ## WebSocket over HTTP/2
 
@@ -71,8 +71,8 @@ Perform only constant-time bounded work in `receive(_:)`. If persistence or anal
 
 0.2.0 is source-breaking for exhaustive `CaptureEvent` switches. Add handling for `opaqueOpen`, `opaqueData`, `opaqueDirectionEnd`, `opaqueClose`, `opaqueError`, and `connectionFailure`. Update any custom serialization or event schema to preserve the new IDs, typed failure reasons, and target metadata. Consumers that construct ``CapturedRequestHead`` can continue using the initializer without `target`; consumers that match it must handle the optional field.
 
-## Migrate to the 0.2.2 candidate
+## Migrate from 0.2.1 to 0.2.2 or later
 
-The candidate adds `.explicitHTTP` to ``ProxyIngress`` and `.explicitHTTP` to ``CapturedIngressProvenance``. Add both cases to exhaustive switches. The new ingress accepts HTTP/1.1 absolute-form `http` requests and HTTPS `CONNECT`; `.explicitConnect` remains the default.
+Version 0.2.2 adds `.explicitHTTP` to ``ProxyIngress`` and `.explicitHTTP` to ``CapturedIngressProvenance``. Add both cases to exhaustive switches. The new ingress accepts HTTP/1.1 absolute-form `http` requests and HTTPS `CONNECT`; `.explicitConnect` remains the default.
 
-`ProxyServer` adds defaulted `correlationPolicy` and `interceptionPolicy` initializer parameters. `CapturedOpaqueFlow` adds a defaulted `reason`. `CapturedConnectionFailure` adds defaulted optional `stage` and `code` values. Existing value construction remains source-compatible, but serialized event schemas should add the new fields if they preserve candidate diagnostics.
+`ProxyServer` adds defaulted `correlationPolicy` and `interceptionPolicy` initializer parameters. `CapturedOpaqueFlow` adds a defaulted `reason`. `CapturedConnectionFailure` adds defaulted optional `stage` and `code` values. Existing value construction remains source-compatible, but serialized event schemas should add the new fields if they preserve these diagnostics.
