@@ -63,9 +63,8 @@ extension ExplicitHTTPProxyHandler {
             }
             exchange.controlReservation = try runtime.reserveTransportBytes(reservationBytes)
             exchange.controlAdmissionReservation = try admission?.acquire(.retainedBytes(reservationBytes))
-            if let target = exchange.target,
-               let original = ConnectionTarget(host: target.host, port: target.port, ingressProvenance: .explicitHTTP) {
-                captureRequestHead(exchange, target: original.capturedTarget())
+            if let target = exchange.target {
+                captureRequestHead(exchange, target: target.connectionTarget.capturedTarget())
             }
             switch headResult {
             case .needsBody: context?.read()

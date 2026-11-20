@@ -203,6 +203,9 @@ final class ProxyTestClient {
         tls.trustRoots = .certificates([trustRoot])
         let sslContext = try NIOSSLContext(configuration: tls)
         let handshake = ProxyClientPromise<String?>(eventLoop: channel.eventLoop)
+        channel.closeFuture.whenComplete { _ in
+            handshake.complete(.failure(ProxyTestError.tlsClosedBeforeHandshake))
+        }
         let multiplexer = configuresHTTP2
             ? ProxyClientPromise<NIOHTTP2Handler.StreamMultiplexer?>(eventLoop: channel.eventLoop)
             : nil

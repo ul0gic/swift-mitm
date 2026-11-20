@@ -12,7 +12,7 @@ Treat SwiftMITM as a privileged interception engine. Authorization, listener acc
 | Origin egress | Internal, loopback, link-local, unspecified, and other special-purpose addresses denied | `EgressPolicy(allowInternal: true)` permits local and private services. |
 | HTTP and opaque payload capture | Metadata only | Positive limits expose retained payload bytes to the sink. |
 
-Additional upstream roots augment the system trust store. DNS answers are filtered before TLS connection attempts, and the connected peer address is checked again to cover resolution and connection races.
+Additional upstream roots augment the system trust store. The proxy filters DNS answers before intercepted TLS and raw connection attempts and checks the connected peer address again after dialing.
 
 ## Deploy transparent ingress safely
 
@@ -20,7 +20,7 @@ Additional upstream roots augment the system trust store. DNS answers are filter
 
 Use the narrowest literal-address or CIDR policy that reaches the local host or guest forwarder. Rejecting an untrusted peer happens before accepting its claimed destination. The package does not install redirect rules, run a privileged helper, configure a guest forwarder, or authenticate a host-network listener. Those are application and deployment responsibilities.
 
-The trusted PROXY v2 destination remains the upstream route. TLS SNI is identity metadata only: it can select the upstream TLS name and intercepted leaf identity but cannot redirect a transparent connection. ECH and unsupported ALPN use opaque forwarding rather than decryption or protocol guessing.
+The trusted PROXY v2 destination supplies the upstream route. TLS SNI can select the upstream TLS name and intercepted leaf identity. The transparent classifier forwards TLS opaquely when it detects ECH or the client's ALPN list contains no supported protocol. A mixed offer containing `h2` or `http/1.1` remains eligible for interception, as does a ClientHello without an ALPN extension.
 
 ## Bound resources and setup time
 

@@ -162,4 +162,4 @@ The proxy transcript should end with `inspectionComplete=true` and `stopped`. `d
 
 ## Other protocols
 
-This origin implements HTTPS and SSE only. To exercise gRPC, gRPC-Web, or WebSocket inspection, supply a service and client you control, configure the explicit proxy and client CA trust, and pass the origin's trust root through `--origin-ca`. Native gRPC requires an HTTP/2 origin. Expect `grpc event` or `webSocketMessage decodedBytes=` summaries independently of the peer's result. The console does not load protobuf schemas; descriptor-backed field decoding requires an embedding application as described in [Embedding](Embedding.md).
+This origin implements HTTPS and SSE. To exercise gRPC, gRPC-Web, or WebSocket inspection, supply a TLS service and client you control, configure the explicit CONNECT proxy and client CA trust, and pass the origin's trust root through `--origin-ca`. Use HTTP/2 for native gRPC and a `wss` endpoint for WebSockets. Expect `grpc event` or `webSocketMessage decodedBytes=` summaries in the console. Descriptor-backed protobuf field decoding requires an embedding application that loads a schema. See [Embedding](Embedding.md).

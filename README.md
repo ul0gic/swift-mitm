@@ -15,11 +15,13 @@ SwiftMITM is an embeddable MITM engine for macOS developer tools and authorized 
 - Explicit request replay and streaming HAR 1.2 export with credential redaction, measured timings, and original/effective capture provenance.
 - Configurable capture and inspection budgets, shared resource admission, scoped HTTP/1 connection reuse, and deliberate encrypted pass-through.
 
-Inspection happens before raw payload-retention limits. Original traffic and edited traffic remain separate representations. Header-value octets are preserved by a narrow SwiftNIO codec patch; explicit forwarding can still normalize whitespace and framing.
+For intercepted TLS over TCP, SwiftMITM buffers a fragmented ClientHello, selects HTTP/2 or HTTP/1.1 with the origin first, then replays the buffered bytes into the downstream TLS handler.
+
+Inspection happens before raw payload-retention limits. Original traffic and edited traffic remain separate representations. A narrow SwiftNIO codec patch preserves header-value octets. Explicit forwarding can still normalize whitespace and framing.
 
 ## Quick start
 
-Requires macOS 26+ and Swift tools 6.4; the project uses Xcode 27.1. [FirstCapture](Examples/FirstCapture/README.md) runs a proxy and prints JSON Lines through the public API.
+SwiftMITM requires macOS 26 or later and Swift tools 6.4. Pull requests build with Xcode 27.1. [FirstCapture](Examples/FirstCapture/README.md) runs a proxy and prints JSON Lines through the public API.
 
 Supply a matching P-256 interception CA certificate and private key in `$HOME/.swiftmitm/`, outside the repository. See the [CA guide](Sources/SwiftMITM.docc/CertificateAuthorityAndTrust.md), or use the [local lab](Documentation/LocalLab.md) for generated credentials and controlled peers.
 
@@ -62,4 +64,4 @@ HTTP/3, QUIC, `h2c` upgrade, and ECH decryption are unsupported. HTTP controls d
 
 SwiftMITM is [MIT licensed](LICENSE). Vendored SwiftNIO codec sources retain Apache 2.0 notices; llhttp retains its MIT license and the SwiftNIO wrapper's Apache 2.0 notices. See [Vendor/](Vendor/).
 
-[Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Support](SUPPORT.md) · [Report a vulnerability](SECURITY.md)
+[Contributing](CONTRIBUTING.md) · [Release notes](RELEASE_NOTES.md) · [Changelog](CHANGELOG.md) · [Support](SUPPORT.md) · [Report a vulnerability](SECURITY.md)

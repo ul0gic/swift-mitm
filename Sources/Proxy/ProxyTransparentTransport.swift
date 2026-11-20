@@ -342,7 +342,6 @@ extension ProxyServer {
             .channelOption(ChannelOptions.autoRead, value: false)
             .channelOption(ChannelOptions.allowRemoteHalfClosure, value: allowHalfClosure)
             .channelInitializer { channel in
-                channel.closeFuture.whenComplete { _ in reservation?.release() }
                 setupToken.onCancellation(on: channel.eventLoop) { channel.close(promise: nil) }
                 guard !setupToken.isCancelled, registry.register(channel) else {
                     return channel.close().flatMapThrowing { throw ProxyConnectionError.serverStopping }
@@ -350,7 +349,9 @@ extension ProxyServer {
                 return channel.eventLoop.makeSucceededVoidFuture()
             }
             .connect(host: target.connectionHost, port: target.port)
-        connect.whenFailure { _ in reservation?.release() }
+        if let reservation {
+            connect.flatMap { $0.closeFuture }.whenComplete { _ in reservation.release() }
+        }
         return enforceSetupDeadline(
             connect,
             timeout: timeoutPolicy.upstreamConnectDeadline.nioTimeAmount ?? .seconds(10),

@@ -31,7 +31,9 @@ Passing only `privateKeyPEM` creates a new self-signed root with the default sub
 
 ### Understand issued host identities
 
-SwiftMITM issues a 397-day leaf identity for each intercepted target. DNS hosts receive DNS SANs; IPv4 and IPv6 literals receive IP-address SANs. Explicit `CONNECT` uses its authority as the fallback identity when the client omits SNI. Trusted transparent ingress uses the PROXY v2 destination unless TLS SNI supplies a DNS identity; SNI never changes the physical upstream route.
+SwiftMITM issues a 397-day leaf identity for each intercepted target. DNS hosts receive DNS SANs, and IPv4 and IPv6 literals receive IP-address SANs. An intercepted client's SNI supplies the upstream TLS name and the downstream leaf identity. When SNI is absent, explicit `CONNECT` uses its authority and trusted transparent ingress uses the PROXY v2 destination. SNI leaves the physical upstream route intact.
+
+When controlled HTTP/1.1 reconnects to the same origin, it retains the inspected TLS name. A rule that remaps the request to another authority uses that authority's identity for upstream TLS. The 0.2.3 release can lose the inspected name on a same-origin reconnect.
 
 Each running proxy keeps at most 256 completed leaf identities and 256 distinct pending mints. Requests for the same host share one in-flight mint, and cache-miss cryptography runs outside SwiftNIO event loops. Stopping the proxy releases this per-run TLS state.
 

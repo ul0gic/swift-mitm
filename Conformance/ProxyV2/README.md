@@ -23,7 +23,7 @@ The JSON document identifies itself with `format`, `schemaVersion`, and `contrac
 
 ## Evidence and ownership
 
-SwiftMITM's package tests prove the receiver against this artifact and prove a rootless local accepting forwarder against the public transparent listener. That is package evidence only.
+Use the `receiver` vectors to check header acceptance, rejection reasons, and the application bytes left after parsing. To verify a forwarding integration, send its encoded header and application bytes through a public trusted PROXY v2 listener.
 
 Each guest-agent and host-helper repository owns its encoder, its CI, and its evidence that every applicable `emitter` vector is emitted byte-for-byte. The guest repository also owns Linux image construction, capabilities, redirect rules, and loop prevention. The host-product repository owns macOS forwarding and helper deployment.
 

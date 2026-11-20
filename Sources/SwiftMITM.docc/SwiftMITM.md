@@ -4,7 +4,7 @@ Embed an authorized explicit or trusted-transparent interception proxy with veri
 
 ## Overview
 
-SwiftMITM accepts explicit HTTP `CONNECT` tunnels by default. Opt-in ordinary HTTP forwarding is available through `.explicitHTTP`. A separately configured trusted PROXY protocol v2 ingress accepts transparent connections only from actual peers admitted by the embedding application's policy. Supported traffic enters structured capture; ECH, unsupported ALPN, and other unclassified traffic receive bounded opaque TCP forwarding.
+SwiftMITM accepts explicit HTTP `CONNECT` tunnels by default. Select `.explicitHTTP` to forward ordinary HTTP requests as well, or `.priorKnowledgeHTTP2` for a configured HTTP/2 destination. Trusted PROXY v2 ingress checks the forwarder's TCP peer address before accepting its destination metadata. The transparent classifier captures supported protocols and can forward other traffic as opaque TCP. See <doc:SecurityModel>.
 
 The package owns interception mechanics. The embedding application owns authorization, CA persistence, trust installation and removal, client proxy configuration, transparent forwarding, listener access control, event storage, redaction, filtering, and presentation.
 

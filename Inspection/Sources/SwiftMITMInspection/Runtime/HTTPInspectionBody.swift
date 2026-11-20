@@ -274,9 +274,10 @@ private extension HTTPInspectionBody {
         decodedOffset += UInt64(bytes.count)
         unaccountedWork += bytes.count
         deliver(context, 0..<wireOffset, start..<decodedOffset, codingChain, .decodedBody(Array(bytes)))
-        try sse?.feed(bytes) { event in
-            self.output(.sse(event))
-            self.eventStart = self.decodedOffset
+        try sse?.feedWithRanges(bytes) { event, range in
+            let wireRange = self.decoders.first.map { 0..<$0.consumedInputBytes } ?? range
+            self.deliver(self.context, wireRange, range, self.codingChain, .sse(event))
+            self.eventStart = range.upperBound
         }
         if let grpc, !grpc.isTerminal {
             if grpc.hasPendingWork || grpcPosition < grpcCarry.count {

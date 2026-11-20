@@ -41,13 +41,19 @@ final class TLSOriginServer {
     var localPort: Int { channel?.localAddress?.port ?? 0 }
     var activeChildChannels: [Channel] { activeChildren.withLockedValue { Array($0.values) } }
 
-    func start(bindAddress: String = "127.0.0.1") throws {
+    func start(bindAddress: String = "127.0.0.1", observeServerName: (@Sendable (String?) -> Void)? = nil) throws {
         let leaf = try ca.leaf(forHost: hostname)
         var configuration = TLSConfiguration.makeServerConfiguration(
             certificateChain: leaf.certificateChain,
             privateKey: leaf.privateKey
         )
         configuration.applicationProtocols = applicationProtocols
+        if let observeServerName {
+            configuration.sslContextCallback = { hello, promise in
+                observeServerName(hello.serverHostname)
+                promise.succeed(.noChanges)
+            }
+        }
         let sslContext = try NIOSSLContext(configuration: configuration)
         let bodySize = bodySize
         let activeChildren = activeChildren

@@ -115,6 +115,14 @@ extension ProxyServer {
                 target: target
             )
         }
+        if let controlRuntime, !controlRuntime.configurationSnapshot.rules.isEmpty {
+            return bridgeControlledHTTP1(
+                inbound: inbound,
+                upstream: upstream.connection,
+                target: upstream.target.unresolved,
+                connectionID: connectionID
+            )
+        }
         return bridgeHTTP1(
             inbound: inbound,
             upstream: upstream.connection,
@@ -230,15 +238,6 @@ extension ProxyServer {
         target: CapturedTarget,
         connectionID: UUID
     ) -> EventLoopFuture<Void> {
-        if let controlRuntime, !controlRuntime.configurationSnapshot.rules.isEmpty {
-            return bridgeControlledHTTP1(
-                inbound: inbound,
-                upstream: upstream,
-                authority: authority,
-                target: target,
-                connectionID: connectionID
-            )
-        }
         if controlRuntime != nil {
             upstream.channel.closeFuture.whenComplete { _ in inbound.close(promise: nil) }
         }
@@ -299,12 +298,11 @@ extension ProxyServer {
     private func bridgeControlledHTTP1(
         inbound: Channel,
         upstream: NegotiatedUpstreamConnection,
-        authority: String,
-        target: CapturedTarget,
+        target: ConnectionTarget,
         connectionID: UUID
     ) -> EventLoopFuture<Void> {
         inbound.eventLoop.makeCompletedFuture {
-            guard let destination = HTTPForwardTarget(scheme: "https", authority: authority, requestTarget: "/") else {
+            guard let destination = HTTPForwardTarget(scheme: "https", connectionTarget: target, requestTarget: "/") else {
                 throw HTTPControlError.invalidConfiguration
             }
             var configuration = BytePreservingHTTPResponseEncoder.Configuration()

@@ -29,6 +29,8 @@ public final class SSEParser {
     private var event = ""
     private var firstLine = true
     private var skipLF = false
+    private var decodedOffset: UInt64 = 0
+    private var recordStart: UInt64 = 0
     private var finished = false
     private var failed = false
 
@@ -54,12 +56,23 @@ public final class SSEParser {
         _ input: UnsafeRawBufferPointer,
         emit: (SSEEvent) throws -> Void
     ) throws {
+        try feedWithRanges(input) { event, _ in try emit(event) }
+    }
+
+    func feedWithRanges(
+        _ input: UnsafeRawBufferPointer,
+        emit: (SSEEvent, Range<UInt64>) throws -> Void
+    ) throws {
         guard !finished, !failed else { throw SSEParserError.alreadyFinished }
         do {
             for byte in input {
+                let byteOffset = decodedOffset
+                decodedOffset += 1
                 if skipLF {
                     skipLF = false
                     if byte == 10 {
+                        // SSE dispatches on CR, so its optional LF sits outside both record spans.
+                        if recordStart == byteOffset { recordStart = decodedOffset }
                         continue
                     }
                 }
@@ -87,7 +100,7 @@ public final class SSEParser {
         return partial ? .unfinishedRecord : .complete
     }
 
-    private func processLine(emit: (SSEEvent) throws -> Void) throws {
+    private func processLine(emit: (SSEEvent, Range<UInt64>) throws -> Void) throws {
         var bytes = line[...]
         if firstLine {
             firstLine = false
@@ -97,6 +110,7 @@ public final class SSEParser {
         }
         if bytes.isEmpty {
             try dispatch(emit: emit)
+            recordStart = decodedOffset
             return
         }
         // SSE requires replacement decoding for malformed UTF-8.
@@ -111,17 +125,18 @@ public final class SSEParser {
         try apply(field: field, value: value)
     }
 
-    private func dispatch(emit: (SSEEvent) throws -> Void) throws {
+    private func dispatch(emit: (SSEEvent, Range<UInt64>) throws -> Void) throws {
         if !data.isEmpty {
             data.removeLast()
-            try emit(SSEEvent(
+            let message = SSEEvent(
                 // SSE data preserves the replacement-decoded stream.
                 // swiftlint:disable:next optional_data_string_conversion
                 data: String(decoding: data, as: UTF8.self),
                 event: event.isEmpty ? "message" : event,
                 lastEventID: lastEventID,
                 retryMilliseconds: retryMilliseconds
-            ))
+            )
+            try emit(message, recordStart..<decodedOffset)
         }
         data.removeAll(keepingCapacity: true)
         event = ""
