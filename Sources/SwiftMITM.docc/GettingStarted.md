@@ -4,15 +4,17 @@ Create a certificate authority, choose one ingress for one listener, start the p
 
 ## Add the package
 
-The package requires Swift tools 6.4 and targets macOS 26 or later. Build with Xcode 27.1 and its bundled Swift 6.4 compiler.
+The package requires Swift tools 6.4 and targets macOS 26 or later. The project's pull requests build with Xcode 27.1.
 
-Add SwiftMITM 0.2.3 or later:
+Set the package dependency's minimum version to 0.2.4.
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/ul0gic/swift-mitm.git", from: "0.2.3")
+    .package(url: "https://github.com/ul0gic/swift-mitm.git", from: "0.2.4")
 ]
 ```
+
+Add `.product(name: "SwiftMITM", package: "swift-mitm")` to the consuming target's dependencies.
 
 Review <doc:CaptureEvents#Migrate-exhaustive-event-handling-for-0.2.0> before adopting transparent ingress or exhaustively switching on ``CaptureEvent``.
 
@@ -20,7 +22,7 @@ When upgrading from 0.2.1, review <doc:CaptureEvents#Migrate-from-0.2.1-to-0.2.2
 
 ## Start an explicit CONNECT listener
 
-Explicit `CONNECT` is the default and preserves existing proxy-client integrations.
+Explicit `CONNECT` is the default. This lifecycle example starts a listener and immediately stops it. For a listener that stays up while you send requests, run the `Examples/FirstCapture` executable.
 
 ```swift
 import SwiftMITM
@@ -37,7 +39,7 @@ let proxy = ProxyServer(
 )
 
 let port = try await proxy.start(port: 0)
-print("Configure the authorized client to use 127.0.0.1:\(port)")
+print("Listening on 127.0.0.1:\(port)")
 try await proxy.stop()
 ```
 
@@ -45,7 +47,7 @@ Persist `generated.privateKeyPEM` and `generated.certificatePEM` together before
 
 ## Start a trusted PROXY v2 listener
 
-Use transparent ingress only when the component that connects to SwiftMITM is known and can be authenticated by its actual peer address. `TrustedPeerPolicy` evaluates the direct TCP peer, not the source address supplied in PROXY metadata. A listener bind address only controls where it listens; it grants no trust.
+Use transparent ingress with a forwarder you control. `TrustedPeerPolicy` checks the forwarder's actual TCP peer address before accepting its PROXY metadata. The listener bind address determines where SwiftMITM accepts connections.
 
 ```swift
 let trustedPeers = TrustedPeerPolicy.loopback
@@ -71,9 +73,9 @@ Run a second `ProxyServer` instance for a second ingress. Each instance has exac
 
 Use opt-in `.explicitHTTP` for ordinary HTTP forwarding. It accepts HTTP/1.1 absolute-form `http` requests and HTTPS `CONNECT` on one listener. `.explicitConnect` remains the default and remains CONNECT-only. Ordinary requests are routed by the absolute request URI; this listener is a forward proxy, not an origin server. Unsupported or ambiguous requests are rejected before forwarding.
 
-`ProxyInterceptionPolicy(passThroughAuthorities:)` selects exact normalized host-and-port authorities for opaque TCP forwarding. The default policy is empty. For a matching explicit CONNECT or trusted transparent destination, the client and origin retain end-to-end TLS; SwiftMITM does not capture the encrypted HTTP exchange. Selection does not bypass egress policy. The client authenticates the origin directly in this mode; SwiftMITM does not terminate or verify that TLS connection. Setup failures never fall back to pass-through.
+`ProxyInterceptionPolicy(passThroughAuthorities:)` selects exact normalized host-and-port authorities for opaque TCP forwarding. The default policy is empty. A matching CONNECT authority or trusted transparent destination selects pass-through before upstream setup. The proxy enforces egress policy and forwards the application bytes unchanged. For TLS traffic, the client negotiates with and authenticates the origin directly.
 
-The external example package at `Examples/FirstCapture/` uses only public SwiftMITM imports. Its command form is `FirstCapture --ca-cert PATH --ca-key PATH` with optional flags `--port INT`, repeatable `--passthrough AUTHORITY`, `--capture-bytes INT`, `--async`, `--allow-internal`, and repeatable `--upstream-ca PATH`. `--async` uses a consumer-owned handoff bounded to 256 events and 1 MiB plus one in-flight encoded record; overflow terminates delivery and prints a `deliveryLoss` record marking active captures incomplete while proxy forwarding continues. On SIGINT, asynchronous delivery drains immediately writable output and cancels if it would block; on SIGTERM, it cancels delivery. Loss marks active captures incomplete and suppresses `stopped`. The example does not install CA trust or change system proxy settings.
+The external example package at `Examples/FirstCapture/` uses only public SwiftMITM imports. Its command form is `FirstCapture --ca-cert PATH --ca-key PATH` with optional flags `--port INT`, repeatable `--passthrough AUTHORITY`, `--capture-bytes INT`, `--async`, `--allow-internal`, and repeatable `--upstream-ca PATH`. With `--async`, the consumer queues up to 256 records and 1 MiB plus one in-flight encoded record. Overflow terminates delivery and marks active captures incomplete while proxy forwarding continues. The example attempts to emit a `deliveryLoss` record if output is writable and suppresses `stopped` after loss. On SIGINT, asynchronous delivery drains immediately writable output and cancels if it would block. SIGTERM cancels delivery.
 
 ## Choose timeouts and capture limits
 
@@ -83,7 +85,7 @@ The external example package at `Examples/FirstCapture/` uses only public SwiftM
 
 ## Understand transparent routing
 
-The trusted PROXY v2 destination is the physical upstream route. SwiftMITM does not let TLS SNI redirect that route. When SNI is present, it supplies the upstream TLS name and the intercepted leaf identity; when absent, the original destination is used. Clear HTTP/1.1, interceptable TLS HTTP/1.1, interceptable TLS HTTP/2, and supported WebSocket traffic enter structured capture. ECH, unsupported ALPN, and remaining unclassified traffic use opaque TCP forwarding.
+The trusted PROXY v2 destination supplies the physical upstream route. When present, SNI supplies the upstream TLS name and the intercepted leaf identity. Without SNI, the proxy uses the original destination. Clear HTTP/1.1, interceptable TLS HTTP/1.1 and HTTP/2, and supported WebSockets enter structured capture. See <doc:SecurityModel> for the transparent classifier's opaque forwarding criteria.
 
 Core capture reports streamed raw body chunks and HTTP trailers. The optional `SwiftMITMInspection` product adds incremental SSE, gRPC/gRPC-Web framing and status, descriptor-backed protobuf fields, supported content decoding and WebSocket message observations. Connect an `HTTPInspector` through `observationSink` instead of attempting to reconstruct semantic messages from retained raw-body prefixes.
 

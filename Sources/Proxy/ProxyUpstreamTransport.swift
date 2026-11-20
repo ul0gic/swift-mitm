@@ -128,6 +128,12 @@ extension ProxyServer {
         setupToken: ProxyConnectionSetupToken,
         on loop: EventLoop
     ) -> EventLoopFuture<Channel> {
+        let reservation: ResourceReservation?
+        do {
+            reservation = try admission?.acquire(.connection(destination: target.logicalAuthority.lowercased()))
+        } catch {
+            return loop.makeFailedFuture(error)
+        }
         let resolver = EgressFilteringResolver(
             resolver: NIORandomizedDNSResolver(loop: loop),
             policy: egressPolicy
@@ -135,16 +141,9 @@ extension ProxyServer {
         setupToken.onCancellation(on: loop) {
             resolver.cancelQueries()
         }
-        let reservation: ResourceReservation?
-        do {
-            reservation = try admission?.acquire(.connection(destination: target.logicalAuthority.lowercased()))
-        } catch {
-            return loop.makeFailedFuture(error)
-        }
         let connection = ClientBootstrap(group: loop)
             .resolver(resolver)
             .channelInitializer { [self] channel in
-                channel.closeFuture.whenComplete { _ in reservation?.release() }
                 guard connectionRegistry.register(channel) else {
                     return channel.closeFuture.flatMapThrowing { throw ProxyConnectionError.serverStopping }
                 }
@@ -154,7 +153,9 @@ extension ProxyServer {
                 return channel.eventLoop.makeSucceededFuture(())
             }
             .connect(host: target.connectionHost, port: target.port)
-        connection.whenFailure { _ in reservation?.release() }
+        if let reservation {
+            connection.flatMap { $0.closeFuture }.whenComplete { _ in reservation.release() }
+        }
         return connection
     }
 

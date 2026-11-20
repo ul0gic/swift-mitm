@@ -10,21 +10,28 @@ struct HTTPForwardConnection: Sendable {
 }
 
 struct HTTPForwardTarget: Sendable {
-    let host: String
-    let port: Int
-    let authority: String
+    let connectionTarget: ConnectionTarget
     let requestTarget: String
     let scheme: String
 
+    var host: String { connectionTarget.connectionHost }
+    var port: Int { connectionTarget.port }
+    var authority: String { connectionTarget.logicalAuthority }
+
     init?(scheme: String, authority: String, requestTarget: String) {
+        guard let connectionTarget = ConnectionTarget(
+            explicitConnectAuthority: authority,
+            ingressProvenance: .explicitHTTP
+        ) else { return nil }
+        self.init(scheme: scheme, connectionTarget: connectionTarget, requestTarget: requestTarget)
+    }
+
+    init?(scheme: String, connectionTarget: ConnectionTarget, requestTarget: String) {
         guard ["http", "https"].contains(scheme),
-              let target = ConnectionTarget(explicitConnectAuthority: authority, ingressProvenance: .explicitHTTP),
               requestTarget.utf8.allSatisfy({ $0 > 0x20 && $0 < 0x7f }),
               requestTarget.hasPrefix("/") || requestTarget == "*" else { return nil }
+        self.connectionTarget = connectionTarget
         self.scheme = scheme
-        host = target.connectionHost
-        port = target.port
-        self.authority = target.logicalAuthority
         self.requestTarget = requestTarget
     }
 
@@ -50,9 +57,7 @@ struct HTTPForwardTarget: Sendable {
             explicitConnectAuthority: connectAuthority,
             ingressProvenance: .explicitHTTP
         ) else { return nil }
-        host = target.connectionHost
-        port = target.port
-        authority = target.logicalAuthority
+        connectionTarget = target
         self.scheme = scheme
         let suffix = String(remainder[authorityEnd...])
         if suffix.isEmpty {

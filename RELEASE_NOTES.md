@@ -1,14 +1,9 @@
-# SwiftMITM 0.2.3
-
-## Changed
-
-- Update resolved SwiftNIO to 2.105.0, SwiftNIO SSL to 2.37.6, and Swift Crypto to 5.1.1.
-- Update the exact SwiftProtobuf dependency requirement from 1.32.0 to 1.40.0 for `SwiftMITMInspection`.
-- Refresh integration guidance, documentation navigation, and the local interception lab.
-- Use a single protected PR compilation gate with dependency review; release publication reuses that PR evidence without rebuilding after merge.
-
-macOS 26+ and Swift tools 6.4 remain required. The SwiftNIO, SwiftNIO SSL, and Swift Crypto manifest minimums remain unchanged; their resolved versions describe the dependency graph selected for this release.
+# SwiftMITM 0.2.4
 
 ## Fixed
 
-- Report version 0.2.3 in exported HAR creator metadata.
+- Preserve the client's TLS server name when controlled HTTP/1.1 reconnects to the original destination. An explicit route change uses the new authority for upstream TLS verification.
+- Keep one global and one per-destination connection slot reserved across IPv4/IPv6 attempts until the winning socket closes or all attempts fail.
+- Reject intercepted TLS connections at the configured connection limit without triggering a SwiftNIO debug assertion over unused DNS promises.
+- Report distinct SSE byte ranges for events delivered together or across reads. Compressed events report the wire prefix consumed when each event was emitted.
+- Refresh the FirstCapture example's dependency pins so it resolves with the package's Swift Crypto 5 requirement in frozen builds.

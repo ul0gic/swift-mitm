@@ -13,7 +13,7 @@ Consume bounded HTTP, WebSocket, opaque-flow, and connection-failure events with
 | Stream failure | One `streamError` carrying the affected request ID and a non-payload diagnostic message |
 | WebSocket | `webSocketOpen`, zero or more `webSocketFrame`, then one `webSocketClose` |
 | Opaque TCP | `opaqueOpen`, zero or more `opaqueData` in each direction, one `opaqueDirectionEnd` per cleanly ended direction, then `opaqueClose` |
-| Connection failure | One `connectionFailure` when setup fails before a structured or opaque flow takes ownership |
+| Connection failure | `connectionFailure` for setup failures or a connection-level resource limit during HTTP/1 capture |
 
 Ordering is guaranteed within one HTTP stream, WebSocket connection, or opaque flow. Independent connections and HTTP/2 streams may call the same ``CaptureEventSink`` concurrently; no global ordering exists.
 
@@ -21,11 +21,11 @@ Ordering is guaranteed within one HTTP stream, WebSocket connection, or opaque f
 
 ``CapturedRequestHead/target`` is optional. Existing explicit `CONNECT` request construction remains valid without it. When SwiftMITM knows the target, ``CapturedTarget`` separates:
 
-- `destination`: physical remote address and port used for upstream routing
-- `logicalAuthority`: authority associated with the connection
-- `tlsServerName`: TLS SNI when present
-- `ingressProvenance`: explicit `CONNECT`, explicit HTTP forwarding, or trusted PROXY v2
-- `originalClient`: PROXY v2 source endpoint when trusted transparent ingress supplied it
+- `destination` gives the connected peer address and port when available, otherwise the target host and port.
+- `logicalAuthority` identifies the authority associated with the connection.
+- `tlsServerName` gives the selected TLS name from inspected SNI or the target's DNS name. An IP literal alone supplies no DNS name.
+- `ingressProvenance` identifies explicit `CONNECT`, explicit HTTP forwarding, prior-knowledge HTTP/2, or trusted PROXY v2.
+- `originalClient` gives the PROXY v2 source endpoint when trusted transparent ingress supplied it.
 
 In transparent mode, the physical destination is authoritative for routing. SNI changes TLS identity selection, not the route.
 
@@ -43,9 +43,9 @@ Each `opaqueDirectionEnd` reports the direction's complete observed count and wh
 
 ``CapturedConnectionFailure`` identifies a failed connection with an ID, timestamp, typed reason, and target metadata when the target was known. Its optional `stage` is one of `admission`, `routing`, `connect`, `upstreamTLS`, `downstreamTLS`, `negotiation`, or `capture`. Its optional `code` is one of `egressDenied`, `setupTimedOut`, `serverStopping`, `invalidProxyMetadata`, `untrustedPeer`, `destinationUnavailable`, `classificationFailed`, `malformedClientHello`, `unsupportedProtocol`, `protocolMismatch`, `upstreamConnectFailed`, `tlsHandshakeFailed`, `transportFailure`, or `resourceLimit`. These events contain no payload bytes or free-form diagnostic text. Platform error strings are not part of the public diagnostic contract.
 
-After opaque forwarding begins, failures use `opaqueError` for that flow instead of `connectionFailure`. A consumer can therefore treat `connectionFailure` as a pre-flow terminal and `opaqueError` as an opaque-flow terminal.
+An `opaqueError` terminates an established opaque flow. An established HTTP/1 connection can emit a `connectionFailure` with stage `.capture` and code `.resourceLimit` when it exceeds an admission limit. Track unfinished HTTP exchanges by their request IDs.
 
-``CapturedOpaqueFlow/reason`` distinguishes `.policySelected` pass-through from `.classificationFallback`; `.unspecified` remains the initializer default for consumer-constructed values. A policy-selected opaque flow keeps application traffic encrypted end-to-end and does not produce structured HTTP events.
+``CapturedOpaqueFlow/reason`` distinguishes `.policySelected` pass-through from `.classificationFallback`. The initializer defaults to `.unspecified` for consumer-constructed values. Pass-through forwards application bytes unchanged. TLS remains end-to-end, while a plaintext protocol can expose plaintext in `opaqueData` when opaque payload retention is enabled.
 
 ## Correlate HTTP/1 exchanges
 
@@ -73,6 +73,6 @@ Perform only constant-time bounded work in `receive(_:)`. If persistence or anal
 
 ## Migrate from 0.2.1 to 0.2.2 or later
 
-Version 0.2.2 adds `.explicitHTTP` to ``ProxyIngress`` and `.explicitHTTP` to ``CapturedIngressProvenance``. Add both cases to exhaustive switches. The new ingress accepts HTTP/1.1 absolute-form `http` requests and HTTPS `CONNECT`; `.explicitConnect` remains the default.
+Version 0.2.2 adds `.explicitHTTP` and `.priorKnowledgeHTTP2` to both ``ProxyIngress`` and ``CapturedIngressProvenance``. Handle both new cases in exhaustive switches. The explicit HTTP ingress accepts HTTP/1.1 absolute-form `http` requests and HTTPS `CONNECT`. The prior-knowledge ingress uses a configured HTTP/2 destination. The default is `.explicitConnect`.
 
 `ProxyServer` adds defaulted `correlationPolicy` and `interceptionPolicy` initializer parameters. `CapturedOpaqueFlow` adds a defaulted `reason`. `CapturedConnectionFailure` adds defaulted optional `stage` and `code` values. Existing value construction remains source-compatible, but serialized event schemas should add the new fields if they preserve these diagnostics.

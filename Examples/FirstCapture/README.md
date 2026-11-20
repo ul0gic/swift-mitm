@@ -1,13 +1,13 @@
 # FirstCapture
 
-An external SwiftPM executable demonstrating public SwiftMITM HTTP/HTTPS capture, streaming metadata, deliberate TLS pass-through, and signal-driven shutdown. Requires macOS 26 or later and Xcode 27.1 with Swift 6.4.
+An external SwiftPM executable demonstrating public SwiftMITM HTTP/HTTPS capture, streaming metadata, deliberate TLS pass-through, and signal-driven shutdown. Requires macOS 26 or later and Swift tools 6.4.
 
 ## Start
 
-Supply an existing matching P-256 CA private key and CA certificate in PEM format. Keep the private key outside the repository. From this directory, with those files named `ca-cert.pem` and `ca-key.pem`:
+Place the matching P-256 interception CA certificate and private key in `$HOME/.swiftmitm/ca-cert.pem` and `$HOME/.swiftmitm/ca-key.pem`. Run the following command from `Examples/FirstCapture`.
 
 ```sh
-swift run FirstCapture --ca-cert ca-cert.pem --ca-key ca-key.pem --port 8080
+swift run FirstCapture --ca-cert "$HOME/.swiftmitm/ca-cert.pem" --ca-key "$HOME/.swiftmitm/ca-key.pem" --port 8080
 ```
 
 The listener binds only to `127.0.0.1`. Standard output is JSON Lines, beginning with a record such as `{"type":"listening","port":8080}`; key order is unspecified. `--port 0` chooses an available port and reports it. SIGINT (Control-C) stops the server and drains delivery, emitting `{"type":"stopped"}` only when delivery remains intact. In async mode, draining never waits for stdout readiness: a full pipe cancels delivery. SIGTERM explicitly cancels async delivery before stopping the server. Synchronous mode retains its blocking delivery and graceful drain for both signals.
@@ -20,7 +20,7 @@ In a second terminal in this directory:
 
 ```sh
 curl --noproxy '' --proxy http://127.0.0.1:8080 http://example.com/
-curl --noproxy '' --proxy http://127.0.0.1:8080 --cacert ca-cert.pem https://example.com/
+curl --noproxy '' --proxy http://127.0.0.1:8080 --cacert "$HOME/.swiftmitm/ca-cert.pem" https://example.com/
 ```
 
 These commands depend on external network availability. `--cacert` scopes client trust to that invocation; upstream certificate verification remains enabled against system trust. Expect `requestHead`, `responseHead`, body-chunk metadata, and `requestEnd`/`responseEnd` records sharing an `id`. A `streamError` terminates an unfinished capture; `connectionFailure` includes stable reason and available stage/code metadata. CONNECT acceptance alone does not establish upstream TLS success.
@@ -29,13 +29,20 @@ Headers, paths, free-form error text, and WebSocket close text are omitted. Meth
 
 ## Stream and bypass
 
-For SSE, use your own controlled HTTPS origin with an `/events` endpoint that flushes events while keeping its response open:
+For SSE, start an HTTPS origin you control at `localhost:9443` with an `/events` endpoint that flushes events. Put its CA certificate in `$HOME/.swiftmitm/origin-ca.pem`. Stop the first proxy with Control-C and restart it with access to internal destinations and the origin trust root.
 
 ```sh
-curl --noproxy '' --no-buffer --proxy http://127.0.0.1:8080 --cacert ca-cert.pem https://localhost:9443/events
+swift run FirstCapture --ca-cert "$HOME/.swiftmitm/ca-cert.pem" --ca-key "$HOME/.swiftmitm/ca-key.pem" \
+  --allow-internal --upstream-ca "$HOME/.swiftmitm/origin-ca.pem"
 ```
 
-For that local origin, restart FirstCapture with `--allow-internal --upstream-ca origin-ca.pem` in addition to its required CA flags. `origin-ca.pem` must trust the origin's real certificate; this supplements system roots without disabling verification. `--allow-internal` explicitly permits internal destinations and is unnecessary for public origins. The client trusts the interception CA; FirstCapture separately trusts the origin CA. Streaming body-chunk records can arrive before `responseEnd`; byte counts continue after retained payload is exhausted.
+After the `listening` record, send the request from the second terminal.
+
+```sh
+curl --noproxy '' --no-buffer --proxy http://127.0.0.1:8080 --cacert "$HOME/.swiftmitm/ca-cert.pem" https://localhost:9443/events
+```
+
+The client trusts the interception CA. FirstCapture adds the origin CA to its system trust roots. Streaming body-chunk records can arrive before `responseEnd`, and byte counts continue after retained payload is exhausted.
 
 For a client that must keep origin-to-client TLS intact, restart with `--passthrough example.com:443` and run:
 

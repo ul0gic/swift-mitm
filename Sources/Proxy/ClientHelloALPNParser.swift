@@ -1,4 +1,4 @@
-import NIOCore
+import Foundation
 
 struct ALPNProtocolIdentifier: Equatable, Sendable {
     let bytes: [UInt8]
@@ -14,10 +14,6 @@ struct ClientHelloMetadata: Sendable {
     var compatibilityALPNOffer: ClientALPNOffer {
         hasALPNExtension ? .protocols(supportedALPNProtocols) : .absent
     }
-}
-
-enum ClientHelloInspectionBoundary {
-    static let deadline = TimeAmount.seconds(1)
 }
 
 enum ClientHelloALPNParser {

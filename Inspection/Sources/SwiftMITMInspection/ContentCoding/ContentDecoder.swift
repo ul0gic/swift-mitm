@@ -30,6 +30,7 @@ public struct ContentDecoderProgress: Sendable {
 
 public final class ContentDecoder {
     public let reservedStorageBytes: Int
+    private(set) var consumedInputBytes: UInt64 = 0
     private let budget: InspectionMemoryBudget
     private let coding: ContentCoding
     private let sliceBytes: Int
@@ -166,6 +167,7 @@ public final class ContentDecoder {
             let source = UnsafeRawBufferPointer(rebasing: input[consumed..<(consumed + available)])
             let (used, written) = try nativeStep(source, capacity: capacity, final: final)
             consumed += used
+            consumedInputBytes += UInt64(used)
             produced += written
             if written > 0 {
                 try emit(UnsafeRawBufferPointer(start: output, count: written))

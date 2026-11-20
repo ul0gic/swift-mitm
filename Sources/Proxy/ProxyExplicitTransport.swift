@@ -114,13 +114,7 @@ extension ProxyServer {
         on loop: EventLoop,
         setupToken: ProxyConnectionSetupToken? = nil
     ) -> EventLoopFuture<HTTPForwardConnection> {
-        guard let destination = ConnectionTarget(
-            host: target.host,
-            port: target.port,
-            ingressProvenance: .explicitHTTP
-        ) else {
-            return loop.makeFailedFuture(ProxyConnectionError.egressBlocked(target.host))
-        }
+        let destination = target.connectionTarget
         if target.scheme == "https" {
             return connectUpstreamTLS(
                 target: destination,
